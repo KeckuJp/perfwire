@@ -133,7 +133,7 @@ svg{display:block;margin:16px auto}
 <div class="hint">JSON貼り付け→インポート、またはファイルをドロップ。編集・設定は自動保存。</div>
 <textarea id="pw-out" placeholder="エクスポート/インポート用JSON"></textarea>
 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">
-<button id="pw-copy">コピー</button><button id="pw-import">インポート</button><button id="pw-beep">導通リスト</button><button id="pw-sample">サンプル復元</button><button id="pw-clearls">保存データ消去</button>
+<button id="pw-copy">コピー</button><button id="pw-import">インポート</button><button id="pw-beep">導通リスト</button><button id="pw-print">印刷 1:1</button><button id="pw-sample">サンプル復元</button><button id="pw-clearls">保存データ消去</button>
 </div>
 </aside>
 <main>
@@ -557,6 +557,7 @@ document.getElementById('pw-saveas').onclick=function(){props.push({name:'案 '+
 document.getElementById('pw-defcfg').onclick=function(){CFG=deep(DEFCFG);buildSliders();buildNetClasses();saveLS();render();auditNow();};
 document.getElementById('pw-copy').onclick=function(){var b=this;document.getElementById('pw-out').value=exportJSON();if(navigator.clipboard)navigator.clipboard.writeText(exportJSON()).then(function(){b.textContent='コピー済み';setTimeout(function(){b.textContent='コピー';},1400);});};
 document.getElementById('pw-share').onclick=shareURL;
+document.getElementById('pw-print').onclick=printView;
 document.getElementById('pw-export').onclick=function(){var j=exportJSON();document.getElementById('pw-out').value=j;if(navigator.clipboard)navigator.clipboard.writeText(j);var bl=new Blob([j],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='perfwire_export.json';a.click();};
 document.getElementById('pw-import').onclick=function(){try{importObj(JSON.parse(document.getElementById('pw-out').value));}catch(e2){alert('JSONが不正です: '+e2.message);}};
 document.getElementById('pw-beep').onclick=function(){var t=beepList();document.getElementById('pw-out').value=t;
@@ -631,6 +632,12 @@ props.push({name:'共有: '+(d2.proposal||'盤面'),orig:st,cur:null});
 if(d2.cfg&&d2.cfg.weights&&d2.cfg.physical){CFG=d2.cfg;buildSliders();}
 curI=props.length-1;refreshSel();loadProp(curI);auditNow();
 showHelp('URLの盤面を新しい案として追加しました（既存の編集は保持されています）。');}).catch(function(){});}
+function printView(){var W=svg.width.baseVal.value;
+var oldOp=PHOTO.op;PHOTO.op=0;render();
+svg.style.width=(W*2.54/PITCH)+'mm';svg.style.height='auto';
+var done=false;function rest(){if(done)return;done=true;svg.style.width='';svg.style.height='';PHOTO.op=oldOp;render();}
+window.addEventListener('afterprint',rest,{once:true});
+setTimeout(function(){window.print();setTimeout(rest,1500);},60);}
 function savePhotoT(){try{localStorage.setItem(LSKEY+'_photoT',JSON.stringify({x:PHOTO.x,y:PHOTO.y,mul:PHOTO.mul,rot90:PHOTO.rot90,rotF:PHOTO.rotF,op:PHOTO.op,flip:PHOTO.flip}));}catch(e){}}
 function psld(box,label,min,max,step,get,set){var lab=document.createElement('div');lab.className='sld';
 var l=document.createElement('span');l.className='lab';l.textContent=label;
@@ -805,6 +812,7 @@ var CMDS=[
 {n:'元に戻す',k:'undo',f:undo},
 {n:'書き出し（JSON）',k:'export download',f:function(){document.getElementById('pw-export').click();}},
 {n:'URL共有（圧縮リンク生成）',k:'share url link',f:shareURL},
+{n:'印刷（1:1原寸 — 実基板に重ねて検品。裏面は「裏面」ONで）',k:'print scale paper',f:function(){printView();}},
 {n:'ファイルを開く（JSON / KiCAD .net）',k:'open import kicad',f:function(){document.getElementById('pw-open').click();}},
 {n:'サンプル復元',k:'sample reset',f:function(){document.getElementById('pw-sample').click();}},
 {n:'モード: 端子',k:'mode end 1',f:function(){setMode('end');}},
