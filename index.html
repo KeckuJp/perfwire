@@ -95,6 +95,7 @@ svg{display:block;margin:16px auto}
 <button id="pw-undo" title="Ctrl+Z">元に戻す</button>
 <button id="pw-open">開く…</button>
 <button id="pw-export">書き出し</button>
+<button id="pw-share">URL共有</button>
 </header>
 <div id="prog"><div></div></div>
 <div class="layout">
@@ -546,6 +547,7 @@ document.getElementById('pw-repropose').onclick=doPropose;
 document.getElementById('pw-saveas').onclick=function(){props.push({name:'案 '+new Date().toLocaleTimeString(),orig:deep(D),cur:deep(D)});curI=props.length-1;refreshSel();loadProp(curI);};
 document.getElementById('pw-defcfg').onclick=function(){CFG=deep(DEFCFG);buildSliders();buildNetClasses();saveLS();render();auditNow();};
 document.getElementById('pw-copy').onclick=function(){var b=this;document.getElementById('pw-out').value=exportJSON();if(navigator.clipboard)navigator.clipboard.writeText(exportJSON()).then(function(){b.textContent='コピー済み';setTimeout(function(){b.textContent='コピー';},1400);});};
+document.getElementById('pw-share').onclick=shareURL;
 document.getElementById('pw-export').onclick=function(){var j=exportJSON();document.getElementById('pw-out').value=j;if(navigator.clipboard)navigator.clipboard.writeText(j);var bl=new Blob([j],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='perfwire_export.json';a.click();};
 document.getElementById('pw-import').onclick=function(){try{importObj(JSON.parse(document.getElementById('pw-out').value));}catch(e2){alert('JSONが不正です: '+e2.message);}};
 document.getElementById('pw-beep').onclick=function(){var t=beepList();document.getElementById('pw-out').value=t;
@@ -561,6 +563,18 @@ window.addEventListener('dragleave',function(e){document.body.classList.remove('
 window.addEventListener('drop',function(e){e.preventDefault();document.body.classList.remove('drop');var f=e.dataTransfer.files[0];if(!f)return;var rd=new FileReader();
 if(f.type&&f.type.indexOf('image/')===0){rd.onload=function(){photoSet(rd.result);};rd.readAsDataURL(f);return;}
 rd.onload=function(){try{importObj(JSON.parse(rd.result));}catch(e2){alert('JSONが不正です: '+e2.message);}};rd.readAsText(f);});
+function b64enc(buf){var u8=new Uint8Array(buf),s='';for(var i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
+function b64dec(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var bin=atob(s),u8=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);return u8.buffer;}
+function shareURL(){if(!window.CompressionStream){alert('このブラウザは圧縮API（CompressionStream）に未対応です');return;}
+var j=exportJSON();
+new Response(new Blob([j]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer().then(function(buf){
+var url=location.href.split('#')[0]+'#z='+b64enc(buf);
+document.getElementById('pw-out').value=url;
+if(navigator.clipboard)navigator.clipboard.writeText(url);
+showHelp('共有URLをコピーしました（約'+Math.round(url.length/102.4)/10+'KB）。このHTMLを開ける相手ならどこでも、貼るだけで同じ盤面が再現されます。');});}
+function loadHash(){var m=location.hash.match(/^#z=(.+)$/);if(!m||!window.DecompressionStream)return;
+new Response(new Blob([b64dec(m[1])]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text().then(function(t){
+importObj(JSON.parse(t));showHelp('URLから盤面を読み込みました。');}).catch(function(){});}
 function savePhotoT(){try{localStorage.setItem(LSKEY+'_photoT',JSON.stringify({x:PHOTO.x,y:PHOTO.y,mul:PHOTO.mul,rot90:PHOTO.rot90,rotF:PHOTO.rotF,op:PHOTO.op,flip:PHOTO.flip}));}catch(e){}}
 function psld(box,label,min,max,step,get,set){var lab=document.createElement('div');lab.className='sld';
 var l=document.createElement('span');l.className='lab';l.textContent=label;
@@ -679,6 +693,7 @@ var CMDS=[
 {n:'案として保存',k:'save proposal',f:function(){document.getElementById('pw-saveas').click();}},
 {n:'元に戻す',k:'undo',f:undo},
 {n:'書き出し（JSON）',k:'export download',f:function(){document.getElementById('pw-export').click();}},
+{n:'URL共有（圧縮リンク生成）',k:'share url link',f:shareURL},
 {n:'ファイルを開く',k:'open import',f:function(){document.getElementById('pw-open').click();}},
 {n:'サンプル復元',k:'sample reset',f:function(){document.getElementById('pw-sample').click();}},
 {n:'モード: 端子',k:'mode end 1',f:function(){setMode('end');}},
@@ -791,6 +806,7 @@ setMode('end');
 loadProp(curI);
 auditNow();
 try{var pu=localStorage.getItem(LSKEY+'_photo');if(pu){var pt2=JSON.parse(localStorage.getItem(LSKEY+'_photoT')||'{}');for(var pk in pt2)PHOTO[pk]=pt2[pk];photoSet(pu,true);}}catch(e){}
+loadHash();
 })();
 </script>
 </body>
