@@ -87,13 +87,14 @@ svg{display:block;margin:16px auto}
 </head>
 <body>
 <header>
-<span class="brand">perfwire<small>v0.5</small></span>
+<span class="brand">perfwire<small>v0.6</small></span>
 <select id="pw-prop"></select>
 <button id="pw-rewire" class="primary">配線を再計算</button>
 <button id="pw-repropose" class="primary">配置を再提案</button>
 <button id="pw-saveas">案として保存</button>
 <button id="pw-guide">作業ガイド</button>
 <span class="spacer"></span>
+<button id="pw-lang" title="Language">EN</button>
 <button id="pw-cmd" title="Ctrl+K">⌘K</button>
 <button id="pw-undo" title="Ctrl+Z">元に戻す</button>
 <button id="pw-open">開く…</button>
@@ -171,6 +172,60 @@ var DEFCFG={pitch:2.54,allowStanding:true,
  weights:{bridgeBonus:20,wireLen:1.0,cautionBase:1.5,hizMult:3.0,keepAwayPen:6.0},
  order:['C6','C4','C3','C9','C5','R5','R4','R1','R2','R3','R10','R9','R7','R8','R12','R11','R13']};
 var CFG=deep(DEFCFG),LSKEY='perfwire_v1';
+var LANG=(function(){try{return localStorage.getItem('perfwire_lang')||((navigator.language||'').indexOf('ja')===0?'ja':'en');}catch(e){return 'ja';}})();
+var JE={
+'配線を再計算':'Rewire','配置を再提案':'Re-place & route','案として保存':'Save as proposal','作業ガイド':'Work guide','元に戻す':'Undo','開く…':'Open…','書き出し':'Export','URL共有':'Share URL',
+'モード':'Mode','(1-5キー)':'(keys 1-5)','レイヤー':'Layers','写真下絵':'Photo underlay','しきい値':'Thresholds','部品':'Parts','監査':'Audit','— ライブ更新':'— live','データ':'Data',
+'端子':'Ends','ブリッジ':'Bridges','穴×':'Block','テスター':'Probe',
+'ロック切替':'Toggle lock','案をリセット':'Reset proposal','設定を既定値に戻す':'Reset config to defaults','コピー':'Copy','インポート':'Import','導通リスト':'Continuity list','印刷 1:1':'Print 1:1','サンプル復元':'Restore sample','保存データ消去':'Clear saved data',
+'写真を読み込み…':'Load photo…','消去':'Clear','90°回転':'Rotate 90°','この部品を削除':'Delete this part','＋ 追加':'+ Add',
+'← 前':'← Prev','✓ 完了して次へ':'✓ Done & next','次 →':'Next →','終了':'Exit','裏面ビュー':'Mirror view','裏面':'Back',
+'最適化の重み（次の再計算で反映）':'Optimization weights (applied on recalc)','部品の物理寸法（実寸プレビュー）':'Part dimensions (true-size preview)','EE 制約（基板にゾーン表示）':'EE constraints (zones on board)','ネットクラス割当':'Net classes','部品を追加':'Add part',
+'ラベル':'Labels','被覆線':'Wires','注意×':'Caution ×','ブロック穴':'Blocked holes','実寸法（本体）':'True size (bodies)',
+'ブリッジ優先（銅線削減）':'Prefer bridges (fewer wires)','配線長の重み':'Wire length weight','隣接ペナルティ基準':'Adjacency penalty','高Zペナルティ倍率':'High-Z penalty multiplier','入出力分離ペナルティ':'In/out separation penalty',
+'抵抗 本体長 mm':'Resistor body length mm','抵抗 曲げ代 mm':'Resistor bend margin mm','抵抗 最大スパン mm':'Resistor max span mm','抵抗の立て実装を許可':'Allow standing resistors','電解C4 直径 mm':'Electrolytic C4 dia mm','電解C6 直径 mm':'Electrolytic C6 dia mm',
+'高Z配線長上限（穴）':'High-Z wire limit (holes)','信号配線長上限（穴）':'Signal wire limit (holes)','デカップリング距離上限（穴）':'Decoupling distance limit (holes)','入出力分離距離（穴）':'In/out keep-away (holes)','パッド接合数上限':'Max joints per pad',
+'銅線を許容':'allow wires','ブリッジに寄せる':'favor bridges','長さ気にしない':'length-agnostic','短さ重視':'prefer short','密でもよい':'dense OK','離して置く':'spread out','標準扱い':'standard','厳格に隔離':'strict isolation','近くてもよい':'near OK','強く分離':'separate strongly',
+'小型部品':'small part','大型部品':'large part','きつく曲げ可':'tight bends','余裕が必要':'needs slack','詰めて配置':'compact','広く許容':'generous','細い缶':'thin can','太い缶':'fat can',
+'短く強制':'force short','緩く許容':'lenient','ピン直近':'at the pin','離れてもよい':'may drift','ゾーンなし':'no zone','広いゾーン':'wide zone','シンプル強制':'keep simple','集中許容':'allow clusters',
+'再配置のとき、部品の足を同じネットの隣に寄せて「はんだブリッジだけで繋ぐ」ことをどれだけ優先するか。大きいほど銅線が減るが、部品が密集しやすい。「配置を再提案」で反映。':'When re-placing, how strongly leads are pulled next to same-net pads so they connect by solder bridge alone. Higher = fewer jumper wires but denser packing. Applied on Re-place.',
+'残った銅線の長さをどれだけ嫌うか。大きいほど短い配線を優先した配置になる。「配置を再提案」で反映。':'How much remaining jumper length is penalized. Higher = placements that favor short wires. Applied on Re-place.',
+'別ネット同士が隣の穴に来る配置への罰則。短絡やフラックス残渣のリーク防止。大きいほど互いに離れる。「配置を再提案」で反映。':'Penalty for different nets in adjacent holes (short / flux-leak risk). Higher = nets spread apart. Applied on Re-place.',
+'高インピーダンス（1MΩ）ネットが他ネットと隣接したときの罰則の倍率。高Zはリークに弱いので通常は強めにする。':'Multiplier for the adjacency penalty when a high-impedance (1M) net is involved; high-Z nodes are leak-sensitive.',
+'入力系（高Z）と出力系を物理的に近づけた配置への罰則。発振・クロストーク予防。「配置を再提案」で反映。':'Penalty for placing input (high-Z) and output stages close together; prevents oscillation and crosstalk. Applied on Re-place.',
+'抵抗本体の実寸。最小スパン＝本体長＋曲げ代×2 が変わる。動かすと基板に実寸の外形（破線）が表示される。':'Actual body size. Min span = body + 2 x bend margin. Dragging previews the true-size outline on the board.',
+'リードを曲げるのに必要な本体からの余白。きつく曲げられるなら小さく。最小スパンに影響。':'Clearance needed to bend the lead away from the body. Affects min span.',
+'リードを伸ばして届く最大距離。大きくすると配置の自由度が上がるがリードが長くなる。':'Max reach with stretched leads. Larger = more placement freedom but longer leads.',
+'抵抗を縦に立てて1〜2穴で実装する選択肢をソルバーに与える。面積は節約できるが背が高くなる。':'Lets the solver mount resistors vertically in 1-2 holes. Saves area, but taller.',
+'電解コンデンサC4の缶の直径。円の中の穴は使用不可になる。動かすと基板に実寸の円が表示される。':'Can diameter of electrolytic C4. Holes under the can become unusable. Previews the true-size circle.',
+'電解コンデンサC6の缶の直径。円の中の穴は使用不可になる。動かすと基板に実寸の円が表示される。':'Can diameter of electrolytic C6. Holes under the can become unusable. Previews the true-size circle.',
+'高インピーダンスネットに許す銅線の長さ。動かすと各線の長さが基板に表示され、超過する線は赤くなる。':'Max jumper length for high-Z nets. Lengths appear on the board; over-limit wires turn red.',
+'信号ネットに許す銅線の長さ。動かすと該当する線の長さ表示と超過の赤表示が出る。':'Max jumper length for signal nets. Lengths appear on the board; over-limit wires turn red.',
+'パスコンがICの電源ピンから離れてよい距離。動かすと許容ゾーン（青枠）が基板に表示される。監査・再配置の両方に効く。':'How far a bypass cap may sit from its IC power pin. Blue allowed-zone preview. Drives both audit and placement.',
+'高Z入力の周りに出力系を近づけない半径。動かすと分離ゾーン（橙枠）が表示される。':'Radius around high-Z inputs where output stages may not be placed. Amber zone preview.',
+'1つの穴に許すはんだ接合の数（足＋ブリッジ）。動かすと各パッドの接合数が表示され、超過は赤丸になる。':'Solder joints allowed per hole (lead + bridges). Counts appear per pad; over-limit pads are circled red.',
+'不透明度 %':'Opacity %','拡大率 %':'Scale %','回転 微調整°':'Rotation fine °','左右反転（裏面写真）':'Mirror horizontally (backside photo)','ドラッグで写真を移動':'Drag moves the photo',
+'高Z':'High-Z','信号':'Signal','出力':'Output','電源':'Power','なし':'None',
+'抵抗':'Resistor','フィルムコンデンサ':'Film capacitor','セラミックコンデンサ':'Ceramic capacitor','電解コンデンサ':'Electrolytic capacitor','IC（DIP-8）':'IC (DIP-8)',
+'フィルムC':'Film cap','セラミックC':'Ceramic cap','電解C':'Electrolytic',
+'ラベル（例: R14 10k）':'Label (e.g. R14 10k)','ネットA（空欄可）':'Net A (optional)','ネットB（空欄可）':'Net B (optional)','ネット名':'Net name',
+'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。':'Ring = jumper insertion hole. Drag to a free hole (bridge follows). Drop onto a lead = direct-solder.',
+'本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。':'Drag bodies or leads. While dragging a lead, valid holes glow green. Click to select, then Toggle lock.',
+'隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。':'Drag across two adjacent holes to add a bridge. Click an existing one to delete.',
+'使えない穴をクリックで×指定／解除。再計算が避けます。':'Click holes to mark / unmark them unusable. The solver avoids them.',
+'2つの穴を順にクリック → 計画上の導通/非導通と接続グループを表示。実機のテスター当てと突き合わせる。':'Click two holes to see whether the plan connects them (and the connected group). Cross-check against a real multimeter.',
+'盤面の部品をクリックで選択 → ここでラベル・ネット編集・削除。':'Click a part on the board to edit its label / nets or delete it here.',
+'空きスペースに仮置きされます。ICのピンネットは追加後に選択して割り当て。':'Placed into free space. For ICs, assign pin nets after adding by selecting the part.',
+'実機写真を下に敷いてトレース。拡大・回転・反転で穴を合わせ、部品をドラッグで実機どおりに。':'Lay a photo of the real board under the grid. Align with scale / rotation / mirror, then drag parts to match reality.',
+'ネットごとの扱い（高Z=最厳格／信号／出力／電源）。監査と再配置の基準になります。':'Per-net class (High-Z = strictest / Signal / Output / Power). Drives audit and placement.',
+'JSON貼り付け→インポート、またはファイルをドロップ。編集・設定は自動保存。':'Paste JSON + Import, or drop a file (JSON / KiCAD .net / image). Edits autosave.',
+'スライダーに触れると、ここに「何が起きるか」の説明が出ます。物理寸法・EE制約は動かした瞬間、基板上にも効果がプレビューされます。':'Touch a slider to see what it does here. Physical and EE sliders also preview their effect on the board while you drag.',
+'コマンドを検索…（例: 再計算 / モード / ズーム）':'Search commands… (e.g. rewire / mode / zoom)','エクスポート/インポート用JSON':'JSON for export / import',
+'モード: 端子':'Mode: ends','モード: 部品':'Mode: parts','モード: ブリッジ':'Mode: bridges','モード: 穴ブロック':'Mode: block holes','モード: テスター（導通プローブ）':'Mode: probe (continuity)',
+'書き出し（JSON）':'Export (JSON)','ファイルを開く（JSON / KiCAD .net）':'Open file (JSON / KiCAD .net)','URL共有（圧縮リンク生成）':'Share URL (compressed link)','印刷（1:1原寸 — 実基板に重ねて検品。裏面は「裏面」ONで）':'Print (1:1 scale — overlay on the real board; toggle Back for solder side)',
+'ズーム イン':'Zoom in','ズーム アウト':'Zoom out','ズーム 100%':'Zoom 100%','レイヤー: 実寸法 切替':'Layer: toggle true size','レイヤー: 被覆線 切替':'Layer: toggle wires',
+'写真を読み込み（下絵）':'Load photo (underlay)','写真を消去':'Clear photo','裏面ビュー 切替':'Toggle mirror view','作業ガイドを開始':'Start work guide','作業ガイドの進捗をリセット':'Reset guide progress','導通チェックリスト生成':'Generate continuity checklist'};
+function tr(s){return (LANG==='en'&&JE[s])||s;}
 var props=INIT.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null};});
 var curI=0,D=null,BASE=30,ZOOM=1,PITCH=30,OX=50,OY=40,mode='end',drag=null,selPart=null,cols=17,rows=14;
 var hoverNet=null,tempFoot=false,footTimer=null,auditTimer=null,tempViz=null,vizTimer=null,busy=false,calcNote='';
@@ -536,7 +591,7 @@ if(typeof st.curI==='number'&&props[st.curI])curI=st.curI;}catch(e){}}
 function refreshSel(){var sel=document.getElementById('pw-prop');sel.innerHTML='';props.forEach(function(p,i){var o=document.createElement('option');o.value=i;o.textContent=p.name;sel.appendChild(o);});sel.value=curI;}
 function setMode(m){mode=m;['end','part','bridge','block','probe'].forEach(function(k){document.getElementById('m-'+k).className=(k===m)?'on':'';});
 if(m!=='probe'){probeA=null;probeRes=null;}
-document.getElementById('modehint').textContent=HINT[m];render();}
+document.getElementById('modehint').textContent=tr(HINT[m]);render();}
 document.getElementById('m-end').onclick=function(){setMode('end');};
 document.getElementById('m-part').onclick=function(){setMode('part');};
 document.getElementById('m-bridge').onclick=function(){setMode('bridge');};
@@ -641,13 +696,13 @@ var done=false;function rest(){if(done)return;done=true;svg.removeAttribute('vie
 window.addEventListener('afterprint',rest,{once:true});
 setTimeout(function(){window.print();setTimeout(rest,1500);},60);}
 function savePhotoT(){try{localStorage.setItem(LSKEY+'_photoT',JSON.stringify({x:PHOTO.x,y:PHOTO.y,mul:PHOTO.mul,rot90:PHOTO.rot90,rotF:PHOTO.rotF,op:PHOTO.op,flip:PHOTO.flip}));}catch(e){}}
-function psld(box,label,min,max,step,get,set){var lab=document.createElement('div');lab.className='sld';
+function psld(box,label,min,max,step,get,set){label=tr(label);var lab=document.createElement('div');lab.className='sld';
 var l=document.createElement('span');l.className='lab';l.textContent=label;
 var i=document.createElement('input');i.type='range';i.min=min;i.max=max;i.step=step;i.value=get();
 var v=document.createElement('span');v.className='val';v.textContent=get();
 i.oninput=function(){set(parseFloat(i.value));v.textContent=i.value;render();savePhotoT();};
 lab.appendChild(l);lab.appendChild(i);lab.appendChild(v);box.appendChild(lab);}
-function pchk(box,label,get,set){var d=document.createElement('label');d.className='tgl';
+function pchk(box,label,get,set){label=tr(label);var d=document.createElement('label');d.className='tgl';
 var i=document.createElement('input');i.type='checkbox';i.checked=get();
 i.onchange=function(){set(i.checked);render();savePhotoT();};
 d.appendChild(i);d.appendChild(document.createTextNode(label));box.appendChild(d);}
@@ -703,19 +758,19 @@ if(!selPart){box.style.display='none';hint.style.display='';return;}
 box.style.display='';hint.style.display='none';box.innerHTML='';
 var p=selPart;
 var ttl=document.createElement('div');ttl.style.cssText='font-weight:600;font-size:13px;margin-bottom:3px';
-ttl.textContent=p.id+'（'+(KINDJ[p.kind]||p.kind)+'）'+(p.locked?' ロック中':'');box.appendChild(ttl);
-var lab=document.createElement('input');lab.type='text';lab.value=p.label||'';lab.placeholder='ラベル';
+ttl.textContent=p.id+'（'+tr(KINDJ[p.kind]||p.kind)+'）'+(p.locked?(LANG==='en'?' locked':' ロック中'):'');box.appendChild(ttl);
+var lab=document.createElement('input');lab.type='text';lab.value=p.label||'';lab.placeholder=tr('ラベル（例: R14 10k）');
 lab.onchange=function(){snap();p.label=lab.value;render();};box.appendChild(lab);
 partLeads(p).forEach(function(L){var row=document.createElement('div');row.style.cssText='display:flex;gap:6px;align-items:center;margin:3px 0';
 var nm=document.createElement('span');nm.style.cssText='font:11px Consolas,monospace;color:var(--mut);width:58px;flex:none';
 nm.textContent=L.name.replace(p.id+'.','')+' '+holeName(L.pos);
 var inp=document.createElement('input');inp.type='text';inp.setAttribute('list','netlist');
-inp.value=(D.leads[L.name]&&D.leads[L.name].net)||'';inp.placeholder='ネット名';
+inp.value=(D.leads[L.name]&&D.leads[L.name].net)||'';inp.placeholder=tr('ネット名');
 inp.onchange=function(){snap();var v=inp.value.trim();
 if(v){netColor(v);D.leads[L.name]={net:v,at:L.pos.slice()};}else delete D.leads[L.name];
 buildNetClasses();render();auditNow();};
 row.appendChild(nm);row.appendChild(inp);box.appendChild(row);});
-var del=document.createElement('button');del.textContent='この部品を削除';del.style.marginTop='6px';
+var del=document.createElement('button');del.textContent=tr('この部品を削除');del.style.marginTop='6px';
 del.onclick=function(){if(confirm(p.id+' を削除しますか？（参照する被覆線も消えます）'))delPart(p);};
 box.appendChild(del);}
 function connMap(){var par={};
@@ -839,15 +894,15 @@ var cpSel=0;
 function cpOpen(){document.getElementById('cpov').style.display='flex';var inp=document.getElementById('cp-in');inp.value='';cpSel=0;cpFilter('');inp.focus();}
 function cpClose(){document.getElementById('cpov').style.display='none';}
 function cpFilter(q){var ls=document.getElementById('cp-ls');ls.innerHTML='';q=q.toLowerCase();
-var hits=CMDS.filter(function(c){return !q||c.n.toLowerCase().indexOf(q)>=0||c.k.indexOf(q)>=0;});
-hits.forEach(function(c,i){var li=document.createElement('li');li.textContent=c.n;if(i===cpSel)li.className='sel';
+var hits=CMDS.filter(function(c){return !q||c.n.toLowerCase().indexOf(q)>=0||tr(c.n).toLowerCase().indexOf(q)>=0||c.k.indexOf(q)>=0;});
+hits.forEach(function(c,i){var li=document.createElement('li');li.textContent=tr(c.n);if(i===cpSel)li.className='sel';
 li.onclick=function(){cpClose();c.f();};ls.appendChild(li);});
 return hits;}
 document.getElementById('pw-cmd').onclick=cpOpen;
 document.getElementById('cpov').addEventListener('pointerdown',function(e){if(e.target===this)cpClose();});
 document.getElementById('cp-in').addEventListener('input',function(){cpSel=0;cpFilter(this.value);});
 document.getElementById('cp-in').addEventListener('keydown',function(e){
-var hits=CMDS.filter(function(c){var q=document.getElementById('cp-in').value.toLowerCase();return !q||c.n.toLowerCase().indexOf(q)>=0||c.k.indexOf(q)>=0;});
+var hits=CMDS.filter(function(c){var q=document.getElementById('cp-in').value.toLowerCase();return !q||c.n.toLowerCase().indexOf(q)>=0||tr(c.n).toLowerCase().indexOf(q)>=0||c.k.indexOf(q)>=0;});
 if(e.key==='ArrowDown'){e.preventDefault();cpSel=Math.min(hits.length-1,cpSel+1);cpFilter(this.value);}
 else if(e.key==='ArrowUp'){e.preventDefault();cpSel=Math.max(0,cpSel-1);cpFilter(this.value);}
 else if(e.key==='Enter'){e.preventDefault();if(hits[cpSel]){cpClose();hits[cpSel].f();}}
@@ -864,7 +919,7 @@ if(e.key==='1')setMode('end');if(e.key==='2')setMode('part');if(e.key==='3')setM
 function auditNow(){try{audit();}catch(e){document.getElementById('audit').textContent='監査エラー: '+e.message;}}
 function auditSoon(){clearTimeout(auditTimer);auditTimer=setTimeout(auditNow,220);}
 function footPreview(){tempFoot=true;render();clearTimeout(footTimer);footTimer=setTimeout(function(){tempFoot=false;render();},1300);}
-function tgl(box,label,k){var d=document.createElement('label');d.className='tgl';
+function tgl(box,label,k){label=tr(label);var d=document.createElement('label');d.className='tgl';
 var i=document.createElement('input');i.type='checkbox';i.checked=LY[k];
 i.onchange=function(){LY[k]=i.checked;render();};
 d.appendChild(i);d.appendChild(document.createTextNode(label));box.appendChild(d);}
@@ -872,7 +927,8 @@ d.appendChild(i);d.appendChild(document.createTextNode(label));box.appendChild(d
 [['部品','parts'],['ラベル','labels'],['被覆線','wires'],['ブリッジ','bridges'],['端子','ends'],['注意×','caut'],['ブロック穴','blocked'],['実寸法（本体）','foot']].forEach(function(x){tgl(b,x[0],x[1]);});})();
 var helpEl=null;
 function showHelp(t){if(!helpEl)helpEl=document.getElementById('sliderhelp');helpEl.textContent=t;}
-function slider(box,o){var lab=document.createElement('div');lab.className='sld';
+function slider(box,o){o.label=tr(o.label);o.desc=tr(o.desc);if(o.ends)o.ends=[tr(o.ends[0]),tr(o.ends[1])];
+var lab=document.createElement('div');lab.className='sld';
 var l=document.createElement('span');l.className='lab';l.textContent=o.label;
 var i=document.createElement('input');i.type='range';i.min=o.min;i.max=o.max;i.step=o.step;i.value=o.get();i.title=o.desc;
 var v=document.createElement('span');v.className='val';v.textContent=o.get();
@@ -887,7 +943,7 @@ auditSoon();saveLS();};
 lab.appendChild(l);lab.appendChild(i);lab.appendChild(v);box.appendChild(lab);
 if(o.ends){var er=document.createElement('div');er.className='ends';
 er.innerHTML='<span>← '+o.ends[0]+'</span><span>'+o.ends[1]+' →</span>';box.appendChild(er);}}
-function checkbox2(box,label,desc,get,set){var d=document.createElement('label');d.className='tgl';d.title=desc;
+function checkbox2(box,label,desc,get,set){label=tr(label);desc=tr(desc);var d=document.createElement('label');d.className='tgl';d.title=desc;
 var i=document.createElement('input');i.type='checkbox';i.checked=get();
 i.onchange=function(){set(i.checked);showHelp(desc);saveLS();};
 d.appendChild(i);d.appendChild(document.createTextNode(label));box.appendChild(d);}
@@ -914,7 +970,7 @@ Object.keys(D.netColors||{}).forEach(function(net){var row=document.createElemen
 var dot=document.createElement('span');dot.className='dot';dot.style.background=D.netColors[net];
 var nm=document.createElement('span');nm.className='nm';nm.textContent=net;
 var sel=document.createElement('select');
-[['HIZ','高Z'],['SIG','信号'],['OUT','出力'],['PWR','電源'],['','なし']].forEach(function(c){var o=document.createElement('option');o.value=c[0];o.textContent=c[1];sel.appendChild(o);});
+[['HIZ','高Z'],['SIG','信号'],['OUT','出力'],['PWR','電源'],['','なし']].forEach(function(c){var o=document.createElement('option');o.value=c[0];o.textContent=tr(c[1]);sel.appendChild(o);});
 sel.value=clsOf(net)||'';
 sel.onchange=function(){Object.keys(CFG.classes).forEach(function(ck){var ix=CFG.classes[ck].nets.indexOf(net);if(ix>=0)CFG.classes[ck].nets.splice(ix,1);});
 if(sel.value)CFG.classes[sel.value].nets.push(net);
@@ -924,15 +980,25 @@ row.appendChild(dot);row.appendChild(nm);row.appendChild(sel);box.appendChild(ro
 var dl=document.getElementById('netlist');if(dl){dl.innerHTML='';Object.keys(D.netColors||{}).forEach(function(n){var o=document.createElement('option');o.value=n;dl.appendChild(o);});}}
 (function(){var box=document.getElementById('pal-add');
 var sel=document.createElement('select');sel.style.width='100%';
-[['r','抵抗'],['film','フィルムコンデンサ'],['disc','セラミックコンデンサ'],['elec','電解コンデンサ'],['ic','IC（DIP-8）']].forEach(function(k){var o=document.createElement('option');o.value=k[0];o.textContent=k[1];sel.appendChild(o);});
-var lab=document.createElement('input');lab.type='text';lab.placeholder='ラベル（例: R14 10k）';
-var na=document.createElement('input');na.type='text';na.setAttribute('list','netlist');na.placeholder='ネットA（空欄可）';
-var nb=document.createElement('input');nb.type='text';nb.setAttribute('list','netlist');nb.placeholder='ネットB（空欄可）';
-var btn=document.createElement('button');btn.textContent='＋ 追加';btn.className='primary';btn.style.cssText='margin-top:4px;width:100%';
+[['r','抵抗'],['film','フィルムコンデンサ'],['disc','セラミックコンデンサ'],['elec','電解コンデンサ'],['ic','IC（DIP-8）']].forEach(function(k){var o=document.createElement('option');o.value=k[0];o.textContent=tr(k[1]);sel.appendChild(o);});
+var lab=document.createElement('input');lab.type='text';lab.placeholder=tr('ラベル（例: R14 10k）');
+var na=document.createElement('input');na.type='text';na.setAttribute('list','netlist');na.placeholder=tr('ネットA（空欄可）');
+var nb=document.createElement('input');nb.type='text';nb.setAttribute('list','netlist');nb.placeholder=tr('ネットB（空欄可）');
+var btn=document.createElement('button');btn.textContent=tr('＋ 追加');btn.className='primary';btn.style.cssText='margin-top:4px;width:100%';
 sel.onchange=function(){var ic=sel.value==='ic';na.style.display=ic?'none':'';nb.style.display=ic?'none':'';};
 btn.onclick=function(){addPart(sel.value,lab.value.trim(),na.value.trim(),nb.value.trim());lab.value='';na.value='';nb.value='';};
 box.appendChild(sel);box.appendChild(lab);box.appendChild(na);box.appendChild(nb);box.appendChild(btn);
-var h=document.createElement('div');h.className='hint';h.textContent='空きスペースに仮置きされます。ICのピンネットは追加後に選択して割り当て。';box.appendChild(h);})();
+var h=document.createElement('div');h.className='hint';h.textContent=tr('空きスペースに仮置きされます。ICのピンネットは追加後に選択して割り当て。');box.appendChild(h);})();
+function applyStatic(){if(LANG!=='en')return;
+document.querySelectorAll('button,h4,summary,.hint,span,label').forEach(function(el){
+for(var i=0;i<el.childNodes.length;i++){var nd=el.childNodes[i];
+if(nd.nodeType===3){var k=nd.nodeValue.trim();if(k&&JE[k])nd.nodeValue=nd.nodeValue.replace(k,JE[k]);}}});
+document.getElementById('cp-in').placeholder=tr('コマンドを検索…（例: 再計算 / モード / ズーム）');
+document.getElementById('pw-out').placeholder=tr('エクスポート/インポート用JSON');
+document.getElementById('sliderhelp').textContent=tr('スライダーに触れると、ここに「何が起きるか」の説明が出ます。物理寸法・EE制約は動かした瞬間、基板上にも効果がプレビューされます。');}
+document.getElementById('pw-lang').textContent=LANG==='en'?'日本語':'EN';
+document.getElementById('pw-lang').onclick=function(){try{localStorage.setItem('perfwire_lang',LANG==='en'?'ja':'en');}catch(e){}location.reload();};
+applyStatic();
 loadLS();
 buildSliders();
 refreshSel();
