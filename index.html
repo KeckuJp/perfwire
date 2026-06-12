@@ -80,7 +80,7 @@ svg{display:block;margin:16px auto}
 </head>
 <body>
 <header>
-<span class="brand">perfwire<small>v0.3</small></span>
+<span class="brand">perfwire<small>v0.4</small></span>
 <select id="pw-prop"></select>
 <button id="pw-rewire" class="primary">配線を再計算</button>
 <button id="pw-repropose" class="primary">配置を再提案</button>
@@ -102,6 +102,11 @@ svg{display:block;margin:16px auto}
 <div style="margin:7px 0;display:flex;gap:6px;flex-wrap:wrap"><button id="pw-lock">ロック切替</button><button id="pw-reset">案をリセット</button></div>
 <h4>レイヤー</h4>
 <div id="layers"></div>
+<h4>写真下絵</h4>
+<div class="hint">実機写真を下に敷いてトレース。拡大・回転・反転で穴を合わせ、部品をドラッグで実機どおりに。</div>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><button id="ph-load">写真を読み込み…</button><button id="ph-clear" style="display:none">消去</button></div>
+<div id="ph-ctl" style="display:none"></div>
+<input type="file" id="ph-file" accept="image/*" hidden>
 <h4>しきい値</h4>
 <div id="sliderhelp">スライダーに触れると、ここに「何が起きるか」の説明が出ます。物理寸法・EE制約は動かした瞬間、基板上にも効果がプレビューされます。</div>
 <details open><summary>最適化の重み（次の再計算で反映）</summary><div id="s-weights"></div></details>
@@ -151,6 +156,7 @@ var props=INIT.proposals.map(function(p){return{name:p.name,orig:p.state,cur:nul
 var curI=0,D=null,BASE=30,ZOOM=1,PITCH=30,OX=50,OY=40,mode='end',drag=null,selPart=null,cols=17,rows=14;
 var hoverNet=null,tempFoot=false,footTimer=null,auditTimer=null,tempViz=null,vizTimer=null,busy=false,calcNote='';
 var touches={},pinch0=null;
+var PHOTO={img:null,x:-0.67,y:-0.67,mul:100,rot90:0,rotF:0,op:55,flip:false,drag:false,fit:1};
 var MODEL={end:'端子',part:'部品',bridge:'ブリッジ',block:'穴ブロック'};
 var HINT={end:'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。',part:'本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。',bridge:'隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。',block:'使えない穴をクリックで×指定／解除。再計算が避けます。'};
 var LY={parts:true,labels:true,wires:true,bridges:true,ends:true,caut:true,blocked:true,foot:false};
@@ -335,6 +341,11 @@ while(svg.firstChild)svg.removeChild(svg.firstChild);
 var W2=OX+(cols-1)*PITCH+34,H2=OY+(rows-1)*PITCH+34,c,r;
 svg.setAttribute('width',W2);svg.setAttribute('height',H2);
 E('rect',{x:OX-20,y:OY-20,width:(cols-1)*PITCH+40,height:(rows-1)*PITCH+40,rx:10,fill:'#2c6e46',stroke:'#1c4a30','stroke-width':2});
+if(PHOTO.img&&PHOTO.op>0){var psc=PHOTO.fit*PHOTO.mul/100*ZOOM,pw=PHOTO.img.naturalWidth*psc,phh=PHOTO.img.naturalHeight*psc;
+var ppx=OX+PHOTO.x*PITCH,ppy=OY+PHOTO.y*PITCH;
+var ptr='translate('+ppx+' '+ppy+') rotate('+(PHOTO.rot90+PHOTO.rotF)+' '+(pw/2)+' '+(phh/2)+')'+(PHOTO.flip?' translate('+pw+' 0) scale(-1 1)':'');
+var gph=E('g',{transform:ptr,opacity:PHOTO.op/100,'pointer-events':'none'});
+var imn=document.createElementNS(NS,'image');imn.setAttribute('x',0);imn.setAttribute('y',0);imn.setAttribute('width',pw);imn.setAttribute('height',phh);imn.setAttribute('href',PHOTO.img.src);imn.setAttributeNS('http://www.w3.org/1999/xlink','xlink:href',PHOTO.img.src);gph.appendChild(imn);}
 for(c=1;c<=cols;c++)if(c%2===1)T(xy(c,1)[0]-4,OY-26,String(c),{fill:'#7e8a95',stroke:'none','font-family':'Consolas,monospace'});
 for(r=1;r<=rows;r++)T(OX-38,xy(1,r)[1]+4,String.fromCharCode(64+r),{fill:'#7e8a95',stroke:'none','font-family':'Consolas,monospace'});
 for(c=1;c<=cols;c++)for(r=1;r<=rows;r++){var h=xy(c,r);E('circle',{cx:h[0],cy:h[1],r:Math.max(3,PITCH*0.13),fill:'#c8d2c8',stroke:'#6e826e','stroke-width':1});}
@@ -412,6 +423,7 @@ function undo(){var u=undoStack.pop();if(!u)return;curI=u.i;props[curI].cur=u.s;
 svg.addEventListener('pointerdown',function(ev){ev.preventDefault();var pt=getPt(ev),i,j;
 touches[ev.pointerId]=pt;
 if(Object.keys(touches).length===2){drag=null;var ks=Object.keys(touches);pinch0={d:dist(touches[ks[0]],touches[ks[1]]),z:ZOOM};return;}
+if(PHOTO.img&&PHOTO.drag){drag={t:'photo',s:pt,ox:PHOTO.x,oy:PHOTO.y};return;}
 if(mode==='bridge'){for(i=0;i<D.padBridges.length;i++){var b=D.padBridges[i];if(b._px&&segd(pt[0],pt[1],b._px[0][0],b._px[0][1],b._px[1][0],b._px[1][1])<8){snap();D.padBridges.splice(i,1);render();return;}}
 var h=nearHole(pt[0],pt[1]);if(h)drag={t:'bridge',a:h,cur:pt};return;}
 if(mode==='block'){var h2=nearHole(pt[0],pt[1]);if(h2){if(occupiedOther(h2[0],h2[1],null,null))return;snap();var bi=blockedIdx(h2[0],h2[1]);if(bi>=0)D.blockedHoles.splice(bi,1);else D.blockedHoles.push([h2[0],h2[1]]);render();}return;}
@@ -436,6 +448,7 @@ if(pinch0){if(touches[ev.pointerId])touches[ev.pointerId]=getPt(ev);
 var ks=Object.keys(touches);if(ks.length>=2){var dd=dist(touches[ks[0]],touches[ks[1]]);if(pinch0.d>4){ZOOM=Math.min(2.4,Math.max(0.5,pinch0.z*dd/pinch0.d));render();}}return;}
 if(!drag)return;var pt=getPt(ev),g=[(pt[0]-OX)/PITCH+1,(pt[1]-OY)/PITCH+1];
 if(drag.t==='bridge'){drag.cur=pt;}
+else if(drag.t==='photo'){PHOTO.x=drag.ox+(pt[0]-drag.s[0])/PITCH;PHOTO.y=drag.oy+(pt[1]-drag.s[1])/PITCH;}
 else if(drag.t==='end'){drag.e.direct=false;drag.e.hole=[g[0],g[1]];}
 else if(drag.t==='plead'){drag.L.set([g[0],g[1]]);}
 else if(drag.t==='pmove'){var dx=g[0]-drag.g0[0],dy=g[1]-drag.g0[1],Ls=partLeads(drag.p);for(var i=0;i<Ls.length;i++)Ls[i].set([drag.orig[i][0]+dx,drag.orig[i][1]+dy]);}
@@ -444,6 +457,7 @@ window.addEventListener('pointerup',function(ev){
 delete touches[ev.pointerId];
 if(Object.keys(touches).length<2)pinch0=null;
 if(!drag)return;var pt=getPt(ev),h=nearHole(pt[0],pt[1]);
+if(drag.t==='photo'){drag=null;savePhotoT();render();return;}
 if(drag.t==='bridge'){if(h&&adj(h,drag.a)){snap();D.padBridges.push([drag.a,h]);}drag=null;render();return;}
 if(drag.t==='end'){var e=drag.e,w=drag.w;
 function rev(){e.hole=drag.prev.hole;e.direct=drag.prev.direct;e.bridgeTo=drag.prev.bridgeTo;}
@@ -503,7 +517,37 @@ document.getElementById('pw-open').onclick=function(){document.getElementById('p
 document.getElementById('pw-file').onchange=function(){var f=this.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){try{importObj(JSON.parse(rd.result));}catch(e2){alert('JSONが不正です: '+e2.message);}};rd.readAsText(f);};
 window.addEventListener('dragover',function(e){e.preventDefault();document.body.classList.add('drop');});
 window.addEventListener('dragleave',function(e){document.body.classList.remove('drop');});
-window.addEventListener('drop',function(e){e.preventDefault();document.body.classList.remove('drop');var f=e.dataTransfer.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){try{importObj(JSON.parse(rd.result));}catch(e2){alert('JSONが不正です: '+e2.message);}};rd.readAsText(f);});
+window.addEventListener('drop',function(e){e.preventDefault();document.body.classList.remove('drop');var f=e.dataTransfer.files[0];if(!f)return;var rd=new FileReader();
+if(f.type&&f.type.indexOf('image/')===0){rd.onload=function(){photoSet(rd.result);};rd.readAsDataURL(f);return;}
+rd.onload=function(){try{importObj(JSON.parse(rd.result));}catch(e2){alert('JSONが不正です: '+e2.message);}};rd.readAsText(f);});
+function savePhotoT(){try{localStorage.setItem(LSKEY+'_photoT',JSON.stringify({x:PHOTO.x,y:PHOTO.y,mul:PHOTO.mul,rot90:PHOTO.rot90,rotF:PHOTO.rotF,op:PHOTO.op,flip:PHOTO.flip}));}catch(e){}}
+function psld(box,label,min,max,step,get,set){var lab=document.createElement('div');lab.className='sld';
+var l=document.createElement('span');l.className='lab';l.textContent=label;
+var i=document.createElement('input');i.type='range';i.min=min;i.max=max;i.step=step;i.value=get();
+var v=document.createElement('span');v.className='val';v.textContent=get();
+i.oninput=function(){set(parseFloat(i.value));v.textContent=i.value;render();savePhotoT();};
+lab.appendChild(l);lab.appendChild(i);lab.appendChild(v);box.appendChild(lab);}
+function pchk(box,label,get,set){var d=document.createElement('label');d.className='tgl';
+var i=document.createElement('input');i.type='checkbox';i.checked=get();
+i.onchange=function(){set(i.checked);render();savePhotoT();};
+d.appendChild(i);d.appendChild(document.createTextNode(label));box.appendChild(d);}
+function buildPhotoCtl(){var box=document.getElementById('ph-ctl');box.innerHTML='';
+psld(box,'不透明度 %',0,100,1,function(){return PHOTO.op;},function(v){PHOTO.op=v;});
+psld(box,'拡大率 %',10,400,0.5,function(){return PHOTO.mul;},function(v){PHOTO.mul=v;});
+psld(box,'回転 微調整°',-15,15,0.1,function(){return PHOTO.rotF;},function(v){PHOTO.rotF=v;});
+var row=document.createElement('div');row.style.cssText='display:flex;gap:6px;margin:6px 0;flex-wrap:wrap';
+var b90=document.createElement('button');b90.textContent='90°回転';b90.onclick=function(){PHOTO.rot90=(PHOTO.rot90+90)%360;render();savePhotoT();};row.appendChild(b90);box.appendChild(row);
+pchk(box,'左右反転（裏面写真）',function(){return PHOTO.flip;},function(v){PHOTO.flip=v;});
+pchk(box,'ドラッグで写真を移動',function(){return PHOTO.drag;},function(v){PHOTO.drag=v;});}
+function photoSet(url,keepT){var im=new Image();im.onload=function(){PHOTO.img=im;PHOTO.fit=((cols-1)*BASE+40)/im.naturalWidth;
+if(!keepT){PHOTO.x=-0.67;PHOTO.y=-0.67;PHOTO.mul=100;PHOTO.rot90=0;PHOTO.rotF=0;}
+document.getElementById('ph-ctl').style.display='';document.getElementById('ph-clear').style.display='';
+buildPhotoCtl();render();
+try{if(url.length<2400000)localStorage.setItem(LSKEY+'_photo',url);}catch(e){}
+savePhotoT();};im.src=url;}
+document.getElementById('ph-load').onclick=function(){document.getElementById('ph-file').click();};
+document.getElementById('ph-file').onchange=function(){var f=this.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){photoSet(rd.result);};rd.readAsDataURL(f);this.value='';};
+document.getElementById('ph-clear').onclick=function(){PHOTO.img=null;document.getElementById('ph-ctl').style.display='none';this.style.display='none';try{localStorage.removeItem(LSKEY+'_photo');localStorage.removeItem(LSKEY+'_photoT');}catch(e){}render();};
 document.getElementById('z-in').onclick=function(){ZOOM=Math.min(2.4,ZOOM*1.2);render();};
 document.getElementById('z-out').onclick=function(){ZOOM=Math.max(0.5,ZOOM/1.2);render();};
 document.getElementById('z-fit').onclick=function(){ZOOM=1;render();};
@@ -524,7 +568,9 @@ var CMDS=[
 {n:'ズーム 100%',k:'zoom fit',f:function(){document.getElementById('z-fit').click();}},
 {n:'レイヤー: 実寸法 切替',k:'layer footprint',f:function(){LY.foot=!LY.foot;render();}},
 {n:'レイヤー: 被覆線 切替',k:'layer wires',f:function(){LY.wires=!LY.wires;render();}},
-{n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}}
+{n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}},
+{n:'写真を読み込み（下絵）',k:'photo image load',f:function(){document.getElementById('ph-load').click();}},
+{n:'写真を消去',k:'photo clear',f:function(){document.getElementById('ph-clear').click();}}
 ];
 var cpSel=0;
 function cpOpen(){document.getElementById('cpov').style.display='flex';var inp=document.getElementById('cp-in');inp.value='';cpSel=0;cpFilter('');inp.focus();}
@@ -614,6 +660,7 @@ refreshSel();
 setMode('end');
 loadProp(curI);
 auditNow();
+try{var pu=localStorage.getItem(LSKEY+'_photo');if(pu){var pt2=JSON.parse(localStorage.getItem(LSKEY+'_photoT')||'{}');for(var pk in pt2)PHOTO[pk]=pt2[pk];photoSet(pu,true);}}catch(e){}
 })();
 </script>
 </body>
