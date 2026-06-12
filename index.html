@@ -99,9 +99,9 @@ svg{display:block;margin:16px auto}
 <div id="prog"><div></div></div>
 <div class="layout">
 <aside>
-<h4>モード <span style="color:var(--mut);text-transform:none;letter-spacing:0">(1-4キー)</span></h4>
+<h4>モード <span style="color:var(--mut);text-transform:none;letter-spacing:0">(1-5キー)</span></h4>
 <div class="seggrp">
-<button id="m-end">端子</button><button id="m-part">部品</button><button id="m-bridge">ブリッジ</button><button id="m-block">穴×</button>
+<button id="m-end">端子</button><button id="m-part">部品</button><button id="m-bridge">ブリッジ</button><button id="m-block">穴×</button><button id="m-probe">テスター</button>
 </div>
 <div class="hint" id="modehint"></div>
 <div style="margin:7px 0;display:flex;gap:6px;flex-wrap:wrap"><button id="pw-lock">ロック切替</button><button id="pw-reset">案をリセット</button></div>
@@ -125,7 +125,7 @@ svg{display:block;margin:16px auto}
 <div class="hint">JSON貼り付け→インポート、またはファイルをドロップ。編集・設定は自動保存。</div>
 <textarea id="pw-out" placeholder="エクスポート/インポート用JSON"></textarea>
 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">
-<button id="pw-copy">コピー</button><button id="pw-import">インポート</button><button id="pw-sample">サンプル復元</button><button id="pw-clearls">保存データ消去</button>
+<button id="pw-copy">コピー</button><button id="pw-import">インポート</button><button id="pw-beep">導通リスト</button><button id="pw-sample">サンプル復元</button><button id="pw-clearls">保存データ消去</button>
 </div>
 </aside>
 <main>
@@ -169,8 +169,9 @@ var touches={},pinch0=null;
 var PHOTO={img:null,x:-0.67,y:-0.67,mul:100,rot90:0,rotF:0,op:55,flip:false,drag:false,fit:1};
 var GUIDE={on:false,steps:[],i:0,done:{}};
 var MIRROR=false;
-var MODEL={end:'端子',part:'部品',bridge:'ブリッジ',block:'穴ブロック'};
-var HINT={end:'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。',part:'本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。',bridge:'隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。',block:'使えない穴をクリックで×指定／解除。再計算が避けます。'};
+var probeA=null,probeRes=null;
+var MODEL={end:'端子',part:'部品',bridge:'ブリッジ',block:'穴ブロック',probe:'テスター'};
+var HINT={end:'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。',part:'本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。',bridge:'隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。',block:'使えない穴をクリックで×指定／解除。再計算が避けます。',probe:'2つの穴を順にクリック → 計画上の導通/非導通と接続グループを表示。実機のテスター当てと突き合わせる。'};
 var LY={parts:true,labels:true,wires:true,bridges:true,ends:true,caut:true,blocked:true,foot:false};
 var undoStack=[];
 var svg=document.getElementById('pw-svg');
@@ -417,6 +418,15 @@ if(drag.t==='end'){okDrop=(hc[0]===drag.e.pad[0]&&hc[1]===drag.e.pad[1])||(usabl
 else{okDrop=usableFor(g3,hc[0],hc[1]);}
 E('circle',{cx:vv[0],cy:vv[1],r:PITCH*0.42,fill:'none',stroke:okDrop?'#5edcff':'#ff5d5d','stroke-width':2.4,'stroke-dasharray':'4 3','pointer-events':'none'});}}
 if(drag&&drag.t==='bridge'&&drag.cur){var a3=xy(drag.a[0],drag.a[1]);E('line',{x1:a3[0],y1:a3[1],x2:drag.cur[0],y2:drag.cur[1],stroke:'#0a3a1e','stroke-width':5,'stroke-dasharray':'5 4'});}
+if(mode==='probe'){
+if(probeA){var pav=xy(probeA[0],probeA[1]);E('circle',{cx:pav[0],cy:pav[1],r:PITCH*0.5,fill:'none',stroke:'#5edcff','stroke-width':3,'stroke-dasharray':'5 3'});T(pav[0]+10,pav[1]-10,'A',{fill:'#5edcff','font-size':13});}
+if(probeRes){var va=xy(probeRes.a[0],probeRes.a[1]),vb=xy(probeRes.b[0],probeRes.b[1]),pcc=probeRes.conn?'#3ddc84':'#ff5d5d';
+probeRes.members.forEach(function(m2){var mv=xy(m2[0],m2[1]);E('circle',{cx:mv[0],cy:mv[1],r:PITCH*0.32,fill:'none',stroke:'#3ddc84','stroke-width':1.6,opacity:0.7});});
+E('line',{x1:va[0],y1:va[1],x2:vb[0],y2:vb[1],stroke:pcc,'stroke-width':3,'stroke-dasharray':probeRes.conn?'none':'6 4',opacity:0.85});
+E('circle',{cx:va[0],cy:va[1],r:PITCH*0.5,fill:'none',stroke:pcc,'stroke-width':3});E('circle',{cx:vb[0],cy:vb[1],r:PITCH*0.5,fill:'none',stroke:pcc,'stroke-width':3});
+var pmsg=probeRes.conn?('導通 ✓ '+(probeRes.na||probeRes.nb||'')):
+(probeRes.na&&probeRes.na===probeRes.nb?'非導通 ⚠ 同ネット '+probeRes.na+' が計画上未接続':'非導通 ✗ '+(probeRes.na||'空き')+' / '+(probeRes.nb||'空き'));
+T((va[0]+vb[0])/2-30,Math.min(va[1],vb[1])-16,pmsg,{'font-size':13,fill:pcc});}}
 if(tempViz)try{tempViz();}catch(e){}
 if(GUIDE.on&&GUIDE.steps[GUIDE.i]){
 E('rect',{x:0,y:0,width:W2,height:H2,fill:'rgba(5,8,12,0.76)','pointer-events':'none'});
@@ -439,7 +449,15 @@ function undo(){var u=undoStack.pop();if(!u)return;curI=u.i;props[curI].cur=u.s;
 svg.addEventListener('pointerdown',function(ev){ev.preventDefault();var pt=getPt(ev),i,j;
 touches[ev.pointerId]=pt;
 if(Object.keys(touches).length===2){drag=null;var ks=Object.keys(touches);pinch0={d:dist(touches[ks[0]],touches[ks[1]]),z:ZOOM};return;}
-if(GUIDE.on||MIRROR)return;
+if(GUIDE.on||(MIRROR&&mode!=='probe'))return;
+if(mode==='probe'){var hpb=nearHole(pt[0],pt[1]);if(!hpb)return;
+if(!probeA||probeRes){probeA=hpb;probeRes=null;}
+else{var cm=connMap(),ka=key(probeA),kb=key(hpb);
+var conn=cm.has(ka)&&cm.has(kb)&&cm.find(ka)===cm.find(kb);
+probeRes={a:probeA.slice(),b:hpb,conn:conn,na:netAtHole(probeA),nb:netAtHole(hpb),members:conn?cm.members(ka):[]};
+probeA=null;}
+render();return;}
+if(MIRROR)return;
 if(PHOTO.img&&PHOTO.drag){drag={t:'photo',s:pt,ox:PHOTO.x,oy:PHOTO.y};return;}
 if(mode==='bridge'){for(i=0;i<D.padBridges.length;i++){var b=D.padBridges[i];if(b._px&&segd(pt[0],pt[1],b._px[0][0],b._px[0][1],b._px[1][0],b._px[1][1])<8){snap();D.padBridges.splice(i,1);render();return;}}
 var h=nearHole(pt[0],pt[1]);if(h)drag={t:'bridge',a:h,cur:pt};return;}
@@ -506,12 +524,14 @@ if(st.cfg&&st.cfg.weights&&st.cfg.physical&&st.cfg.classes&&st.cfg.partOv&&st.cf
 if(st.states)st.states.forEach(function(s,i){if(s){if(!props[i])props[i]={name:(st.names&&st.names[i])||('案'+i),orig:s,cur:null};props[i].cur=s;if(st.names&&st.names[i])props[i].name=st.names[i];}});
 if(typeof st.curI==='number'&&props[st.curI])curI=st.curI;}catch(e){}}
 function refreshSel(){var sel=document.getElementById('pw-prop');sel.innerHTML='';props.forEach(function(p,i){var o=document.createElement('option');o.value=i;o.textContent=p.name;sel.appendChild(o);});sel.value=curI;}
-function setMode(m){mode=m;['end','part','bridge','block'].forEach(function(k){document.getElementById('m-'+k).className=(k===m)?'on':'';});
+function setMode(m){mode=m;['end','part','bridge','block','probe'].forEach(function(k){document.getElementById('m-'+k).className=(k===m)?'on':'';});
+if(m!=='probe'){probeA=null;probeRes=null;}
 document.getElementById('modehint').textContent=HINT[m];render();}
 document.getElementById('m-end').onclick=function(){setMode('end');};
 document.getElementById('m-part').onclick=function(){setMode('part');};
 document.getElementById('m-bridge').onclick=function(){setMode('bridge');};
 document.getElementById('m-block').onclick=function(){setMode('block');};
+document.getElementById('m-probe').onclick=function(){setMode('probe');};
 document.getElementById('pw-lock').onclick=function(){if(selPart){snap();selPart.locked=!selPart.locked;render();}};
 document.getElementById('pw-reset').onclick=function(){snap();props[curI].cur=deep(props[curI].orig);loadProp(curI);auditNow();};
 document.getElementById('pw-prop').onchange=function(){loadProp(parseInt(this.value,10));auditNow();};
@@ -528,6 +548,10 @@ document.getElementById('pw-defcfg').onclick=function(){CFG=deep(DEFCFG);buildSl
 document.getElementById('pw-copy').onclick=function(){var b=this;document.getElementById('pw-out').value=exportJSON();if(navigator.clipboard)navigator.clipboard.writeText(exportJSON()).then(function(){b.textContent='コピー済み';setTimeout(function(){b.textContent='コピー';},1400);});};
 document.getElementById('pw-export').onclick=function(){var j=exportJSON();document.getElementById('pw-out').value=j;if(navigator.clipboard)navigator.clipboard.writeText(j);var bl=new Blob([j],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='perfwire_export.json';a.click();};
 document.getElementById('pw-import').onclick=function(){try{importObj(JSON.parse(document.getElementById('pw-out').value));}catch(e2){alert('JSONが不正です: '+e2.message);}};
+document.getElementById('pw-beep').onclick=function(){var t=beepList();document.getElementById('pw-out').value=t;
+if(navigator.clipboard)navigator.clipboard.writeText(t);
+var bl=new Blob([t],{type:'text/markdown'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='continuity_checklist.md';a.click();
+showHelp('導通チェックリストを生成しました（テキスト欄・クリップボード・.md ダウンロード）。');};
 document.getElementById('pw-sample').onclick=function(){props=INIT.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null};});curI=0;refreshSel();loadProp(0);auditNow();};
 document.getElementById('pw-clearls').onclick=function(){try{localStorage.removeItem(LSKEY);}catch(e){}location.reload();};
 document.getElementById('pw-open').onclick=function(){document.getElementById('pw-file').click();};
@@ -565,6 +589,38 @@ savePhotoT();};im.src=url;}
 document.getElementById('ph-load').onclick=function(){document.getElementById('ph-file').click();};
 document.getElementById('ph-file').onchange=function(){var f=this.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){photoSet(rd.result);};rd.readAsDataURL(f);this.value='';};
 document.getElementById('ph-clear').onclick=function(){PHOTO.img=null;document.getElementById('ph-ctl').style.display='none';this.style.display='none';try{localStorage.removeItem(LSKEY+'_photo');localStorage.removeItem(LSKEY+'_photoT');}catch(e){}render();};
+function connMap(){var par={};
+function f(x){if(par[x]===undefined)par[x]=x;while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;}
+function u(a,b){par[f(a)]=f(b);}
+var g=geom();
+Object.keys(g.leadPos).forEach(function(k){f(key(g.leadPos[k]));});
+D.padBridges.forEach(function(b){u(key(b[0]),key(b[1]));});
+D.wires.forEach(function(w){var es=[w.a,w.b].map(function(e){var h=e.direct?e.pad:e.hole;f(key(h));
+if(!e.direct&&e.bridgeTo&&adj(e.hole,e.bridgeTo))u(key(e.hole),key(e.bridgeTo));return key(h);});
+u(es[0],es[1]);});
+return{find:f,has:function(k){return par[k]!==undefined;},
+members:function(k){var r=f(k),out=[];Object.keys(par).forEach(function(q){if(f(q)===r)out.push(q.split(',').map(Number));});return out;}};}
+function netAtHole(h){var lm=leadMap(),o=lm[key(h)];if(o)return o.net;var e2=endAt(h[0],h[1]);return e2?e2.w.net:null;}
+function cautPairs(){var hn={},lm=leadMap();Object.keys(lm).forEach(function(k){hn[k]=lm[k].net;});
+D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});
+var out=[];Object.keys(hn).forEach(function(kk){var p2=kk.split(',').map(Number);
+[[1,0],[0,1]].forEach(function(d){var q=[p2[0]+d[0],p2[1]+d[1]],qn=hn[key(q)];
+if(qn&&hn[kk]&&qn!==hn[kk])out.push([p2,q,hn[kk],qn]);});});return out;}
+function beepList(){var lm=leadMap(),byNet={},cm=connMap();
+Object.keys(lm).forEach(function(k){var o=lm[k];if(o.net)(byNet[o.net]=byNet[o.net]||[]).push({k:k,name:o.name,pos:k.split(',').map(Number)});});
+var out='# 導通チェックリスト — '+props[curI].name+'\n\n'
++'テスター（ビープ）で確認する。基準点に片方のプローブを固定し、各行の相手に当てる。\n'
++'穴名は 列番号+行アルファベット（例: 6B = 列6・行B）。\n\n';
+Object.keys(byNet).sort().forEach(function(n){var ps=byNet[n];if(ps.length<2)return;
+ps.sort(function(a,b){return a.name<b.name?-1:1;});var ref=ps[0];
+out+='## '+n+'（基準: '+ref.name+' = '+holeName(ref.pos)+'）\n';
+ps.slice(1).forEach(function(q){var ok=cm.find(ref.k)===cm.find(q.k);
+out+='- [ ] ↔ '+q.name+' = '+holeName(q.pos)+(ok?'':'　⚠計画上未接続（配線漏れの可能性）')+'\n';});
+out+='\n';});
+var cps=cautPairs();
+if(cps.length){out+='## 非導通の確認（隣接する別ネット＝ブリッジ厳禁 '+cps.length+'対）\n';
+cps.forEach(function(c){out+='- [ ] '+holeName(c[0])+'('+c[2]+') ↮ '+holeName(c[1])+'('+c[3]+')\n';});}
+return out;}
 function buildSteps(){var st=[],ord={ic:0,r:1,film:2,disc:3,elec:4};
 D.parts.slice().sort(function(a,b){return(ord[a.kind]!==undefined?ord[a.kind]:9)-(ord[b.kind]!==undefined?ord[b.kind]:9);}).forEach(function(p){st.push({t:'part',p:p,sig:'p:'+p.id});});
 D.padBridges.forEach(function(b){st.push({t:'bridge',a:b[0],b:b[1],sig:'b:'+key(b[0])+'-'+key(b[1])});});
@@ -629,6 +685,8 @@ var CMDS=[
 {n:'モード: 部品',k:'mode part 2',f:function(){setMode('part');}},
 {n:'モード: ブリッジ',k:'mode bridge 3',f:function(){setMode('bridge');}},
 {n:'モード: 穴ブロック',k:'mode block 4',f:function(){setMode('block');}},
+{n:'モード: テスター（導通プローブ）',k:'mode probe tester 5',f:function(){setMode('probe');}},
+{n:'導通チェックリスト生成',k:'beep continuity checklist',f:function(){document.getElementById('pw-beep').click();}},
 {n:'ズーム イン',k:'zoom in',f:function(){document.getElementById('z-in').click();}},
 {n:'ズーム アウト',k:'zoom out',f:function(){document.getElementById('z-out').click();}},
 {n:'ズーム 100%',k:'zoom fit',f:function(){document.getElementById('z-fit').click();}},
@@ -665,7 +723,7 @@ if(e.key==='ArrowLeft'){e.preventDefault();GUIDE.i=Math.max(0,GUIDE.i-1);guideSh
 if(e.key==='Enter'||e.key===' '){e.preventDefault();gDone();return;}
 if(e.key==='Escape'){guideEnd();return;}}
 if(e.ctrlKey&&e.key.toLowerCase()==='z'){e.preventDefault();undo();return;}
-if(e.key==='1')setMode('end');if(e.key==='2')setMode('part');if(e.key==='3')setMode('bridge');if(e.key==='4')setMode('block');});
+if(e.key==='1')setMode('end');if(e.key==='2')setMode('part');if(e.key==='3')setMode('bridge');if(e.key==='4')setMode('block');if(e.key==='5')setMode('probe');});
 function auditNow(){try{audit();}catch(e){document.getElementById('audit').textContent='監査エラー: '+e.message;}}
 function auditSoon(){clearTimeout(auditTimer);auditTimer=setTimeout(auditNow,220);}
 function footPreview(){tempFoot=true;render();clearTimeout(footTimer);footTimer=setTimeout(function(){tempFoot=false;render();},1300);}
