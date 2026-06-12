@@ -39,6 +39,7 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 #canvas::-webkit-scrollbar-thumb{background:rgba(255,255,255,.10);border-radius:5px}
 #ztools{position:absolute;top:12px;right:16px;display:flex;gap:6px;z-index:5}
 #ztools button{backdrop-filter:blur(10px);background:rgba(18,22,27,.7)}
+#ztools button.on{background:linear-gradient(135deg,#11a8e0,#0c7fb3);color:#06222e;font-weight:600}
 #status{padding:6px 16px;background:rgba(18,22,27,.72);backdrop-filter:blur(14px);border-top:1px solid var(--bd);font:12px Consolas,monospace;color:var(--mut);display:flex;gap:10px;flex-wrap:wrap}
 .chip{background:var(--panel2);border:1px solid var(--bd);border-radius:6px;padding:1px 9px}
 .chip b{color:var(--tx);font-weight:600}
@@ -131,7 +132,7 @@ svg{display:block;margin:16px auto}
 </aside>
 <main>
 <div id="canvas">
-<div id="ztools"><button id="z-out">−</button><button id="z-fit">100%</button><button id="z-in">＋</button></div>
+<div id="ztools"><button id="z-mirror" title="裏面から見た図に左右反転（はんだ面）。表示とテスターのみ、編集はロック">裏面</button><button id="z-out">−</button><button id="z-fit">100%</button><button id="z-in">＋</button></div>
 <div id="guide">
 <div class="gtitle" id="g-count"></div>
 <div class="gbody" id="g-text"></div>
@@ -537,10 +538,10 @@ document.getElementById('pw-lock').onclick=function(){if(selPart){snap();selPart
 document.getElementById('pw-reset').onclick=function(){snap();props[curI].cur=deep(props[curI].orig);loadProp(curI);auditNow();};
 document.getElementById('pw-prop').onchange=function(){loadProp(parseInt(this.value,10));auditNow();};
 document.getElementById('pw-undo').onclick=undo;
-function doRewire(){var b=document.getElementById('pw-rewire');snap();var wb=D.wires.length;connect();
+function doRewire(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-rewire');snap();var wb=D.wires.length;connect();
 calcNote='配線再計算: 被覆線 '+wb+'→'+D.wires.length+'本';render();auditNow();
 b.textContent='✓ 完了';setTimeout(function(){b.textContent='配線を再計算';},900);}
-function doPropose(){var b=document.getElementById('pw-repropose');snap();
+function doPropose(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-repropose');snap();
 proposeAsync(function(){render();auditNow();b.textContent='✓ 完了';setTimeout(function(){b.textContent='配置を再提案';},900);});}
 document.getElementById('pw-rewire').onclick=doRewire;
 document.getElementById('pw-repropose').onclick=doPropose;
@@ -574,7 +575,12 @@ if(navigator.clipboard)navigator.clipboard.writeText(url);
 showHelp('共有URLをコピーしました（約'+Math.round(url.length/102.4)/10+'KB）。このHTMLを開ける相手ならどこでも、貼るだけで同じ盤面が再現されます。');});}
 function loadHash(){var m=location.hash.match(/^#z=(.+)$/);if(!m||!window.DecompressionStream)return;
 new Response(new Blob([b64dec(m[1])]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text().then(function(t){
-importObj(JSON.parse(t));showHelp('URLから盤面を読み込みました。');}).catch(function(){});}
+var d2=JSON.parse(t);
+var st={version:1,grid:d2.grid,netColors:d2.netColors||{},leads:d2.leads||{},parts:d2.parts||[],padBridges:d2.padBridges||[],wires:d2.wires||[],blockedHoles:d2.blockedHoles||[]};
+props.push({name:'共有: '+(d2.proposal||'盤面'),orig:st,cur:null});
+if(d2.cfg&&d2.cfg.weights&&d2.cfg.physical){CFG=d2.cfg;buildSliders();}
+curI=props.length-1;refreshSel();loadProp(curI);auditNow();
+showHelp('URLの盤面を新しい案として追加しました（既存の編集は保持されています）。');}).catch(function(){});}
 function savePhotoT(){try{localStorage.setItem(LSKEY+'_photoT',JSON.stringify({x:PHOTO.x,y:PHOTO.y,mul:PHOTO.mul,rot90:PHOTO.rot90,rotF:PHOTO.rotF,op:PHOTO.op,flip:PHOTO.flip}));}catch(e){}}
 function psld(box,label,min,max,step,get,set){var lab=document.createElement('div');lab.className='sld';
 var l=document.createElement('span');l.className='lab';l.textContent=label;
@@ -674,7 +680,12 @@ try{GUIDE.done=JSON.parse(localStorage.getItem(LSKEY+'_guide')||'{}');}catch(e){
 GUIDE.on=true;GUIDE.i=0;
 while(GUIDE.i<GUIDE.steps.length-1&&GUIDE.done[GUIDE.steps[GUIDE.i].sig])GUIDE.i++;
 document.getElementById('guide').style.display='';guideShow();}
-function guideEnd(){GUIDE.on=false;MIRROR=false;document.getElementById('g-mirror').checked=false;document.getElementById('guide').style.display='none';render();}
+function setMirror(v){MIRROR=v;document.getElementById('z-mirror').className=v?'on':'';
+var gm=document.getElementById('g-mirror');if(gm)gm.checked=v;
+if(v)showHelp('裏面ビュー: はんだ面から見た左右反転表示。テスターモードは使用可、編集はロックされます。');
+render();}
+document.getElementById('z-mirror').onclick=function(){setMirror(!MIRROR);};
+function guideEnd(){GUIDE.on=false;document.getElementById('guide').style.display='none';render();}
 function gDone(){var s=GUIDE.steps[GUIDE.i];if(!s)return;GUIDE.done[s.sig]=1;
 try{localStorage.setItem(LSKEY+'_guide',JSON.stringify(GUIDE.done));}catch(e){}
 if(GUIDE.i<GUIDE.steps.length-1)GUIDE.i++;guideShow();}
@@ -683,7 +694,7 @@ document.getElementById('g-close').onclick=guideEnd;
 document.getElementById('g-prev').onclick=function(){GUIDE.i=Math.max(0,GUIDE.i-1);guideShow();};
 document.getElementById('g-next').onclick=function(){GUIDE.i=Math.min(GUIDE.steps.length-1,GUIDE.i+1);guideShow();};
 document.getElementById('g-done').onclick=gDone;
-document.getElementById('g-mirror').onchange=function(){MIRROR=this.checked;render();};
+document.getElementById('g-mirror').onchange=function(){setMirror(this.checked);};
 document.getElementById('z-in').onclick=function(){ZOOM=Math.min(2.4,ZOOM*1.2);render();};
 document.getElementById('z-out').onclick=function(){ZOOM=Math.max(0.5,ZOOM/1.2);render();};
 document.getElementById('z-fit').onclick=function(){ZOOM=1;render();};
@@ -710,6 +721,7 @@ var CMDS=[
 {n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}},
 {n:'写真を読み込み（下絵）',k:'photo image load',f:function(){document.getElementById('ph-load').click();}},
 {n:'写真を消去',k:'photo clear',f:function(){document.getElementById('ph-clear').click();}},
+{n:'裏面ビュー 切替',k:'mirror flip back',f:function(){setMirror(!MIRROR);}},
 {n:'作業ガイドを開始',k:'guide solder steps',f:function(){guideStart();}},
 {n:'作業ガイドの進捗をリセット',k:'guide reset progress',f:function(){try{localStorage.removeItem(LSKEY+'_guide');}catch(e){}GUIDE.done={};if(GUIDE.on)guideShow();}}
 ];
