@@ -612,7 +612,7 @@ var st={version:1,grid:{cols:COLS,rows:rmax+3},netColors:nc,leads:leads,parts:pa
 props.push({name:'KiCADインポート',orig:st,cur:null});
 curI=props.length-1;refreshSel();loadProp(curI);auditNow();
 showHelp('KiCAD: 部品 '+parts.length+' 点を仮配置しました。'+(skipped.length?'未対応スキップ: '+skipped.join(', ')+'。':'')+'「配置を再提案」→ 必要ならドラッグ調整、で計画を作れます。');}
-function handleFileText(t){t=String(t);
+function handleFileText(t){t=String(t).replace(/^﻿/,'');
 if(/^\s*\(export/.test(t)){try{importKicad(t);}catch(e2){alert('KiCADインポート失敗: '+e2.message);}return;}
 try{importObj(JSON.parse(t));}catch(e2){alert('JSONが不正です: '+e2.message);}}
 function b64enc(buf){var u8=new Uint8Array(buf),s='';for(var i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
@@ -631,11 +631,13 @@ var st={version:1,grid:d2.grid,netColors:d2.netColors||{},leads:d2.leads||{},par
 props.push({name:'共有: '+(d2.proposal||'盤面'),orig:st,cur:null});
 if(d2.cfg&&d2.cfg.weights&&d2.cfg.physical){CFG=d2.cfg;buildSliders();}
 curI=props.length-1;refreshSel();loadProp(curI);auditNow();
+try{history.replaceState(null,'',location.pathname+location.search);}catch(e){location.hash='';}
 showHelp('URLの盤面を新しい案として追加しました（既存の編集は保持されています）。');}).catch(function(){});}
-function printView(){var W=svg.width.baseVal.value;
-var oldOp=PHOTO.op;PHOTO.op=0;render();
-svg.style.width=(W*2.54/PITCH)+'mm';svg.style.height='auto';
-var done=false;function rest(){if(done)return;done=true;svg.style.width='';svg.style.height='';PHOTO.op=oldOp;render();}
+function printView(){var oldOp=PHOTO.op;PHOTO.op=0;render();
+var W=svg.width.baseVal.value,H=svg.height.baseVal.value;
+svg.setAttribute('viewBox','0 0 '+W+' '+H);
+svg.style.width=(W*2.54/PITCH)+'mm';svg.style.height=(H*2.54/PITCH)+'mm';
+var done=false;function rest(){if(done)return;done=true;svg.removeAttribute('viewBox');svg.style.width='';svg.style.height='';PHOTO.op=oldOp;render();}
 window.addEventListener('afterprint',rest,{once:true});
 setTimeout(function(){window.print();setTimeout(rest,1500);},60);}
 function savePhotoT(){try{localStorage.setItem(LSKEY+'_photoT',JSON.stringify({x:PHOTO.x,y:PHOTO.y,mul:PHOTO.mul,rot90:PHOTO.rot90,rotF:PHOTO.rotF,op:PHOTO.op,flip:PHOTO.flip}));}catch(e){}}
