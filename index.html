@@ -73,6 +73,10 @@ textarea{width:100%;height:62px;background:rgba(0,0,0,.35);color:var(--tx);borde
 #cp li{padding:8px 12px;border-radius:8px;font-size:13.5px;cursor:pointer;display:flex;justify-content:space-between}
 #cp li.sel,#cp li:hover{background:rgba(17,168,224,.18)}
 #cp li small{color:var(--mut)}
+#guide{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);width:580px;max-width:94%;background:rgba(24,29,36,.92);backdrop-filter:blur(16px);border:1px solid var(--bd2);border-radius:14px;box-shadow:0 14px 50px rgba(0,0,0,.55);padding:12px 16px;z-index:6;display:none}
+#guide .gtitle{font:600 12px/1.4 Consolas,monospace;color:var(--acc);letter-spacing:.5px}
+#guide .gbody{font-size:14.5px;margin:6px 0 9px;line-height:1.6}
+#guide .grow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 svg{display:block;margin:16px auto}
 .drop{outline:2px dashed var(--acc);outline-offset:-8px}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
@@ -85,6 +89,7 @@ svg{display:block;margin:16px auto}
 <button id="pw-rewire" class="primary">配線を再計算</button>
 <button id="pw-repropose" class="primary">配置を再提案</button>
 <button id="pw-saveas">案として保存</button>
+<button id="pw-guide">作業ガイド</button>
 <span class="spacer"></span>
 <button id="pw-cmd" title="Ctrl+K">⌘K</button>
 <button id="pw-undo" title="Ctrl+Z">元に戻す</button>
@@ -126,6 +131,11 @@ svg{display:block;margin:16px auto}
 <main>
 <div id="canvas">
 <div id="ztools"><button id="z-out">−</button><button id="z-fit">100%</button><button id="z-in">＋</button></div>
+<div id="guide">
+<div class="gtitle" id="g-count"></div>
+<div class="gbody" id="g-text"></div>
+<div class="grow"><button id="g-prev">← 前</button><button id="g-done" class="primary">✓ 完了して次へ</button><button id="g-next">次 →</button><span class="spacer"></span><label class="tgl" style="margin:0"><input type="checkbox" id="g-mirror">裏面ビュー</label><button id="g-close">終了</button></div>
+</div>
 <svg id="pw-svg" style="touch-action:none"></svg>
 </div>
 <footer id="status"><span class="chip" id="st-pos">—</span><span class="chip" id="st-net" style="display:none"></span><span class="chip" id="st-stats"></span></footer>
@@ -157,13 +167,16 @@ var curI=0,D=null,BASE=30,ZOOM=1,PITCH=30,OX=50,OY=40,mode='end',drag=null,selPa
 var hoverNet=null,tempFoot=false,footTimer=null,auditTimer=null,tempViz=null,vizTimer=null,busy=false,calcNote='';
 var touches={},pinch0=null;
 var PHOTO={img:null,x:-0.67,y:-0.67,mul:100,rot90:0,rotF:0,op:55,flip:false,drag:false,fit:1};
+var GUIDE={on:false,steps:[],i:0,done:{}};
+var MIRROR=false;
 var MODEL={end:'端子',part:'部品',bridge:'ブリッジ',block:'穴ブロック'};
 var HINT={end:'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。',part:'本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。',bridge:'隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。',block:'使えない穴をクリックで×指定／解除。再計算が避けます。'};
 var LY={parts:true,labels:true,wires:true,bridges:true,ends:true,caut:true,blocked:true,foot:false};
 var undoStack=[];
 var svg=document.getElementById('pw-svg');
 function key(p){return p[0]+','+p[1];}
-function xy(c,r){return[OX+(c-1)*PITCH,OY+(r-1)*PITCH];}
+function xy(c,r){return[OX+(MIRROR?cols-c:c-1)*PITCH,OY+(r-1)*PITCH];}
+function holeName(p){return p[0]+String.fromCharCode(64+p[1]);}
 function mm(v){return v/CFG.pitch*PITCH;}
 function adj(a,b){return Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])===1;}
 function cheb(a,b){return Math.max(Math.abs(a[0]-b[0]),Math.abs(a[1]-b[1]));}
@@ -405,12 +418,15 @@ else{okDrop=usableFor(g3,hc[0],hc[1]);}
 E('circle',{cx:vv[0],cy:vv[1],r:PITCH*0.42,fill:'none',stroke:okDrop?'#5edcff':'#ff5d5d','stroke-width':2.4,'stroke-dasharray':'4 3','pointer-events':'none'});}}
 if(drag&&drag.t==='bridge'&&drag.cur){var a3=xy(drag.a[0],drag.a[1]);E('line',{x1:a3[0],y1:a3[1],x2:drag.cur[0],y2:drag.cur[1],stroke:'#0a3a1e','stroke-width':5,'stroke-dasharray':'5 4'});}
 if(tempViz)try{tempViz();}catch(e){}
+if(GUIDE.on&&GUIDE.steps[GUIDE.i]){
+E('rect',{x:0,y:0,width:W2,height:H2,fill:'rgba(5,8,12,0.76)','pointer-events':'none'});
+try{drawStep(GUIDE.steps[GUIDE.i]);}catch(e){}}
 var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)direct++;});});
 document.getElementById('st-stats').innerHTML='被覆線 <b>'+D.wires.length+'</b>（直付 '+direct+'）/ 警告 <b>'+warn+'</b> / ズーム '+Math.round(ZOOM*100)+'%'+(selPart?(' / 選択 <b>'+selPart.id+'</b>'+(selPart.locked?'(ロック)':'')):'');
 saveLS();}
-function loadProp(i){curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];cols=D.grid.cols;rows=D.grid.rows;selPart=null;drag=null;hoverNet=null;buildNetClasses();render();}
+function loadProp(i){if(GUIDE.on)guideEnd();curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];cols=D.grid.cols;rows=D.grid.rows;selPart=null;drag=null;hoverNet=null;buildNetClasses();render();}
 function getPt(e){var r=svg.getBoundingClientRect(),sx=(svg.width.baseVal.value||r.width)/r.width;return[(e.clientX-r.left)*sx,(e.clientY-r.top)*sx];}
-function nearHole(x,y){var c=Math.round((x-OX)/PITCH)+1,r=Math.round((y-OY)/PITCH)+1;if(!inb(c,r))return null;var p=xy(c,r);return Math.hypot(x-p[0],y-p[1])<PITCH*0.5?[c,r]:null;}
+function nearHole(x,y){var ci=Math.round((x-OX)/PITCH),c=MIRROR?cols-ci:ci+1,r=Math.round((y-OY)/PITCH)+1;if(!inb(c,r))return null;var p=xy(c,r);return Math.hypot(x-p[0],y-p[1])<PITCH*0.5?[c,r]:null;}
 function segd(px,py,ax,ay,bx,by){var dx=bx-ax,dy=by-ay,L=dx*dx+dy*dy,t=L?((px-ax)*dx+(py-ay)*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+dx*t),py-(ay+dy*t));}
 function occupiedOther(c,r,exceptPart,exceptEnd){var lm=leadMap(),o=lm[c+','+r];if(o&&o.part!==exceptPart)return true;if(o&&o.part===null)return true;var e2=endAt(c,r,exceptEnd?exceptEnd:null);return !!e2;}
 function revalidate(e,w){if(e.direct){e.hole=deep(e.pad);return;}var ns=netNodes(w.net,e),ok=false,i;
@@ -423,6 +439,7 @@ function undo(){var u=undoStack.pop();if(!u)return;curI=u.i;props[curI].cur=u.s;
 svg.addEventListener('pointerdown',function(ev){ev.preventDefault();var pt=getPt(ev),i,j;
 touches[ev.pointerId]=pt;
 if(Object.keys(touches).length===2){drag=null;var ks=Object.keys(touches);pinch0={d:dist(touches[ks[0]],touches[ks[1]]),z:ZOOM};return;}
+if(GUIDE.on||MIRROR)return;
 if(PHOTO.img&&PHOTO.drag){drag={t:'photo',s:pt,ox:PHOTO.x,oy:PHOTO.y};return;}
 if(mode==='bridge'){for(i=0;i<D.padBridges.length;i++){var b=D.padBridges[i];if(b._px&&segd(pt[0],pt[1],b._px[0][0],b._px[0][1],b._px[1][0],b._px[1][1])<8){snap();D.padBridges.splice(i,1);render();return;}}
 var h=nearHole(pt[0],pt[1]);if(h)drag={t:'bridge',a:h,cur:pt};return;}
@@ -548,6 +565,55 @@ savePhotoT();};im.src=url;}
 document.getElementById('ph-load').onclick=function(){document.getElementById('ph-file').click();};
 document.getElementById('ph-file').onchange=function(){var f=this.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){photoSet(rd.result);};rd.readAsDataURL(f);this.value='';};
 document.getElementById('ph-clear').onclick=function(){PHOTO.img=null;document.getElementById('ph-ctl').style.display='none';this.style.display='none';try{localStorage.removeItem(LSKEY+'_photo');localStorage.removeItem(LSKEY+'_photoT');}catch(e){}render();};
+function buildSteps(){var st=[],ord={ic:0,r:1,film:2,disc:3,elec:4};
+D.parts.slice().sort(function(a,b){return(ord[a.kind]!==undefined?ord[a.kind]:9)-(ord[b.kind]!==undefined?ord[b.kind]:9);}).forEach(function(p){st.push({t:'part',p:p,sig:'p:'+p.id});});
+D.padBridges.forEach(function(b){st.push({t:'bridge',a:b[0],b:b[1],sig:'b:'+key(b[0])+'-'+key(b[1])});});
+D.wires.forEach(function(w){st.push({t:'wire',w:w,sig:'w:'+w.net+':'+key(w.a.hole)+'-'+key(w.b.hole)});});
+return st;}
+function stepText(s){var lm=leadMap();
+function nm(p){var o=lm[key(p)];return o?'（'+o.name+'）':'';}
+if(s.t==='part'){var L=partLeads(s.p).map(function(x){return holeName(x.pos);}).join(' / ');
+return '部品 '+s.p.label+(s.p.standing?'（立て実装）':'')+' を挿入: '+L;}
+if(s.t==='bridge'){var na=lm[key(s.a)],nb2=lm[key(s.b)],net=(na&&na.net)||(nb2&&nb2.net)||'';
+return 'はんだブリッジ: '+holeName(s.a)+nm(s.a)+' ↔ '+holeName(s.b)+nm(s.b)+(net?'　ネット '+net:'');}
+var w=s.w;
+function ed(e){if(e.direct)return holeName(e.pad)+' の足へ直付け'+nm(e.pad);
+return holeName(e.hole)+' に挿し、'+(e.bridgeTo?holeName(e.bridgeTo)+nm(e.bridgeTo)+' へブリッジ':'※ブリッジ先なし（要修正）');}
+return '被覆線 '+w.net+': '+ed(w.a)+'　⇄　'+ed(w.b);}
+function drawStep(s){
+function ring(p,col,lab){var v=xy(p[0],p[1]);E('circle',{cx:v[0],cy:v[1],r:PITCH*0.5,fill:'none',stroke:col,'stroke-width':3});if(lab)T(v[0]+PITCH*0.42,v[1]-PITCH*0.3,lab,{'font-size':13,fill:col});}
+if(s.t==='part'){var Ls=partLeads(s.p),pts=Ls.map(function(L){return xy(L.pos[0],L.pos[1]);});
+for(var i=1;i<pts.length;i++)E('line',{x1:pts[0][0],y1:pts[0][1],x2:pts[i][0],y2:pts[i][1],stroke:'#5edcff','stroke-width':1.6,'stroke-dasharray':'4 3',opacity:0.6});
+Ls.forEach(function(L){ring(L.pos,'#5edcff',holeName(L.pos));});
+T(pts[0][0]-10,pts[0][1]-PITCH*0.75,s.p.label,{'font-size':15,fill:'#fff'});}
+if(s.t==='bridge'){var a=xy(s.a[0],s.a[1]),b=xy(s.b[0],s.b[1]);
+E('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'#3ddc84','stroke-width':8,'stroke-linecap':'round'});
+ring(s.a,'#3ddc84',holeName(s.a));ring(s.b,'#3ddc84',holeName(s.b));}
+if(s.t==='wire'){var w=s.w,col=D.netColors[w.net]||'#5edcff';
+var pa=w.a.direct?xy(w.a.pad[0],w.a.pad[1]):xy(w.a.hole[0],w.a.hole[1]),pb=w.b.direct?xy(w.b.pad[0],w.b.pad[1]):xy(w.b.hole[0],w.b.hole[1]);
+E('path',{d:'M'+pa[0]+','+pa[1]+' Q'+((pa[0]+pb[0])/2)+','+((pa[1]+pb[1])/2-18)+' '+pb[0]+','+pb[1],stroke:col,'stroke-width':5,fill:'none'});
+[w.a,w.b].forEach(function(e){var hp=e.direct?e.pad:e.hole;ring(hp,col,holeName(hp));
+if(!e.direct&&e.bridgeTo){var h1=xy(e.hole[0],e.hole[1]),b1=xy(e.bridgeTo[0],e.bridgeTo[1]);E('line',{x1:h1[0],y1:h1[1],x2:b1[0],y2:b1[1],stroke:'#3ddc84','stroke-width':7,'stroke-linecap':'round'});}});
+T((pa[0]+pb[0])/2-14,(pa[1]+pb[1])/2-24,w.net,{'font-size':13,fill:col});}}
+function guideShow(){var s=GUIDE.steps[GUIDE.i];if(!s){guideEnd();return;}
+var dn=0;GUIDE.steps.forEach(function(st){if(GUIDE.done[st.sig])dn++;});
+document.getElementById('g-count').textContent='手順 '+(GUIDE.i+1)+' / '+GUIDE.steps.length+'　完了 '+dn+(GUIDE.done[s.sig]?'　✓この手順は済':'');
+document.getElementById('g-text').textContent=stepText(s);render();}
+function guideStart(){GUIDE.steps=buildSteps();if(!GUIDE.steps.length)return;
+try{GUIDE.done=JSON.parse(localStorage.getItem(LSKEY+'_guide')||'{}');}catch(e){GUIDE.done={};}
+GUIDE.on=true;GUIDE.i=0;
+while(GUIDE.i<GUIDE.steps.length-1&&GUIDE.done[GUIDE.steps[GUIDE.i].sig])GUIDE.i++;
+document.getElementById('guide').style.display='';guideShow();}
+function guideEnd(){GUIDE.on=false;MIRROR=false;document.getElementById('g-mirror').checked=false;document.getElementById('guide').style.display='none';render();}
+function gDone(){var s=GUIDE.steps[GUIDE.i];if(!s)return;GUIDE.done[s.sig]=1;
+try{localStorage.setItem(LSKEY+'_guide',JSON.stringify(GUIDE.done));}catch(e){}
+if(GUIDE.i<GUIDE.steps.length-1)GUIDE.i++;guideShow();}
+document.getElementById('pw-guide').onclick=guideStart;
+document.getElementById('g-close').onclick=guideEnd;
+document.getElementById('g-prev').onclick=function(){GUIDE.i=Math.max(0,GUIDE.i-1);guideShow();};
+document.getElementById('g-next').onclick=function(){GUIDE.i=Math.min(GUIDE.steps.length-1,GUIDE.i+1);guideShow();};
+document.getElementById('g-done').onclick=gDone;
+document.getElementById('g-mirror').onchange=function(){MIRROR=this.checked;render();};
 document.getElementById('z-in').onclick=function(){ZOOM=Math.min(2.4,ZOOM*1.2);render();};
 document.getElementById('z-out').onclick=function(){ZOOM=Math.max(0.5,ZOOM/1.2);render();};
 document.getElementById('z-fit').onclick=function(){ZOOM=1;render();};
@@ -570,7 +636,9 @@ var CMDS=[
 {n:'レイヤー: 被覆線 切替',k:'layer wires',f:function(){LY.wires=!LY.wires;render();}},
 {n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}},
 {n:'写真を読み込み（下絵）',k:'photo image load',f:function(){document.getElementById('ph-load').click();}},
-{n:'写真を消去',k:'photo clear',f:function(){document.getElementById('ph-clear').click();}}
+{n:'写真を消去',k:'photo clear',f:function(){document.getElementById('ph-clear').click();}},
+{n:'作業ガイドを開始',k:'guide solder steps',f:function(){guideStart();}},
+{n:'作業ガイドの進捗をリセット',k:'guide reset progress',f:function(){try{localStorage.removeItem(LSKEY+'_guide');}catch(e){}GUIDE.done={};if(GUIDE.on)guideShow();}}
 ];
 var cpSel=0;
 function cpOpen(){document.getElementById('cpov').style.display='flex';var inp=document.getElementById('cp-in');inp.value='';cpSel=0;cpFilter('');inp.focus();}
@@ -592,6 +660,10 @@ else if(e.key==='Escape'){cpClose();}});
 window.addEventListener('keydown',function(e){var tag=(e.target.tagName||'').toLowerCase();
 if(e.ctrlKey&&e.key.toLowerCase()==='k'){e.preventDefault();cpOpen();return;}
 if(tag==='input'||tag==='textarea'||tag==='select')return;
+if(GUIDE.on){if(e.key==='ArrowRight'){e.preventDefault();GUIDE.i=Math.min(GUIDE.steps.length-1,GUIDE.i+1);guideShow();return;}
+if(e.key==='ArrowLeft'){e.preventDefault();GUIDE.i=Math.max(0,GUIDE.i-1);guideShow();return;}
+if(e.key==='Enter'||e.key===' '){e.preventDefault();gDone();return;}
+if(e.key==='Escape'){guideEnd();return;}}
 if(e.ctrlKey&&e.key.toLowerCase()==='z'){e.preventDefault();undo();return;}
 if(e.key==='1')setMode('end');if(e.key==='2')setMode('part');if(e.key==='3')setMode('bridge');if(e.key==='4')setMode('block');});
 function auditNow(){try{audit();}catch(e){document.getElementById('audit').textContent='監査エラー: '+e.message;}}
