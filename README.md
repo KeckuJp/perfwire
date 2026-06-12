@@ -35,7 +35,11 @@ agent:  監査（短絡・デカップリング距離・配線長・本体重な
 - **Physical footprints** — resistor capsules, electrolytic circles (per-part diameter override), film-cap boxes; bodies block holes; tall×tall overlaps are errors, tall×flat are warnings; lead span min/max derived from body length + bend margin; vertical (standing) resistor mounting.
 - **EE constraints** — net classes (high-Z / signal / output / power) with per-class wire-length limits and adjacency penalties, decoupling-cap proximity constraints, input/output separation, max solder joints per pad.
 - **In-browser solver** — greedy placement + net connection + live audit, all client-side JS. Tune thresholds with sliders, recalculate instantly. The same solver ships as `solver.py` for CLI / CI use.
-- **Editor UX** — segmented modes (1-4 keys), undo (Ctrl+Z), zoom, hover inspector (hole / net), layer toggles, lock parts, block holes, proposals as switchable tabs, autosave to localStorage, JSON drag & drop.
+- **Photo underlay** — drop a photo of the real board under the grid (opacity / scale / fine rotation / mirror for backside shots, drag to align) and trace reality by dragging parts onto it. AI guessing hole positions from photos fails; a human tracing over a photo doesn't.
+- **Guided soldering mode** — walk the build one joint at a time (parts → bridges → wires) on a dimmed board with the current step highlighted and named (e.g. `6B`). Arrow keys to navigate, Enter to check off (progress persists), mirror view for soldering from the back side.
+- **Virtual continuity tester** — probe mode: click two holes, see whether the plan connects them (and the whole connected group). Exports a markdown beep-out checklist per net — including the adjacent different-net pairs that must NOT beep — to verify the real board with a multimeter.
+- **Shareable URLs** — the full state compresses into `#z=...` (~4KB for the sample board); paste the link anywhere, no server needed.
+- **Editor UX** — segmented modes (1-5 keys), command palette (Ctrl+K), undo (Ctrl+Z), zoom / pinch zoom, hover inspector (hole / net), layer toggles, lock parts, block holes, proposals as switchable tabs, autosave to localStorage, JSON drag & drop.
 
 ## State schema (v1)
 
@@ -68,6 +72,9 @@ Extracted from a real project: a 2× opamp-ic active buffer for a telephone-clie
 ## Roadmap
 
 - Parts palette / netlist editor in the UI (today the agent generates the initial state)
+- KiCAD netlist import
+- Stripboard (Veroboard) support — copper strips + track cuts instead of solder bridges
+- State diff view (proposal A vs B, plan vs as-built)
 - Crosstalk model for parallel wire runs, ground-topology (star) scoring, guard rings
 - i18n (UI is currently Japanese; schema and code are English)
 
