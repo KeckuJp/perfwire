@@ -42,6 +42,7 @@ agent:  監査（短絡・デカップリング距離・配線長・本体重な
 - **Parts palette** — add parts (R / film / ceramic / electrolytic / DIP-8 IC) from a form with footprint-checked auto-placement, edit labels and per-lead net assignment with autocomplete, delete parts. No agent required to start a board from scratch.
 - **KiCAD netlist import** — open or drop a `.net` (s-expression) file: 2-pin and DIP-8 components are placed on a fresh board with nets and colors, ready for the solver.
 - **1:1 print** — print at exact 2.54mm pitch and lay the sheet on the real board to verify; combine with mirror view for a backside (solder-side) sheet.
+- **Diff view** — live overlay comparing the current board against its unedited original (plan vs as-built) or any other proposal (pick from Ctrl+K): moved parts, added/removed wires and bridges, with a delta summary in the status bar.
 - **Editor UX** — segmented modes (1-5 keys), command palette (Ctrl+K), undo (Ctrl+Z), zoom / pinch zoom, hover inspector (hole / net), layer toggles, lock parts, block holes, proposals as switchable tabs, autosave to localStorage, JSON drag & drop. English / Japanese UI (auto-detected, toggle in header).
 
 ## State schema (v1)
@@ -68,6 +69,13 @@ A wire endpoint is a `hole` (where the copper wire is inserted) plus a `bridgeTo
 
 Files: `examples/client-hardware_tap_buffer.json` (sample project, 2 proposals), `config.example.json` (threshold file for the Python solver).
 
+## CI
+
+`.github/workflows/ci.yml` runs on every push / PR:
+
+- `tools/extract_check.mjs` — parses the inline script of `index.html` (syntax gate) and validates the embedded sample data.
+- `tools/ci_smoke.py` — runs `solver.py` on every sample proposal and asserts a schema-complete, fully-wired output.
+
 ## Background
 
 Extracted from a real project: a 2× opamp-ic active buffer for a telephone-client-hardware audio tap, hand-built on a cut piece of perfboard. Photo-based position guessing failed three times; the drag-editor + solver + audit loop is what actually worked. The sample data is that real board.
@@ -75,7 +83,7 @@ Extracted from a real project: a 2× opamp-ic active buffer for a telephone-clie
 ## Roadmap
 
 - Stripboard (Veroboard) support — copper strips + track cuts instead of solder bridges
-- State diff view (proposal A vs B, plan vs as-built)
+- JS↔Python solver parity (golden tests) — requires factoring the in-browser solver into an importable module first
 - Crosstalk model for parallel wire runs, ground-topology (star) scoring, guard rings
 - i18n: UI chrome (buttons, sliders, hints, commands) ships in English/Japanese — auto-detected from the browser, toggle in the header. Generated reports (audit panel, guide steps, continuity checklist) are still Japanese-only.
 
