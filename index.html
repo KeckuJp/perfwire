@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>perfwire — perfboard wiring planner</title>
+<style>
+:root{--bg:#15181c;--panel:#1d2228;--panel2:#232a31;--bd:#313a43;--tx:#d9e0e7;--mut:#8b97a3;--acc:#41c7ff;--acc2:#0e9fd8;--ok:#3ddc84;--ng:#ff5d5d;--wr:#ffb454}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--tx);font:14px/1.6 "Segoe UI",system-ui,sans-serif;display:flex;flex-direction:column}
+header{display:flex;gap:10px;align-items:center;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--bd);flex-wrap:wrap}
+.brand{font:700 17px/1 Consolas,monospace;color:var(--acc);letter-spacing:1px}
+.brand small{color:var(--mut);font-weight:400;margin-left:6px}
+.spacer{flex:1}
+button{background:var(--panel2);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:6px 12px;font-size:13px;cursor:pointer}
+button:hover{border-color:var(--acc2);color:#fff}
+button.primary{background:var(--acc2);border-color:var(--acc2);color:#04222e;font-weight:600}
+button.primary:hover{background:var(--acc)}
+button.seg{border-radius:0;border-right-width:0;padding:6px 10px}
+.seggrp{display:inline-flex;border-radius:6px;overflow:hidden;border:1px solid var(--bd)}
+.seggrp button{border:0;border-right:1px solid var(--bd)}
+.seggrp button:last-child{border-right:0}
+.seggrp button.on{background:var(--acc2);color:#04222e;font-weight:600}
+select{background:var(--panel2);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:6px 8px;font-size:13px;max-width:280px}
+.layout{display:flex;flex:1;min-height:0}
+aside{width:300px;min-width:300px;background:var(--panel);border-right:1px solid var(--bd);overflow-y:auto;padding:10px 12px}
+aside h4{margin:14px 0 6px;font-size:11px;letter-spacing:1.5px;color:var(--mut);text-transform:uppercase}
+aside h4:first-child{margin-top:2px}
+main{flex:1;display:flex;flex-direction:column;min-width:0}
+#canvas{flex:1;overflow:auto;position:relative;background:radial-gradient(ellipse at 30% 20%, #1a1f25 0%, #15181c 70%)}
+#ztools{position:absolute;top:10px;right:14px;display:flex;gap:6px;z-index:5}
+#status{padding:5px 14px;background:var(--panel);border-top:1px solid var(--bd);font:12px Consolas,monospace;color:var(--mut);display:flex;gap:18px;flex-wrap:wrap}
+#status b{color:var(--tx);font-weight:600}
+.tgl{display:flex;align-items:center;gap:8px;font-size:13px;margin:3px 0}
+.tgl input{accent-color:var(--acc2);width:15px;height:15px}
+.sld{display:grid;grid-template-columns:1fr 44px;gap:8px;align-items:center;font-size:12px;margin:6px 0 2px}
+.sld .lab{grid-column:1/3;color:var(--mut);font-size:12px;margin-bottom:-4px}
+.sld input[type=range]{width:100%;accent-color:var(--acc2)}
+.sld .val{font:12px Consolas,monospace;color:var(--acc);text-align:right}
+details{border:1px solid var(--bd);border-radius:8px;padding:6px 10px;margin:6px 0;background:var(--panel2)}
+summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--tx)}
+#audit{font-size:12.5px;line-height:1.8;background:var(--panel2);border:1px solid var(--bd);border-radius:8px;padding:8px 10px}
+.ok{color:var(--ok)}.ng{color:var(--ng);font-weight:700}.wr{color:var(--wr)}
+textarea{width:100%;height:64px;background:#11151a;color:var(--tx);border:1px solid var(--bd);border-radius:6px;font:11px Consolas,monospace;padding:6px}
+.hint{font-size:11.5px;color:var(--mut);line-height:1.5;margin:4px 0}
+svg{display:block;margin:14px auto}
+.drop{outline:2px dashed var(--acc);outline-offset:-8px}
+</style>
+</head>
+<body>
+<header>
+<span class="brand">perfwire<small>v0.1 — perfboard wiring planner</small></span>
+<select id="pw-prop"></select>
+<button id="pw-rewire" class="primary">配線を再計算</button>
+<button id="pw-repropose" class="primary">配置を再提案</button>
+<button id="pw-saveas">案として保存</button>
+<span class="spacer"></span>
+<button id="pw-undo" title="Ctrl+Z">元に戻す</button>
+<button id="pw-open">開く…</button>
+<button id="pw-export">書き出し</button>
+</header>
+<div class="layout">
+<aside>
+<h4>モード <span style="color:var(--mut);text-transform:none;letter-spacing:0">(1-4キー)</span></h4>
+<div class="seggrp">
+<button id="m-end">端子</button><button id="m-part">部品</button><button id="m-bridge">ブリッジ</button><button id="m-block">穴×</button>
+</div>
+<div class="hint" id="modehint"></div>
+<div style="margin:6px 0"><button id="pw-lock">選択部品のロック切替</button> <button id="pw-reset">案をリセット</button></div>
+<h4>レイヤー</h4>
+<div id="layers"></div>
+<h4>しきい値</h4>
+<details open><summary>最適化の重み</summary><div id="s-weights"></div></details>
+<details><summary>部品の物理寸法</summary><div id="s-phys"></div></details>
+<details><summary>EE 制約</summary><div id="s-ee"></div></details>
+<div style="margin:4px 0"><button id="pw-defcfg">設定を既定値に戻す</button></div>
+<h4>監査</h4>
+<div id="audit">まだ計算していません</div>
+<h4>データ</h4>
+<div class="hint">JSONの貼り付け→インポート、またはファイルをこの画面にドロップ。編集・設定は自動保存。</div>
+<textarea id="pw-out" placeholder="エクスポート/インポート用JSON"></textarea>
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+<button id="pw-copy">コピー</button><button id="pw-import">インポート</button><button id="pw-sample">サンプル復元</button><button id="pw-clearls">保存データ消去</button>
+</div>
+</aside>
+<main>
+<div id="canvas">
+<div id="ztools"><button id="z-out">−</button><button id="z-fit">100%</button><button id="z-in">＋</button></div>
+<svg id="pw-svg" style="touch-action:none"></svg>
+</div>
+<footer id="status"><span id="st-pos">—</span><span id="st-net"></span><span id="st-stats"></span></footer>
+</main>
+</div>
+<input type="file" id="pw-file" accept=".json" hidden>
+<script>
+var INIT={"proposals":[{"name":"現状(実機) 線19本","state":{"version":1,"grid":{"cols":17,"rows":14},"netColors":{"V3V3":"#d62839","GND":"#111111","VMID":"#8a2be2","VREF":"#f08c00","MIC_IN":"#1f6fd6","INA_P":"#1f6fd6","INA_N":"#28a8e0","OUTA1":"#1d9e50","SPK_P":"#0aa294","SPKP_AC":"#0aa294","INA2_P":"#86b300","SPK_N":"#0a6e64","SPKN_AC":"#0a6e64","INA2_N":"#c19a00","SPK_OUT":"#d63ce0","SUM":"#e8475f","OUTB2":"#7048e8","IF_MIC":"#8a5a20"},"leads":{"U1.1":{"net":"OUTA1","at":[6,5]},"U1.2":{"net":"INA_N","at":[7,5]},"U1.3":{"net":"INA_P","at":[8,5]},"U1.4":{"net":"GND","at":[9,5]},"U1.5":{"net":"VMID","at":[9,2]},"U1.6":{"net":"VREF","at":[8,2]},"U1.7":{"net":"VREF","at":[7,2]},"U1.8":{"net":"V3V3","at":[6,2]},"U2.1":{"net":"SPK_OUT","at":[9,10]},"U2.2":{"net":"INA2_N","at":[9,11]},"U2.3":{"net":"INA2_P","at":[9,12]},"U2.4":{"net":"GND","at":[9,13]},"U2.5":{"net":"VREF","at":[12,13]},"U2.6":{"net":"SUM","at":[12,12]},"U2.7":{"net":"OUTB2","at":[12,11]},"U2.8":{"net":"V3V3","at":[12,10]},"C1.o":{"net":"MIC_IN","at":[2,5]},"C1.i":{"net":"INA_P","at":[4,5]},"C7.o":{"net":"SPK_P","at":[2,8]},"C7.i":{"net":"SPKP_AC","at":[4,8]},"C8.o":{"net":"SPK_N","at":[2,11]},"C8.i":{"net":"SPKN_AC","at":[4,11]},"C2.o":{"net":"IF_MIC","at":[2,14]},"C2.i":{"net":"OUTB2","at":[4,14]},"C3.a":{"net":"V3V3","at":[5,3]},"C3.b":{"net":"GND","at":[2,3]},"C5.a":{"net":"VMID","at":[13,7]},"C5.b":{"net":"GND","at":[10,6]},"C9.a":{"net":"V3V3","at":[13,10]},"C9.b":{"net":"GND","at":[15,10]},"C4.p":{"net":"V3V3","at":[5,2]},"C4.n":{"net":"GND","at":[2,2]},"C6.p":{"net":"VMID","at":[13,4]},"C6.n":{"net":"GND","at":[10,4]},"R1.a":{"net":"INA_P","at":[13,2]},"R1.b":{"net":"VREF","at":[16,2]},"R2.a":{"net":"INA_N","at":[7,6]},"R2.b":{"net":"OUTA1","at":[5,8]},"R3.a":{"net":"INA_N","at":[13,3]},"R3.b":{"net":"VREF","at":[16,3]},"R4.a":{"net":"V3V3","at":[16,6]},"R4.b":{"net":"VMID","at":[13,6]},"R5.a":{"net":"VMID","at":[13,5]},"R5.b":{"net":"GND","at":[10,5]},"R7.a":{"net":"SPKP_AC","at":[5,12]},"R7.b":{"net":"INA2_P","at":[8,12]},"R8.a":{"net":"INA2_P","at":[8,13]},"R8.b":{"net":"VREF","at":[5,14]},"R9.a":{"net":"SPKN_AC","at":[5,11]},"R9.b":{"net":"INA2_N","at":[8,11]},"R10.a":{"net":"INA2_N","at":[5,10]},"R10.b":{"net":"SPK_OUT","at":[8,10]},"R11.a":{"net":"OUTA1","at":[16,13]},"R11.b":{"net":"SUM","at":[13,13]},"R12.a":{"net":"SPK_OUT","at":[16,12]},"R12.b":{"net":"SUM","at":[13,12]},"R13.a":{"net":"SUM","at":[13,14]},"R13.b":{"net":"OUTB2","at":[16,14]},"W.RED":{"net":"V3V3","at":[5,1]},"W.BLK1":{"net":"GND","at":[2,1]},"W.BLK2":{"net":"GND","at":[9,14]}},"parts":[{"id":"U1","kind":"ic","label":"U1","pins":{"1":[6,5],"2":[7,5],"3":[8,5],"4":[9,5],"5":[9,2],"6":[8,2],"7":[7,2],"8":[6,2]},"locked":true},{"id":"U2","kind":"ic","label":"U2","pins":{"1":[9,10],"2":[9,11],"3":[9,12],"4":[9,13],"5":[12,13],"6":[12,12],"7":[12,11],"8":[12,10]},"locked":true},{"id":"C1","kind":"film","label":"C1 1u","leads":[[2,5],[4,5]],"leadNames":["C1.o","C1.i"],"locked":true},{"id":"C7","kind":"film","label":"C7 1u","leads":[[2,8],[4,8]],"leadNames":["C7.o","C7.i"],"locked":true},{"id":"C8","kind":"film","label":"C8 1u","leads":[[2,11],[4,11]],"leadNames":["C8.o","C8.i"],"locked":true},{"id":"C2","kind":"film","label":"C2 1u","leads":[[2,14],[4,14]],"leadNames":["C2.o","C2.i"],"locked":true},{"id":"C3","kind":"disc","label":"C3 0.1u","leads":[[5,3],[2,3]],"leadNames":["C3.a","C3.b"],"locked":true},{"id":"C5","kind":"disc","label":"C5 0.1u","leads":[[13,7],[10,6]],"leadNames":["C5.a","C5.b"],"locked":true},{"id":"C9","kind":"disc","label":"C9 0.1u","leads":[[13,10],[15,10]],"leadNames":["C9.a","C9.b"],"locked":true},{"id":"C4","kind":"elec","label":"C4 10u","leads":[[5,2],[2,2]],"plus":0,"leadNames":["C4.p","C4.n"],"locked":true},{"id":"C6","kind":"elec","label":"C6 100u","leads":[[13,4],[10,4]],"plus":0,"leadNames":["C6.p","C6.n"],"locked":true},{"id":"R1","kind":"r","label":"R1 1M","leads":[[13,2],[16,2]],"leadNames":["R1.a","R1.b"],"locked":true},{"id":"R2","kind":"r","label":"R2 100k","leads":[[7,6],[5,8]],"leadNames":["R2.a","R2.b"],"locked":true},{"id":"R3","kind":"r","label":"R3 10k","leads":[[13,3],[16,3]],"leadNames":["R3.a","R3.b"],"locked":true},{"id":"R4","kind":"r","label":"R4 4.7k","leads":[[16,6],[13,6]],"leadNames":["R4.a","R4.b"],"locked":true},{"id":"R5","kind":"r","label":"R5 4.7k","leads":[[13,5],[10,5]],"leadNames":["R5.a","R5.b"],"locked":true},{"id":"R7","kind":"r","label":"R7 100k","leads":[[5,12],[8,12]],"leadNames":["R7.a","R7.b"],"locked":true},{"id":"R8","kind":"r","label":"R8 100k","leads":[[8,13],[5,14]],"leadNames":["R8.a","R8.b"],"locked":true},{"id":"R9","kind":"r","label":"R9 100k","leads":[[5,11],[8,11]],"leadNames":["R9.a","R9.b"],"locked":true},{"id":"R10","kind":"r","label":"R10 100k","leads":[[5,10],[8,10]],"leadNames":["R10.a","R10.b"],"locked":true},{"id":"R11","kind":"r","label":"R11 10k","leads":[[16,13],[13,13]],"leadNames":["R11.a","R11.b"],"locked":true},{"id":"R12","kind":"r","label":"R12 10k","leads":[[16,12],[13,12]],"leadNames":["R12.a","R12.b"],"locked":true},{"id":"R13","kind":"r","label":"R13 10k","leads":[[13,14],[16,14]],"leadNames":["R13.a","R13.b"],"locked":true}],"padBridges":[[[2,1],[2,2]],[[2,2],[2,3]],[[9,5],[10,5]],[[9,13],[9,14]],[[10,4],[10,5]],[[10,5],[10,6]],[[8,11],[9,11]],[[8,12],[9,12]],[[8,12],[8,13]],[[7,5],[7,6]],[[4,11],[5,11]],[[8,10],[9,10]],[[12,12],[13,12]],[[13,12],[13,13]],[[13,13],[13,14]],[[5,1],[5,2]],[[5,2],[6,2]],[[5,2],[5,3]],[[12,10],[13,10]],[[13,4],[13,5]],[[13,5],[13,6]],[[13,6],[13,7]],[[7,2],[8,2]],[[16,2],[16,3]]],"wires":[{"net":"GND","a":{"tap":"C9.b","pad":[15,10],"hole":[15,9],"bridgeTo":[15,10],"direct":false},"b":{"tap":"C5.b","pad":[10,6],"hole":[10,7],"bridgeTo":[10,6],"direct":false}},{"net":"GND","a":{"tap":"U2.4","pad":[9,13],"hole":[10,14],"bridgeTo":[9,14],"direct":false},"b":{"tap":"GND","pad":[10,7],"hole":[10,8],"bridgeTo":[10,7],"direct":false}},{"net":"GND","a":{"tap":"C3.b","pad":[2,3],"hole":[2,4],"bridgeTo":[2,3],"direct":false},"b":{"tap":"U1.4","pad":[9,5],"hole":[9,6],"bridgeTo":[9,5],"direct":false}},{"net":"INA2_N","a":{"tap":"R10.a","pad":[5,10],"hole":[5,9],"bridgeTo":[5,10],"direct":false},"b":{"tap":"R9.b","pad":[8,11],"hole":[8,11],"direct":true}},{"net":"INA_N","a":{"tap":"R3.a","pad":[13,3],"hole":[13,3],"direct":true},"b":{"tap":"U1.2","pad":[7,5],"hole":[8,6],"bridgeTo":[7,6],"direct":false}},{"net":"INA_P","a":{"tap":"C1.i","pad":[4,5],"hole":[5,5],"bridgeTo":[4,5],"direct":false},"b":{"tap":"U1.3","pad":[8,5],"hole":[8,5],"direct":true}},{"net":"INA_P","a":{"tap":"R1.a","pad":[13,2],"hole":[12,2],"bridgeTo":[13,2],"direct":false},"b":{"tap":"U1.3","pad":[8,5],"hole":[5,4],"bridgeTo":[5,5],"direct":false}},{"net":"OUTA1","a":{"tap":"R2.b","pad":[5,8],"hole":[5,7],"bridgeTo":[5,8],"direct":false},"b":{"tap":"U1.1","pad":[6,5],"hole":[6,6],"bridgeTo":[6,5],"direct":false}},{"net":"OUTA1","a":{"tap":"R11.a","pad":[16,13],"hole":[17,13],"bridgeTo":[16,13],"direct":false},"b":{"tap":"R2.b","pad":[5,8],"hole":[6,8],"bridgeTo":[5,8],"direct":false}},{"net":"OUTB2","a":{"tap":"R13.b","pad":[16,14],"hole":[17,14],"bridgeTo":[16,14],"direct":false},"b":{"tap":"U2.7","pad":[12,11],"hole":[13,11],"bridgeTo":[12,11],"direct":false}},{"net":"OUTB2","a":{"tap":"C2.i","pad":[4,14],"hole":[4,13],"bridgeTo":[4,14],"direct":false},"b":{"tap":"U2.7","pad":[12,11],"hole":[14,11],"bridgeTo":[13,11],"direct":false}},{"net":"SPKP_AC","a":{"tap":"R7.a","pad":[5,12],"hole":[4,12],"bridgeTo":[5,12],"direct":false},"b":{"tap":"C7.i","pad":[4,8],"hole":[4,9],"bridgeTo":[4,8],"direct":false}},{"net":"SPK_OUT","a":{"tap":"R12.a","pad":[16,12],"hole":[16,11],"bridgeTo":[16,12],"direct":false},"b":{"tap":"U2.1","pad":[9,10],"hole":[9,9],"bridgeTo":[9,10],"direct":false}},{"net":"V3V3","a":{"tap":"U2.8","pad":[12,10],"hole":[12,9],"bridgeTo":[12,10],"direct":false},"b":{"tap":"C3.a","pad":[5,3],"hole":[6,1],"bridgeTo":[6,2],"direct":false}},{"net":"V3V3","a":{"tap":"R4.a","pad":[16,6],"hole":[16,7],"bridgeTo":[16,6],"direct":false},"b":{"tap":"C9.a","pad":[13,10],"hole":[13,9],"bridgeTo":[13,10],"direct":false}},{"net":"VMID","a":{"tap":"U1.5","pad":[9,2],"hole":[10,2],"bridgeTo":[9,2],"direct":false},"b":{"tap":"C6.p","pad":[13,4],"hole":[14,4],"bridgeTo":[13,4],"direct":false}},{"net":"VREF","a":{"tap":"R1.b","pad":[16,2],"hole":[16,1],"bridgeTo":[16,2],"direct":false},"b":{"tap":"U1.6","pad":[8,2],"hole":[8,1],"bridgeTo":[8,2],"direct":false}},{"net":"VREF","a":{"tap":"U2.5","pad":[12,13],"hole":[12,14],"bridgeTo":[12,13],"direct":false},"b":{"tap":"R3.b","pad":[16,3],"hole":[16,4],"bridgeTo":[16,3],"direct":false}},{"net":"VREF","a":{"tap":"R8.b","pad":[5,14],"hole":[5,13],"bridgeTo":[5,14],"direct":false},"b":{"tap":"VREF","pad":[12,14],"hole":[11,14],"bridgeTo":[12,14],"direct":false}}],"blockedHoles":[]}},{"name":"案B EE制約 線18本(次号機向け)","state":{"version":1,"grid":{"cols":17,"rows":14},"netColors":{"V3V3":"#d62839","GND":"#111111","VMID":"#8a2be2","VREF":"#f08c00","MIC_IN":"#1f6fd6","INA_P":"#1f6fd6","INA_N":"#28a8e0","OUTA1":"#1d9e50","SPK_P":"#0aa294","SPKP_AC":"#0aa294","INA2_P":"#86b300","SPK_N":"#0a6e64","SPKN_AC":"#0a6e64","INA2_N":"#c19a00","SPK_OUT":"#d63ce0","SUM":"#e8475f","OUTB2":"#7048e8","IF_MIC":"#8a5a20"},"leads":{"U1.1":{"net":"OUTA1","at":[6,5]},"U1.2":{"net":"INA_N","at":[7,5]},"U1.3":{"net":"INA_P","at":[8,5]},"U1.4":{"net":"GND","at":[9,5]},"U1.5":{"net":"VMID","at":[9,2]},"U1.6":{"net":"VREF","at":[8,2]},"U1.7":{"net":"VREF","at":[7,2]},"U1.8":{"net":"V3V3","at":[6,2]},"U2.1":{"net":"SPK_OUT","at":[9,10]},"U2.2":{"net":"INA2_N","at":[9,11]},"U2.3":{"net":"INA2_P","at":[9,12]},"U2.4":{"net":"GND","at":[9,13]},"U2.5":{"net":"VREF","at":[12,13]},"U2.6":{"net":"SUM","at":[12,12]},"U2.7":{"net":"OUTB2","at":[12,11]},"U2.8":{"net":"V3V3","at":[12,10]},"C1.o":{"net":"MIC_IN","at":[2,5]},"C1.i":{"net":"INA_P","at":[4,5]},"C7.o":{"net":"SPK_P","at":[2,8]},"C7.i":{"net":"SPKP_AC","at":[4,8]},"C8.o":{"net":"SPK_N","at":[2,11]},"C8.i":{"net":"SPKN_AC","at":[4,11]},"C2.o":{"net":"IF_MIC","at":[2,14]},"C2.i":{"net":"OUTB2","at":[4,14]},"C3.a":{"net":"V3V3","at":[4,2]},"C3.b":{"net":"GND","at":[3,3]},"C5.a":{"net":"VMID","at":[12,2]},"C5.b":{"net":"GND","at":[12,4]},"C9.a":{"net":"V3V3","at":[11,8]},"C9.b":{"net":"GND","at":[11,5]},"C4.p":{"net":"V3V3","at":[4,1]},"C4.n":{"net":"GND","at":[2,2]},"C6.p":{"net":"VMID","at":[10,2]},"C6.n":{"net":"GND","at":[11,4]},"R1.a":{"net":"INA_P","at":[15,10]},"R1.b":{"net":"VREF","at":[12,14]},"R2.a":{"net":"INA_N","at":[6,7]},"R2.b":{"net":"OUTA1","at":[6,6]},"R3.a":{"net":"INA_N","at":[6,8]},"R3.b":{"net":"VREF","at":[7,13]},"R4.a":{"net":"V3V3","at":[6,1]},"R4.b":{"net":"VMID","at":[10,1]},"R5.a":{"net":"VMID","at":[13,2]},"R5.b":{"net":"GND","at":[13,4]},"R7.a":{"net":"SPKP_AC","at":[4,7]},"R7.b":{"net":"INA2_P","at":[4,9]},"R8.a":{"net":"INA2_P","at":[14,14]},"R8.b":{"net":"VREF","at":[13,14]},"R9.a":{"net":"SPKN_AC","at":[5,11]},"R9.b":{"net":"INA2_N","at":[6,11]},"R10.a":{"net":"INA2_N","at":[8,11]},"R10.b":{"net":"SPK_OUT","at":[8,10]},"R11.a":{"net":"OUTA1","at":[13,6]},"R11.b":{"net":"SUM","at":[15,8]},"R12.a":{"net":"SPK_OUT","at":[9,9]},"R12.b":{"net":"SUM","at":[14,8]},"R13.a":{"net":"SUM","at":[16,8]},"R13.b":{"net":"OUTB2","at":[13,11]},"W.RED":{"net":"V3V3","at":[5,1]},"W.BLK1":{"net":"GND","at":[2,1]},"W.BLK2":{"net":"GND","at":[9,14]}},"parts":[{"id":"U1","kind":"ic","label":"U1","pins":{"1":[6,5],"2":[7,5],"3":[8,5],"4":[9,5],"5":[9,2],"6":[8,2],"7":[7,2],"8":[6,2]},"locked":true},{"id":"U2","kind":"ic","label":"U2","pins":{"1":[9,10],"2":[9,11],"3":[9,12],"4":[9,13],"5":[12,13],"6":[12,12],"7":[12,11],"8":[12,10]},"locked":true},{"id":"C1","kind":"film","label":"C1 1u","leads":[[2,5],[4,5]],"leadNames":["C1.o","C1.i"],"locked":true},{"id":"C7","kind":"film","label":"C7 1u","leads":[[2,8],[4,8]],"leadNames":["C7.o","C7.i"],"locked":true},{"id":"C8","kind":"film","label":"C8 1u","leads":[[2,11],[4,11]],"leadNames":["C8.o","C8.i"],"locked":true},{"id":"C2","kind":"film","label":"C2 1u","leads":[[2,14],[4,14]],"leadNames":["C2.o","C2.i"],"locked":true},{"id":"C3","kind":"disc","label":"C3 0.1u","leads":[[4,2],[3,3]],"leadNames":["C3.a","C3.b"],"locked":false},{"id":"C5","kind":"disc","label":"C5 0.1u","leads":[[12,2],[12,4]],"leadNames":["C5.a","C5.b"],"locked":false},{"id":"C9","kind":"disc","label":"C9 0.1u","leads":[[11,8],[11,5]],"leadNames":["C9.a","C9.b"],"locked":false},{"id":"C4","kind":"elec","label":"C4 10u","leads":[[4,1],[2,2]],"plus":0,"leadNames":["C4.p","C4.n"],"locked":false},{"id":"C6","kind":"elec","label":"C6 100u","leads":[[10,2],[11,4]],"plus":0,"leadNames":["C6.p","C6.n"],"locked":false},{"id":"R1","kind":"r","label":"R1 1M","leads":[[15,10],[12,14]],"leadNames":["R1.a","R1.b"],"locked":false},{"id":"R2","kind":"r","label":"R2 100k","leads":[[6,7],[6,6]],"leadNames":["R2.a","R2.b"],"locked":false,"standing":true},{"id":"R3","kind":"r","label":"R3 10k","leads":[[6,8],[7,13]],"leadNames":["R3.a","R3.b"],"locked":false},{"id":"R4","kind":"r","label":"R4 4.7k","leads":[[6,1],[10,1]],"leadNames":["R4.a","R4.b"],"locked":false},{"id":"R5","kind":"r","label":"R5 4.7k","leads":[[13,2],[13,4]],"leadNames":["R5.a","R5.b"],"locked":false,"standing":true},{"id":"R7","kind":"r","label":"R7 100k","leads":[[4,7],[4,9]],"leadNames":["R7.a","R7.b"],"locked":false,"standing":true},{"id":"R8","kind":"r","label":"R8 100k","leads":[[14,14],[13,14]],"leadNames":["R8.a","R8.b"],"locked":false,"standing":true},{"id":"R9","kind":"r","label":"R9 100k","leads":[[5,11],[6,11]],"leadNames":["R9.a","R9.b"],"locked":false,"standing":true},{"id":"R10","kind":"r","label":"R10 100k","leads":[[8,11],[8,10]],"leadNames":["R10.a","R10.b"],"locked":false,"standing":true},{"id":"R11","kind":"r","label":"R11 10k","leads":[[13,6],[15,8]],"leadNames":["R11.a","R11.b"],"locked":false},{"id":"R12","kind":"r","label":"R12 10k","leads":[[9,9],[14,8]],"leadNames":["R12.a","R12.b"],"locked":false},{"id":"R13","kind":"r","label":"R13 10k","leads":[[16,8],[13,11]],"leadNames":["R13.a","R13.b"],"locked":false}],"padBridges":[[[2,1],[2,2]],[[9,13],[9,14]],[[11,4],[12,4]],[[11,4],[11,5]],[[12,4],[13,4]],[[8,11],[9,11]],[[6,7],[6,8]],[[6,5],[6,6]],[[12,11],[13,11]],[[4,11],[5,11]],[[4,7],[4,8]],[[8,10],[9,10]],[[9,9],[9,10]],[[14,8],[15,8]],[[15,8],[16,8]],[[4,1],[5,1]],[[4,1],[4,2]],[[5,1],[6,1]],[[6,1],[6,2]],[[9,2],[10,2]],[[10,1],[10,2]],[[12,2],[13,2]],[[7,2],[8,2]],[[12,13],[12,14]],[[12,14],[13,14]]],"wires":[{"net":"GND","a":{"tap":"U1.4","pad":[9,5],"hole":[10,5],"bridgeTo":[9,5],"direct":false},"b":{"tap":"C9.b","pad":[11,5],"hole":[12,5],"bridgeTo":[11,5],"direct":false}},{"net":"GND","a":{"tap":"C3.b","pad":[3,3],"hole":[4,3],"bridgeTo":[3,3],"direct":false},"b":{"tap":"U1.4","pad":[9,5],"hole":[9,6],"bridgeTo":[9,5],"direct":false}},{"net":"GND","a":{"tap":"C4.n","pad":[2,2],"hole":[2,3],"bridgeTo":[2,2],"direct":false},"b":{"tap":"C3.b","pad":[3,3],"hole":[3,4],"bridgeTo":[3,3],"direct":false}},{"net":"GND","a":{"tap":"U2.4","pad":[9,13],"hole":[8,13],"bridgeTo":[9,13],"direct":false},"b":{"tap":"GND","pad":[9,6],"hole":[9,7],"bridgeTo":[9,6],"direct":false}},{"net":"INA2_N","a":{"tap":"R9.b","pad":[6,11],"hole":[6,12],"bridgeTo":[6,11],"direct":false},"b":{"tap":"R10.a","pad":[8,11],"hole":[8,12],"bridgeTo":[8,11],"direct":false}},{"net":"INA2_P","a":{"tap":"R8.a","pad":[14,14],"hole":[14,13],"bridgeTo":[14,14],"direct":false},"b":{"tap":"U2.3","pad":[9,12],"hole":[9,12],"direct":true}},{"net":"INA2_P","a":{"tap":"R7.b","pad":[4,9],"hole":[5,9],"bridgeTo":[4,9],"direct":false},"b":{"tap":"U2.3","pad":[9,12],"hole":[15,13],"bridgeTo":[14,13],"direct":false}},{"net":"INA_N","a":{"tap":"U1.2","pad":[7,5],"hole":[7,6],"bridgeTo":[7,5],"direct":false},"b":{"tap":"R2.a","pad":[6,7],"hole":[7,7],"bridgeTo":[6,7],"direct":false}},{"net":"INA_P","a":{"tap":"C1.i","pad":[4,5],"hole":[5,5],"bridgeTo":[4,5],"direct":false},"b":{"tap":"U1.3","pad":[8,5],"hole":[8,6],"bridgeTo":[8,5],"direct":false}},{"net":"INA_P","a":{"tap":"R1.a","pad":[15,10],"hole":[15,11],"bridgeTo":[15,10],"direct":false},"b":{"tap":"INA_P","pad":[8,6],"hole":[8,7],"bridgeTo":[8,6],"direct":false}},{"net":"OUTA1","a":{"tap":"R11.a","pad":[13,6],"hole":[12,6],"bridgeTo":[13,6],"direct":false},"b":{"tap":"R2.b","pad":[6,6],"hole":[5,6],"bridgeTo":[6,6],"direct":false}},{"net":"OUTB2","a":{"tap":"C2.i","pad":[4,14],"hole":[5,14],"bridgeTo":[4,14],"direct":false},"b":{"tap":"U2.7","pad":[12,11],"hole":[13,12],"bridgeTo":[13,11],"direct":false}},{"net":"SUM","a":{"tap":"U2.6","pad":[12,12],"hole":[12,12],"direct":true},"b":{"tap":"R12.b","pad":[14,8],"hole":[14,9],"bridgeTo":[14,8],"direct":false}},{"net":"V3V3","a":{"tap":"C9.a","pad":[11,8],"hole":[10,8],"bridgeTo":[11,8],"direct":false},"b":{"tap":"U1.8","pad":[6,2],"hole":[5,2],"bridgeTo":[6,2],"direct":false}},{"net":"V3V3","a":{"tap":"U2.8","pad":[12,10],"hole":[12,9],"bridgeTo":[12,10],"direct":false},"b":{"tap":"C9.a","pad":[11,8],"hole":[9,8],"bridgeTo":[10,8],"direct":false}},{"net":"VMID","a":{"tap":"C5.a","pad":[12,2],"hole":[12,1],"bridgeTo":[12,2],"direct":false},"b":{"tap":"C6.p","pad":[10,2],"hole":[11,1],"bridgeTo":[10,1],"direct":false}},{"net":"VREF","a":{"tap":"R3.b","pad":[7,13],"hole":[7,14],"bridgeTo":[7,13],"direct":false},"b":{"tap":"U2.5","pad":[12,13],"hole":[11,14],"bridgeTo":[12,14],"direct":false}},{"net":"VREF","a":{"tap":"U1.7","pad":[7,2],"hole":[7,2],"direct":true},"b":{"tap":"R3.b","pad":[7,13],"hole":[6,13],"bridgeTo":[7,13],"direct":false}}],"blockedHoles":[]}}]};
+(function(){
+function deep(o){return JSON.parse(JSON.stringify(o));}
+var DEFCFG={pitch:2.54,allowStanding:true,
+ physical:{r:{bodyLen:6.5,bodyWid:2.5,bend:0.3,maxSpan:13.0,diag:true,standing:true,standMin:1,standMax:2,tall:false},
+ film:{pitchMin:2,pitchMax:2,diag:false,tall:true},
+ disc:{pitchMin:1,pitchMax:3,diag:true,tall:true},
+ elec:{pitchMin:1,pitchMax:3,diag:true,tall:true,dia:6.5}},
+ partOv:{C4:{dia:5.0},C6:{dia:6.5}},
+ rules:{maxJoints:3},
+ classes:{HIZ:{nets:['INA_P'],maxWire:6,adjPen:8,keepAway:['OUT','PWR'],keepHoles:2},
+ SIG:{nets:['INA_N','SPKP_AC','SPKN_AC','INA2_P','INA2_N','SUM','MIC_IN','SPK_P','SPK_N','VREF'],maxWire:14,adjPen:3,keepAway:[],keepHoles:0},
+ OUT:{nets:['OUTA1','SPK_OUT','OUTB2','IF_MIC'],maxWire:99,adjPen:2,keepAway:['HIZ'],keepHoles:2},
+ PWR:{nets:['V3V3','GND','VMID'],maxWire:99,adjPen:1,keepAway:[],keepHoles:0}},
+ decoupling:[{cap:'C3',pin:'U1.8',max:2},{cap:'C9',pin:'U2.8',max:2},{cap:'C5',pin:'C6.p',max:3},{cap:'C4',pin:'W.RED',max:4}],
+ weights:{bridgeBonus:20,wireLen:1.0,cautionBase:1.5,hizMult:3.0,keepAwayPen:6.0},
+ order:['C6','C4','C3','C9','C5','R5','R4','R1','R2','R3','R10','R9','R7','R8','R12','R11','R13']};
+var CFG=deep(DEFCFG),LSKEY='perfwire_v1';
+var props=INIT.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null};});
+var curI=0,D=null,BASE=30,ZOOM=1,PITCH=30,OX=50,OY=40,mode='end',drag=null,selPart=null,cols=17,rows=14;
+var MODEL={end:'端子',part:'部品',bridge:'ブリッジ',block:'穴ブロック'};
+var HINT={end:'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。',part:'本体や足をドラッグ。クリックで選択→ロック切替。白い小四角＝ロック中（動かせない）。',bridge:'隣接2穴をドラッグで濃緑ブリッジを追加。既存の線をクリックで削除。',block:'物理的に使えない穴をクリックで×指定／解除。再計算が避けるようになります。'};
+var LY={parts:true,labels:true,wires:true,bridges:true,ends:true,caut:true,blocked:true};
+var undoStack=[];
+var svg=document.getElementById('pw-svg');
+function key(p){return p[0]+','+p[1];}
+function xy(c,r){return[OX+(c-1)*PITCH,OY+(r-1)*PITCH];}
+function adj(a,b){return Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])===1;}
+function cheb(a,b){return Math.max(Math.abs(a[0]-b[0]),Math.abs(a[1]-b[1]));}
+function dist(a,b){return Math.hypot(a[0]-b[0],a[1]-b[1]);}
+function clsOf(net){for(var c in CFG.classes)if(CFG.classes[c].nets.indexOf(net)>=0)return c;return null;}
+function cdef(net){var c=clsOf(net);return c?CFG.classes[c]:{maxWire:99,adjPen:1,keepAway:[],keepHoles:0};}
+function physFor(p){var P=Object.assign({},CFG.physical[p.kind]);if(CFG.partOv[p.id])Object.assign(P,CFG.partOv[p.id]);return P;}
+function partLeads(p){var out=[];if(p.kind==='ic'){Object.keys(p.pins).forEach(function(k){out.push({name:p.id+'.'+k,pos:p.pins[k],set:function(v){p.pins[k]=v;}});});}else{(p.leadNames||[]).forEach(function(nm,i2){out.push({name:nm,pos:p.leads[i2],set:function(v){p.leads[i2]=v;}});});}return out;}
+function leadMap(){var m={};D.parts.forEach(function(p){partLeads(p).forEach(function(L){m[key(L.pos)]={net:D.leads[L.name]?D.leads[L.name].net:null,name:L.name,part:p};});});Object.keys(D.leads).forEach(function(k){if(k.slice(0,2)==='W.')m[key(D.leads[k].at)]={net:D.leads[k].net,name:k,part:null};});return m;}
+function endAt(c,r,skip){for(var i=0;i<D.wires.length;i++){var w=D.wires[i],es=[w.a,w.b];for(var j=0;j<2;j++){var e=es[j];if(e===skip||e.direct)continue;if(e.hole[0]===c&&e.hole[1]===r)return{e:e,w:w};}}return null;}
+function netNodes(net,skip){var out=[],lm=leadMap();Object.keys(lm).forEach(function(k){if(lm[k].net===net)out.push(k.split(',').map(Number));});D.wires.forEach(function(w){if(w.net!==net)return;[w.a,w.b].forEach(function(e){if(e!==skip&&!e.direct)out.push(e.hole);});});return out;}
+function blockedIdx(c,r){for(var i=0;i<D.blockedHoles.length;i++){var h=D.blockedHoles[i];if(h[0]===c&&h[1]===r)return i;}return -1;}
+function inb(c,r){return c>=1&&c<=cols&&r>=1&&r<=rows;}
+function footCells(p,a,b,standing){var P=physFor(p),raw=[],c,r,i;
+if(p.kind==='elec'){var cx=(a[0]+b[0])/2,cy=(a[1]+b[1])/2,rad=(P.dia||6.5)/2;
+for(c=Math.floor(cx-2);c<=Math.ceil(cx+2);c++)for(r=Math.floor(cy-2);r<=Math.ceil(cy+2);r++)if(Math.hypot((c-cx)*CFG.pitch,(r-cy)*CFG.pitch)<rad-0.05)raw.push([c,r]);}
+else if(!standing){var n=Math.max(Math.abs(b[0]-a[0]),Math.abs(b[1]-a[1]));for(i=1;i<n;i++)raw.push([Math.round(a[0]+(b[0]-a[0])*i/n),Math.round(a[1]+(b[1]-a[1])*i/n)]);}
+var out=[];raw.forEach(function(q){if(!(q[0]===a[0]&&q[1]===a[1])&&!(q[0]===b[0]&&q[1]===b[1]))out.push(q);});
+return{cells:out,tall:!!P.tall||!!standing};}
+function spanList(kind){var P=CFG.physical[kind],out=[],dx,dy,d;
+if(P.pitchMin!==undefined){for(dx=-P.pitchMax;dx<=P.pitchMax;dx++)for(dy=-P.pitchMax;dy<=P.pitchMax;dy++){if(!dx&&!dy)continue;if(!P.diag&&dx&&dy)continue;d=Math.hypot(dx,dy);if(d>=P.pitchMin-0.01&&d<=P.pitchMax+0.01)out.push([dx,dy,false]);}}
+else{var mn=P.bodyLen+2*P.bend,mx=P.maxSpan;
+for(dx=-6;dx<=6;dx++)for(dy=-6;dy<=6;dy++){if(!dx&&!dy)continue;if(!P.diag&&dx&&dy)continue;d=Math.hypot(dx,dy)*CFG.pitch;if(d>=mn-0.01&&d<=mx+0.01)out.push([dx,dy,false]);}
+if(P.standing&&CFG.allowStanding){for(dx=-P.standMax;dx<=P.standMax;dx++)for(dy=-P.standMax;dy<=P.standMax;dy++){if((dx===0)===(dy===0))continue;d=Math.hypot(dx,dy);if(d>=P.standMin-0.01&&d<=P.standMax+0.01)out.push([dx,dy,true]);}}}
+return out;}
+function geom(){var leadPos={},icSet={},bodySet={},foots={};
+D.parts.forEach(function(p){
+if(p.kind==='ic'){var xs=[],ys=[];Object.keys(p.pins).forEach(function(k){var q=p.pins[k];leadPos[p.id+'.'+k]=q;xs.push(q[0]);ys.push(q[1]);});
+var x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys),cells=[];
+for(var c=x0;c<=x1;c++)for(var r=y0;r<=y1;r++){var isPin=Object.keys(p.pins).some(function(k){return p.pins[k][0]===c&&p.pins[k][1]===r;});if(!isPin){icSet[c+','+r]=1;cells.push([c,r]);}}
+foots[p.id]={cells:cells,tall:true};}
+else{leadPos[p.leadNames[0]]=p.leads[0];leadPos[p.leadNames[1]]=p.leads[1];
+var f=footCells(p,p.leads[0],p.leads[1],p.standing);foots[p.id]=f;
+f.cells.forEach(function(q){bodySet[key(q)]=1;});}});
+Object.keys(D.leads).forEach(function(k){if(!(k in leadPos))leadPos[k]=D.leads[k].at;});
+var occ={};Object.keys(leadPos).forEach(function(k){occ[key(leadPos[k])]=k;});
+return{leadPos:leadPos,icSet:icSet,bodySet:bodySet,occ:occ,foots:foots};}
+function usableFor(g,c,r){var k=c+','+r;return inb(c,r)&&!g.occ[k]&&blockedIdx(c,r)<0&&!g.icSet[k]&&!g.bodySet[k];}
+function connect(){var g=geom(),parent={};
+function find(x){if(parent[x]===undefined)parent[x]=x;while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];}return x;}
+function uni(a,b){parent[find(a)]=find(b);}
+var netHole={};Object.keys(g.leadPos).forEach(function(k){var pos=g.leadPos[k];netHole[key(pos)]=D.leads[k]?D.leads[k].net:null;find(key(pos));});
+var pads=[],nets={};Object.keys(netHole).forEach(function(k){var n=netHole[k];if(n)(nets[n]=nets[n]||[]).push(k.split(',').map(Number));});
+Object.keys(nets).sort().forEach(function(n){nets[n].sort(function(a,b){return a[0]-b[0]||a[1]-b[1];}).forEach(function(a){
+[[1,0],[0,1],[-1,0],[0,-1]].forEach(function(d){var q=[a[0]+d[0],a[1]+d[1]];if(netHole[key(q)]===n&&find(key(a))!==find(key(q))){pads.push([a.slice(),q]);uni(key(a),key(q));}});});});
+var wires=[],warn=[];
+Object.keys(nets).sort().forEach(function(n){var guard=0;
+while(guard++<50){var comps={};Object.keys(netHole).forEach(function(k){if(netHole[k]===n)(comps[find(k)]=comps[find(k)]||[]).push(k.split(',').map(Number));});
+var gs=Object.keys(comps).map(function(k){return comps[k];});if(gs.length<=1)break;
+gs.sort(function(a,b){return b.length-a.length;});var main=gs[0],bestPair=null;
+for(var gi=1;gi<gs.length;gi++)gs[gi].forEach(function(a){main.forEach(function(b){var dd=dist(a,b);if(!bestPair||dd<bestPair[0])bestPair=[dd,a,b,gs[gi]];});});
+var pa=bestPair[1],pb=bestPair[2],tgt=bestPair[3],ends=[];
+[[tgt,pa,pb],[main,pb,pa]].forEach(function(t3){var grp=t3[0],anc=t3[1],oth=t3[2],cand=null;
+grp.slice().sort(function(a,b){return dist(a,anc)-dist(b,anc);}).forEach(function(m){
+[[1,0],[-1,0],[0,1],[0,-1]].forEach(function(d){var nb=[m[0]+d[0],m[1]+d[1]];
+if(usableFor(g,nb[0],nb[1])&&!netHole[key(nb)]){var pen=(m[0]===anc[0]&&m[1]===anc[1]?0:10)+0.05*dist(nb,oth);
+if(!cand||pen<cand[0])cand=[pen,nb,m];}});});
+if(!cand){ends.push({tap:null,pad:anc.slice(),hole:anc.slice(),direct:true});warn.push(n+': '+anc+' 直付け');}
+else{ends.push({tap:null,pad:anc.slice(),hole:cand[1].slice(),bridgeTo:cand[2].slice(),direct:false});netHole[key(cand[1])]=n;g.occ[key(cand[1])]='wire';find(key(cand[1]));uni(key(cand[1]),key(cand[2]));}});
+var tapmap={};Object.keys(g.leadPos).forEach(function(k){tapmap[key(g.leadPos[k])]=k;});
+ends.forEach(function(e){e.tap=tapmap[key(e.pad)]||n;});
+uni(key(ends[0].hole),key(ends[1].hole));
+wires.push({net:n,a:ends[0],b:ends[1]});}});
+D.padBridges=pads;D.wires=wires;return warn;}
+function propose(){var g0=geom();
+var movable=D.parts.filter(function(p){return p.kind!=='ic'&&!p.locked;});
+var fixedIds={};D.parts.forEach(function(p){if(p.kind==='ic'||p.locked)fixedIds[p.id]=1;});
+var placed={},occ={},bodySet={},icSet=g0.icSet;
+D.parts.forEach(function(p){if(!fixedIds[p.id])return;partLeads(p).forEach(function(L){var n=D.leads[L.name]?D.leads[L.name].net:null;if(n)(placed[n]=placed[n]||[]).push(L.pos.slice());occ[key(L.pos)]=1;});
+var f=g0.foots[p.id];if(f)f.cells.forEach(function(q){bodySet[key(q)]=1;});});
+Object.keys(D.leads).forEach(function(k){if(k.slice(0,2)==='W.'){var n=D.leads[k].net;(placed[n]=placed[n]||[]).push(D.leads[k].at.slice());occ[key(D.leads[k].at)]=1;}});
+function usable2(c,r){var k=c+','+r;return inb(c,r)&&!occ[k]&&blockedIdx(c,r)<0&&!icSet[k]&&!bodySet[k];}
+movable.sort(function(a,b){var ia=CFG.order.indexOf(a.id),ib=CFG.order.indexOf(b.id);return(ia<0?99:ia)-(ib<0?99:ib);});
+var W=CFG.weights;
+movable.forEach(function(p){var nm=p.leadNames,n1=D.leads[nm[0]].net,n2=D.leads[nm[1]].net;
+var dec=CFG.decoupling.filter(function(d){return d.cap===p.id;})[0],anchor=null,anchorNet=null;
+if(dec){var ap=null;D.parts.forEach(function(q){partLeads(q).forEach(function(L){if(L.name===dec.pin)ap=L.pos;});});if(!ap&&D.leads[dec.pin])ap=D.leads[dec.pin].at;
+if(ap){anchor=ap;anchorNet=D.leads[dec.pin]?D.leads[dec.pin].net:null;}}
+var best=null,sl=spanList(p.kind);
+for(var c=1;c<=cols;c++)for(var r=1;r<=rows;r++){if(!usable2(c,r))continue;var p1=[c,r];
+for(var si=0;si<sl.length;si++){var p2=[c+sl[si][0],r+sl[si][1]],standing=sl[si][2];
+if(!usable2(p2[0],p2[1]))continue;
+var f=footCells(p,p1,p2,standing),okf=true;
+for(var fi=0;fi<f.cells.length;fi++){var fk=key(f.cells[fi]);if(occ[fk]||bodySet[fk]||icSet[fk]||blockedIdx(f.cells[fi][0],f.cells[fi][1])>=0||!inb(f.cells[fi][0],f.cells[fi][1])){okf=false;break;}}
+if(!okf)continue;
+if(anchor){var dl=(D.leads[nm[0]].net===anchorNet)?p1:p2;if(cheb(dl,anchor)>dec.max)continue;}
+var s=standing?0.5:0;
+[[p1,n1],[p2,n2]].forEach(function(t2){var q=t2[0],nn=t2[1],nodes=placed[nn];
+if(nodes&&nodes.length){var adjHit=false,mind=99;nodes.forEach(function(m){var dd=dist(q,m);if(dd<mind)mind=dd;if(adj(q,m))adjHit=true;});
+s+=adjHit?-W.bridgeBonus:W.wireLen*mind;}
+var cd=cdef(nn);
+Object.keys(placed).forEach(function(on){if(on===nn)return;var ocl=clsOf(on);
+placed[on].forEach(function(m){var md=cheb(q,m);
+if(md===1){var pen=Math.max(cd.adjPen||1,cdef(on).adjPen||1)*W.cautionBase;if(clsOf(nn)==='HIZ'||ocl==='HIZ')pen*=W.hizMult;s+=pen;}
+if(cd.keepAway.indexOf(ocl)>=0&&md<=cd.keepHoles)s+=W.keepAwayPen;});});});
+if(!best||s<best[0])best=[s,p1,p2,standing];}}
+if(!best)return;
+p.leads=[best[1],best[2]];if(best[3])p.standing=true;else delete p.standing;
+D.leads[nm[0]].at=best[1].slice();D.leads[nm[1]].at=best[2].slice();
+occ[key(best[1])]=1;occ[key(best[2])]=1;
+(placed[n1]=placed[n1]||[]).push(best[1].slice());(placed[n2]=placed[n2]||[]).push(best[2].slice());
+var f2=footCells(p,best[1],best[2],best[3]);f2.cells.forEach(function(q){bodySet[key(q)]=1;});});
+return connect();}
+function audit(){var g=geom(),h='',ngs=0;
+var rows2=[];
+CFG.decoupling.forEach(function(d){var cpart=D.parts.filter(function(p){return p.id===d.cap;})[0];if(!cpart)return;
+var ap=g.leadPos[d.pin];if(!ap)return;var an=D.leads[d.pin]?D.leads[d.pin].net:null;
+var lead=(cpart.leadNames||[]).filter(function(nm){return D.leads[nm]&&D.leads[nm].net===an;})[0];if(!lead)return;
+var dd=cheb(g.leadPos[lead],ap),ok=dd<=d.max;if(!ok)ngs++;
+rows2.push('<span class="'+(ok?'ok':'ng')+'">'+d.cap+'→'+d.pin+' '+dd+(ok?'✓':'✗')+'</span>');});
+h+='デカップリング: '+rows2.join(' ')+'<br>';
+var wlr=[];D.wires.forEach(function(w){var wl=dist(w.a.hole,w.b.hole),mx=cdef(w.net).maxWire;if(wl>mx){ngs++;wlr.push('<span class="ng">'+w.net+' '+wl.toFixed(1)+'></span>'+mx);}});
+h+='配線長: '+(wlr.length?wlr.join(' '):'<span class="ok">全クラス上限内 ✓</span>')+'<br>';
+var ovNg=0,ovWr=0,ids=Object.keys(g.foots);
+for(var i=0;i<ids.length;i++)for(var j=i+1;j<ids.length;j++){var A=g.foots[ids[i]],B=g.foots[ids[j]],hit=false;
+A.cells.forEach(function(q){B.cells.forEach(function(q2){if(q[0]===q2[0]&&q[1]===q2[1])hit=true;});});
+if(hit){if(A.tall&&B.tall){ovNg++;ngs++;}else ovWr++;}}
+ids.forEach(function(pid){g.foots[pid].cells.forEach(function(q){if(g.occ[key(q)]&&g.occ[key(q)]!=='wire'){if(g.foots[pid].tall){ovNg++;ngs++;}else ovWr++;}});});
+h+='本体重なり: '+(ovNg?'<span class="ng">NG '+ovNg+'</span>':'<span class="ok">NG 0 ✓</span>')+' <span class="wr">警告 '+ovWr+'</span><br>';
+var joints={};D.padBridges.forEach(function(b){[b[0],b[1]].forEach(function(q){joints[key(q)]=(joints[key(q)]||0)+1;});});
+D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct&&e.bridgeTo)joints[key(e.bridgeTo)]=(joints[key(e.bridgeTo)]||0)+1;});});
+var jNg=0;Object.keys(joints).forEach(function(k){if(joints[k]>CFG.rules.maxJoints)jNg++;});ngs+=jNg;
+h+='パッド接合数: '+(jNg?'<span class="ng">NG '+jNg+'</span>':'<span class="ok">'+CFG.rules.maxJoints+'以下 ✓</span>');
+h+='<br>総合: '+(ngs?'<span class="ng">NG '+ngs+'件</span>':'<span class="ok">PASS</span>');
+document.getElementById('audit').innerHTML=h;}
+var NS='http://www.w3.org/2000/svg';
+function E(t,a){var n=document.createElementNS(NS,t);for(var k in a)n.setAttribute(k,a[k]);svg.appendChild(n);return n;}
+function T(x,y,s,a){var b={x:x,y:y,'font-size':11,'font-family':'Segoe UI,sans-serif','paint-order':'stroke',stroke:'rgba(0,0,0,0.55)','stroke-width':'2',fill:'#fff'};for(var k in (a||{}))b[k]=a[k];var n=E('text',b);n.textContent=s;return n;}
+function render(){
+PITCH=BASE*ZOOM;
+while(svg.firstChild)svg.removeChild(svg.firstChild);
+var W2=OX+(cols-1)*PITCH+34,H2=OY+(rows-1)*PITCH+34,c,r;
+svg.setAttribute('width',W2);svg.setAttribute('height',H2);
+E('rect',{x:OX-20,y:OY-20,width:(cols-1)*PITCH+40,height:(rows-1)*PITCH+40,rx:10,fill:'#2c6e46',stroke:'#1c4a30','stroke-width':2});
+for(c=1;c<=cols;c++)if(c%2===1)T(xy(c,1)[0]-4,OY-26,String(c),{fill:'#7e8a95',stroke:'none','font-family':'Consolas,monospace'});
+for(r=1;r<=rows;r++)T(OX-38,xy(1,r)[1]+4,String.fromCharCode(64+r),{fill:'#7e8a95',stroke:'none','font-family':'Consolas,monospace'});
+for(c=1;c<=cols;c++)for(r=1;r<=rows;r++){var h=xy(c,r);E('circle',{cx:h[0],cy:h[1],r:Math.max(3,PITCH*0.13),fill:'#c8d2c8',stroke:'#6e826e','stroke-width':1});}
+if(LY.blocked)D.blockedHoles.forEach(function(b){var v=xy(b[0],b[1]);E('rect',{x:v[0]-7,y:v[1]-7,width:14,height:14,rx:3,fill:'#222',opacity:0.92,stroke:'#555'});T(v[0]-4,v[1]+4,'×',{'font-size':11,stroke:'none'});});
+var lm=leadMap(),warn=0;
+if(LY.bridges)D.padBridges.forEach(function(b){var a=xy(b[0][0],b[0][1]),q=xy(b[1][0],b[1][1]);E('line',{x1:a[0],y1:a[1],x2:q[0],y2:q[1],stroke:'#0a3a1e','stroke-width':7,'stroke-linecap':'round'});b._px=[a,q];});
+D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)return;var hp=xy(e.hole[0],e.hole[1]);
+if(e.bridgeTo&&adj(e.hole,e.bridgeTo)){if(LY.bridges){var bp=xy(e.bridgeTo[0],e.bridgeTo[1]);E('line',{x1:hp[0],y1:hp[1],x2:bp[0],y2:bp[1],stroke:'#0a3a1e','stroke-width':6,'stroke-linecap':'round'});}}
+else{warn++;if(LY.bridges){var pp=xy(e.pad[0],e.pad[1]);E('line',{x1:hp[0],y1:hp[1],x2:pp[0],y2:pp[1],stroke:'#ff5d5d','stroke-width':3,'stroke-dasharray':'4 3'});}}});});
+if(LY.wires)D.wires.forEach(function(w){var col=D.netColors[w.net]||'#999';var pa=w.a.direct?xy(w.a.pad[0],w.a.pad[1]):xy(w.a.hole[0],w.a.hole[1]);var pb=w.b.direct?xy(w.b.pad[0],w.b.pad[1]):xy(w.b.hole[0],w.b.hole[1]);
+E('path',{d:'M'+pa[0]+','+pa[1]+' Q'+((pa[0]+pb[0])/2)+','+((pa[1]+pb[1])/2-14)+' '+pb[0]+','+pb[1],stroke:col,'stroke-width':2.6,fill:'none',opacity:0.95});});
+if(LY.parts)D.parts.forEach(function(p){
+if(p.kind==='ic'){var horiz=p.pins['1'][1]===p.pins['2'][1];
+var ps=Object.keys(p.pins).map(function(k){return p.pins[k];}),mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
+ps.forEach(function(q){var v=xy(q[0],q[1]);mnx=Math.min(mnx,v[0]);mxx=Math.max(mxx,v[0]);mny=Math.min(mny,v[1]);mxy=Math.max(mxy,v[1]);});
+var bx,by,bw,bh;
+if(horiz){bx=mnx-8;bw=mxx-mnx+16;by=mny+9;bh=mxy-mny-18;}else{bx=mnx+9;bw=mxx-mnx-18;by=mny-8;bh=mxy-mny+16;}
+p._body=[bx,by,bw,bh];p._seg=null;
+E('rect',{x:bx,y:by,width:bw,height:bh,rx:4,fill:'#16181c',opacity:0.92,stroke:selPart===p?'#41c7ff':'#000','stroke-width':selPart===p?2.5:1});
+if(p.locked)E('rect',{x:bx+3,y:by+3,width:8,height:8,rx:2,fill:'#fff',stroke:'#333'});
+if(LY.labels){T(bx+bw/2-9,by+bh/2+4,p.label,{'font-size':12});
+Object.keys(p.pins).forEach(function(k){var q=p.pins[k],v=xy(q[0],q[1]);T(v[0]+(horiz?-3:(v[0]<(mnx+mxx)/2?-15:9)),v[1]+(horiz?(v[1]>by?15:-8):4),k,{'font-size':10,fill:'#ffd24d'});});}
+}else{var a=xy(p.leads[0][0],p.leads[0][1]),b=xy(p.leads[1][0],p.leads[1][1]),mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;
+p._seg=[a,b];p._body=null;
+var standing=!!p.standing||(p.kind==='r'&&dist(p.leads[0],p.leads[1])<2.05);
+E('line',{x1:a[0],y1:a[1],x2:mx,y2:my,stroke:'#30363c','stroke-width':2.2});
+E('line',{x1:b[0],y1:b[1],x2:mx,y2:my,stroke:'#30363c','stroke-width':2.2});
+var ang=Math.atan2(b[1]-a[1],b[0]-a[0])*180/Math.PI;
+if(p.kind==='film')E('rect',{x:mx-15,y:my-8,width:30,height:16,rx:3,fill:'#f2d22e',stroke:'#a88d0e',transform:'rotate('+ang.toFixed(1)+' '+mx+' '+my+')',opacity:0.97});
+if(p.kind==='r'){if(standing)E('circle',{cx:mx,cy:my,r:8,fill:'#d9b38c',stroke:'#9a7748'});
+else E('rect',{x:mx-13,y:my-5.5,width:26,height:11,rx:5,fill:'#d9b38c',stroke:'#9a7748',transform:'rotate('+ang.toFixed(1)+' '+mx+' '+my+')'});}
+if(p.kind==='disc')E('ellipse',{cx:mx,cy:my,rx:12,ry:8,fill:'#b5651d',stroke:'#7e4612',opacity:0.97});
+if(p.kind==='elec'){E('circle',{cx:mx,cy:my,r:10,fill:'#101418',stroke:'#000',opacity:0.97});T(a[0]-4,a[1]-8,'+',{fill:'#ff7b7b','font-size':12});}
+if(selPart===p)E('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'#41c7ff','stroke-width':2,'stroke-dasharray':'4 3'});
+if(p.locked)E('rect',{x:mx-4,y:my-16,width:8,height:8,rx:2,fill:'#fff',stroke:'#333'});
+if(LY.labels)T(mx-16,my-12,p.label+(standing?'(縦)':''),{'font-size':10});}});
+Object.keys(lm).forEach(function(k){var o=lm[k],pos=k.split(',').map(Number),v=xy(pos[0],pos[1]);E('circle',{cx:v[0],cy:v[1],r:4,fill:D.netColors[o.net]||'#999',stroke:'#fff','stroke-width':1});if(LY.labels&&o.part===null)T(v[0]+7,v[1]+4,o.name.replace('W.',''),{'font-size':10});});
+if(LY.caut){var hn={};Object.keys(lm).forEach(function(k){hn[k]=lm[k].net;});D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});
+Object.keys(hn).forEach(function(kk){var p2=kk.split(',').map(Number);[[1,0],[0,1]].forEach(function(d){var q=key([p2[0]+d[0],p2[1]+d[1]]);if(hn[q]&&hn[q]!==hn[kk]){var a=xy(p2[0],p2[1]),b=xy(p2[0]+d[0],p2[1]+d[1]);T((a[0]+b[0])/2-4,(a[1]+b[1])/2+4,'×',{fill:'#ff5d5d','font-size':12,stroke:'none'});}});});}
+if(LY.ends)D.wires.forEach(function(w){var col=D.netColors[w.net]||'#999';[w.a,w.b].forEach(function(e){var v=e.direct?xy(e.pad[0],e.pad[1]):xy(e.hole[0],e.hole[1]);E('circle',{cx:v[0],cy:v[1],r:7.5,fill:'#fff',stroke:col,'stroke-width':3});if(e.direct)E('circle',{cx:v[0],cy:v[1],r:3,fill:col});e._px=v;});});
+if(drag&&drag.t==='bridge'&&drag.cur){var a3=xy(drag.a[0],drag.a[1]);E('line',{x1:a3[0],y1:a3[1],x2:drag.cur[0],y2:drag.cur[1],stroke:'#0a3a1e','stroke-width':5,'stroke-dasharray':'5 4'});}
+var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)direct++;});});
+document.getElementById('st-stats').innerHTML='被覆線 <b>'+D.wires.length+'</b> 本（直付 '+direct+'）／ ブリッジ警告 <b>'+warn+'</b> ／ ズーム '+Math.round(ZOOM*100)+'%'+(selPart?(' ／ 選択: <b>'+selPart.id+'</b>'+(selPart.locked?' 🔒'.replace('🔒','(ロック)'):'')):'');
+saveLS();}
+function loadProp(i){curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];cols=D.grid.cols;rows=D.grid.rows;selPart=null;drag=null;render();}
+function getPt(e){var r=svg.getBoundingClientRect(),sx=(svg.width.baseVal.value||r.width)/r.width;return[(e.clientX-r.left)*sx,(e.clientY-r.top)*sx];}
+function nearHole(x,y){var c=Math.round((x-OX)/PITCH)+1,r=Math.round((y-OY)/PITCH)+1;if(!inb(c,r))return null;var p=xy(c,r);return Math.hypot(x-p[0],y-p[1])<PITCH*0.5?[c,r]:null;}
+function segd(px,py,ax,ay,bx,by){var dx=bx-ax,dy=by-ay,L=dx*dx+dy*dy,t=L?((px-ax)*dx+(py-ay)*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+dx*t),py-(ay+dy*t));}
+function occupiedOther(c,r,exceptPart,exceptEnd){var lm=leadMap(),o=lm[c+','+r];if(o&&o.part!==exceptPart)return true;if(o&&o.part===null)return true;var e2=endAt(c,r,exceptEnd?exceptEnd:null);return !!e2;}
+function revalidate(e,w){if(e.direct){e.hole=deep(e.pad);return;}var ns=netNodes(w.net,e),ok=false,i;
+if(e.bridgeTo&&adj(e.hole,e.bridgeTo)){for(i=0;i<ns.length;i++)if(ns[i][0]===e.bridgeTo[0]&&ns[i][1]===e.bridgeTo[1]){ok=true;break;}}
+if(!ok){var best=null;ns.forEach(function(n){if(adj(e.hole,n)){var d2=Math.hypot(n[0]-e.pad[0],n[1]-e.pad[1]);if(!best||d2<best[0])best=[d2,n];}});e.bridgeTo=best?deep(best[1]):null;}}
+function afterMove(p){var names={};partLeads(p).forEach(function(L){names[L.name]=L.pos;if(D.leads[L.name])D.leads[L.name].at=deep(L.pos);});
+D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(names[e.tap])e.pad=deep(names[e.tap]);revalidate(e,w);});});}
+function snap(){undoStack.push({i:curI,s:deep(D)});if(undoStack.length>40)undoStack.shift();}
+function undo(){var u=undoStack.pop();if(!u)return;curI=u.i;props[curI].cur=u.s;document.getElementById('pw-prop').value=curI;loadProp(curI);auditNow();}
+svg.addEventListener('pointerdown',function(ev){ev.preventDefault();var pt=getPt(ev),i,j;
+if(mode==='bridge'){for(i=0;i<D.padBridges.length;i++){var b=D.padBridges[i];if(b._px&&segd(pt[0],pt[1],b._px[0][0],b._px[0][1],b._px[1][0],b._px[1][1])<8){snap();D.padBridges.splice(i,1);render();return;}}
+var h=nearHole(pt[0],pt[1]);if(h)drag={t:'bridge',a:h,cur:pt};return;}
+if(mode==='block'){var h2=nearHole(pt[0],pt[1]);if(h2){if(occupiedOther(h2[0],h2[1],null,null))return;snap();var bi=blockedIdx(h2[0],h2[1]);if(bi>=0)D.blockedHoles.splice(bi,1);else D.blockedHoles.push([h2[0],h2[1]]);render();}return;}
+if(mode==='end'){for(j=0;j<D.wires.length;j++){var w=D.wires[j],es=[w.a,w.b];for(var k2=0;k2<2;k2++){var e=es[k2];if(e._px&&Math.hypot(pt[0]-e._px[0],pt[1]-e._px[1])<13){drag={t:'end',e:e,w:w,prev:deep({hole:e.hole,direct:e.direct,bridgeTo:e.bridgeTo||null})};return;}}}return;}
+for(i=D.parts.length-1;i>=0;i--){var p=D.parts[i],Ls=partLeads(p);for(j=0;j<Ls.length;j++){var v=xy(Ls[j].pos[0],Ls[j].pos[1]);if(Math.hypot(pt[0]-v[0],pt[1]-v[1])<11){selPart=p;if(!p.locked&&p.kind!=='ic')drag={t:'plead',p:p,L:Ls[j],prev:deep(Ls[j].pos)};render();return;}}}
+for(i=0;i<D.parts.length;i++){var p2=D.parts[i];if(p2._body&&pt[0]>=p2._body[0]&&pt[0]<=p2._body[0]+p2._body[2]&&pt[1]>=p2._body[1]&&pt[1]<=p2._body[1]+p2._body[3]){selPart=p2;if(!p2.locked)drag={t:'pmove',p:p2,g0:[(pt[0]-OX)/PITCH+1,(pt[1]-OY)/PITCH+1],orig:partLeads(p2).map(function(L){return deep(L.pos);})};render();return;}}
+for(i=D.parts.length-1;i>=0;i--){var p3=D.parts[i];if(p3._seg&&segd(pt[0],pt[1],p3._seg[0][0],p3._seg[0][1],p3._seg[1][0],p3._seg[1][1])<9){selPart=p3;if(!p3.locked)drag={t:'pmove',p:p3,g0:[(pt[0]-OX)/PITCH+1,(pt[1]-OY)/PITCH+1],orig:partLeads(p3).map(function(L){return deep(L.pos);})};render();return;}}
+selPart=null;render();});
+svg.addEventListener('pointermove',function(ev){if(drag)return;var pt=getPt(ev),h=nearHole(pt[0],pt[1]);
+var sp=document.getElementById('st-pos'),sn=document.getElementById('st-net');
+if(!h){sp.textContent='—';sn.textContent='';return;}
+sp.innerHTML='列 <b>'+h[0]+'</b> 行 <b>'+String.fromCharCode(64+h[1])+'</b>';
+var lm=leadMap(),o=lm[key(h)],e2=endAt(h[0],h[1]);
+if(o)sn.innerHTML='ネット: <b>'+o.net+'</b>（'+o.name+'）';
+else if(e2)sn.innerHTML='銅線端子: <b>'+e2.w.net+'</b>';
+else if(blockedIdx(h[0],h[1])>=0)sn.innerHTML='<span style="color:var(--wr)">ブロック穴</span>';
+else sn.textContent='空き穴';});
+window.addEventListener('pointermove',function(ev){if(!drag)return;var pt=getPt(ev),g=[(pt[0]-OX)/PITCH+1,(pt[1]-OY)/PITCH+1];
+if(drag.t==='bridge'){drag.cur=pt;}
+else if(drag.t==='end'){drag.e.direct=false;drag.e.hole=[g[0],g[1]];}
+else if(drag.t==='plead'){drag.L.set([g[0],g[1]]);}
+else if(drag.t==='pmove'){var dx=g[0]-drag.g0[0],dy=g[1]-drag.g0[1],Ls=partLeads(drag.p);for(var i=0;i<Ls.length;i++)Ls[i].set([drag.orig[i][0]+dx,drag.orig[i][1]+dy]);}
+render();});
+window.addEventListener('pointerup',function(ev){if(!drag)return;var pt=getPt(ev),h=nearHole(pt[0],pt[1]);
+if(drag.t==='bridge'){if(h&&adj(h,drag.a)){snap();D.padBridges.push([drag.a,h]);}drag=null;render();return;}
+if(drag.t==='end'){var e=drag.e,w=drag.w;
+function rev(){e.hole=drag.prev.hole;e.direct=drag.prev.direct;e.bridgeTo=drag.prev.bridgeTo;}
+if(!h){rev();}
+else if(h[0]===e.pad[0]&&h[1]===e.pad[1]){snap();e.hole=deep(e.pad);e.direct=true;e.bridgeTo=null;}
+else if(blockedIdx(h[0],h[1])>=0||occupiedOther(h[0],h[1],null,e)){rev();}
+else{snap();e.hole=[h[0],h[1]];e.direct=false;revalidate(e,w);}
+drag=null;render();return;}
+if(drag.t==='plead'){var L=drag.L,p=drag.p;
+if(!h||blockedIdx(h[0],h[1])>=0||occupiedOther(h[0],h[1],p,null)){L.set(drag.prev);}
+else{var dup=false;partLeads(p).forEach(function(L2){if(L2!==L&&L2.pos[0]===h[0]&&L2.pos[1]===h[1])dup=true;});
+if(dup)L.set(drag.prev);else{snap();L.set([h[0],h[1]]);afterMove(p);}}
+drag=null;render();return;}
+if(drag.t==='pmove'){var p2=drag.p,Ls=partLeads(p2),dx=Math.round((pt[0]-OX)/PITCH+1-drag.g0[0]),dy=Math.round((pt[1]-OY)/PITCH+1-drag.g0[1]),ok=true,i;
+var np=[];for(i=0;i<Ls.length;i++){var q=[drag.orig[i][0]+dx,drag.orig[i][1]+dy];np.push(q);if(!inb(q[0],q[1])||blockedIdx(q[0],q[1])>=0||occupiedOther(q[0],q[1],p2,null))ok=false;}
+for(i=0;i<Ls.length;i++)Ls[i].set(ok?np[i]:drag.orig[i]);
+if(ok){snap();afterMove(p2);}
+drag=null;render();return;}});
+function exportJSON(){return JSON.stringify({proposal:props[curI].name,grid:D.grid,blockedHoles:D.blockedHoles,leads:D.leads,parts:D.parts,padBridges:D.padBridges,wires:D.wires,netColors:D.netColors,cfg:CFG},function(k,v){return (typeof k==='string'&&k.charAt(0)==='_')?undefined:v;});}
+function importObj(d2){snap();['grid','blockedHoles','leads','parts','padBridges','wires','netColors'].forEach(function(k){if(d2[k])D[k]=d2[k];});
+if(d2.proposals){props=d2.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null};});curI=0;refreshSel();loadProp(0);auditNow();return;}
+if(d2.cfg&&d2.cfg.weights&&d2.cfg.physical)CFG=d2.cfg;
+cols=D.grid.cols;rows=D.grid.rows;buildSliders();refreshSel();render();auditNow();}
+function saveLS(){try{var st={curI:curI,cfg:CFG,names:props.map(function(p){return p.name;}),states:props.map(function(p){return p.cur;})};localStorage.setItem(LSKEY,JSON.stringify(st,function(k,v){return (typeof k==='string'&&k.charAt(0)==='_')?undefined:v;}));}catch(e){}}
+function loadLS(){try{var st=JSON.parse(localStorage.getItem(LSKEY));if(!st)return;
+if(st.cfg&&st.cfg.weights&&st.cfg.physical&&st.cfg.classes&&st.cfg.partOv&&st.cfg.rules)CFG=st.cfg;
+if(st.states)st.states.forEach(function(s,i){if(s){if(!props[i])props[i]={name:(st.names&&st.names[i])||('案'+i),orig:s,cur:null};props[i].cur=s;if(st.names&&st.names[i])props[i].name=st.names[i];}});
+if(typeof st.curI==='number'&&props[st.curI])curI=st.curI;}catch(e){}}
+function refreshSel(){var sel=document.getElementById('pw-prop');sel.innerHTML='';props.forEach(function(p,i){var o=document.createElement('option');o.value=i;o.textContent=p.name;sel.appendChild(o);});sel.value=curI;}
+function setMode(m){mode=m;['end','part','bridge','block'].forEach(function(k){document.getElementById('m-'+k).className=(k===m)?'on':'';});
+document.getElementById('modehint').textContent=HINT[m];render();}
+document.getElementById('m-end').onclick=function(){setMode('end');};
+document.getElementById('m-part').onclick=function(){setMode('part');};
+document.getElementById('m-bridge').onclick=function(){setMode('bridge');};
+document.getElementById('m-block').onclick=function(){setMode('block');};
+document.getElementById('pw-lock').onclick=function(){if(selPart){snap();selPart.locked=!selPart.locked;render();}};
+document.getElementById('pw-reset').onclick=function(){snap();props[curI].cur=deep(props[curI].orig);loadProp(curI);auditNow();};
+document.getElementById('pw-prop').onchange=function(){loadProp(parseInt(this.value,10));auditNow();};
+document.getElementById('pw-undo').onclick=undo;
+document.getElementById('pw-rewire').onclick=function(){snap();connect();render();auditNow();};
+document.getElementById('pw-repropose').onclick=function(){snap();propose();render();auditNow();};
+document.getElementById('pw-saveas').onclick=function(){props.push({name:'案 '+new Date().toLocaleTimeString(),orig:deep(D),cur:deep(D)});curI=props.length-1;refreshSel();loadProp(curI);};
+document.getElementById('pw-defcfg').onclick=function(){CFG=deep(DEFCFG);buildSliders();saveLS();};
+document.getElementById('pw-copy').onclick=function(){var b=this;document.getElementById('pw-out').value=exportJSON();if(navigator.clipboard)navigator.clipboard.writeText(exportJSON()).then(function(){b.textContent='コピー済み';setTimeout(function(){b.textContent='コピー';},1400);});};
+document.getElementById('pw-export').onclick=function(){var j=exportJSON();document.getElementById('pw-out').value=j;if(navigator.clipboard)navigator.clipboard.writeText(j);var bl=new Blob([j],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='perfwire_export.json';a.click();};
+document.getElementById('pw-import').onclick=function(){try{importObj(JSON.parse(document.getElementById('pw-out').value));}catch(e2){alert('JSONが不正です: '+e2.message);}};
+document.getElementById('pw-sample').onclick=function(){props=INIT.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null};});curI=0;refreshSel();loadProp(0);auditNow();};
+document.getElementById('pw-clearls').onclick=function(){try{localStorage.removeItem(LSKEY);}catch(e){}location.reload();};
+document.getElementById('pw-open').onclick=function(){document.getElementById('pw-file').click();};
+document.getElementById('pw-file').onchange=function(){var f=this.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){try{importObj(JSON.parse(rd.result));}catch(e2){alert('JSONが不正です: '+e2.message);}};rd.readAsText(f);};
+window.addEventListener('dragover',function(e){e.preventDefault();document.body.classList.add('drop');});
+window.addEventListener('dragleave',function(e){document.body.classList.remove('drop');});
+window.addEventListener('drop',function(e){e.preventDefault();document.body.classList.remove('drop');var f=e.dataTransfer.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){try{importObj(JSON.parse(rd.result));}catch(e2){alert('JSONが不正です: '+e2.message);}};rd.readAsText(f);});
+document.getElementById('z-in').onclick=function(){ZOOM=Math.min(2.2,ZOOM*1.2);render();};
+document.getElementById('z-out').onclick=function(){ZOOM=Math.max(0.5,ZOOM/1.2);render();};
+document.getElementById('z-fit').onclick=function(){ZOOM=1;render();};
+window.addEventListener('keydown',function(e){var tag=(e.target.tagName||'').toLowerCase();if(tag==='input'||tag==='textarea'||tag==='select')return;
+if(e.ctrlKey&&e.key.toLowerCase()==='z'){e.preventDefault();undo();return;}
+if(e.key==='1')setMode('end');if(e.key==='2')setMode('part');if(e.key==='3')setMode('bridge');if(e.key==='4')setMode('block');});
+function auditNow(){try{audit();}catch(e){document.getElementById('audit').textContent='監査エラー: '+e.message;}}
+function tgl(box,label,k){var d=document.createElement('label');d.className='tgl';
+var i=document.createElement('input');i.type='checkbox';i.checked=LY[k];
+i.onchange=function(){LY[k]=i.checked;render();};
+d.appendChild(i);d.appendChild(document.createTextNode(label));box.appendChild(d);}
+(function(){var b=document.getElementById('layers');
+[['部品','parts'],['ラベル','labels'],['被覆線','wires'],['ブリッジ','bridges'],['端子','ends'],['注意×','caut'],['ブロック穴','blocked']].forEach(function(x){tgl(b,x[0],x[1]);});})();
+function slider(box,label,get,set,min,max,step){var lab=document.createElement('div');lab.className='sld';
+var l=document.createElement('span');l.className='lab';l.textContent=label;
+var i=document.createElement('input');i.type='range';i.min=min;i.max=max;i.step=step;i.value=get();
+var v=document.createElement('span');v.className='val';v.textContent=get();
+i.oninput=function(){set(parseFloat(i.value));v.textContent=i.value;saveLS();};
+lab.appendChild(l);lab.appendChild(i);lab.appendChild(v);box.appendChild(lab);}
+function checkbox2(box,label,get,set){var d=document.createElement('label');d.className='tgl';
+var i=document.createElement('input');i.type='checkbox';i.checked=get();
+i.onchange=function(){set(i.checked);saveLS();};
+d.appendChild(i);d.appendChild(document.createTextNode(label));box.appendChild(d);}
+function buildSliders(){var w=document.getElementById('s-weights'),ph=document.getElementById('s-phys'),ee=document.getElementById('s-ee');
+w.innerHTML='';ph.innerHTML='';ee.innerHTML='';
+slider(w,'ブリッジ優先（銅線削減）',function(){return CFG.weights.bridgeBonus;},function(v){CFG.weights.bridgeBonus=v;},0,40,1);
+slider(w,'配線長の重み',function(){return CFG.weights.wireLen;},function(v){CFG.weights.wireLen=v;},0,3,0.1);
+slider(w,'隣接ペナルティ基準',function(){return CFG.weights.cautionBase;},function(v){CFG.weights.cautionBase=v;},0,5,0.1);
+slider(w,'高Zペナルティ倍率',function(){return CFG.weights.hizMult;},function(v){CFG.weights.hizMult=v;},1,6,0.5);
+slider(w,'入出力分離ペナルティ',function(){return CFG.weights.keepAwayPen;},function(v){CFG.weights.keepAwayPen=v;},0,15,1);
+slider(ph,'抵抗 本体長 mm',function(){return CFG.physical.r.bodyLen;},function(v){CFG.physical.r.bodyLen=v;},5,9,0.1);
+slider(ph,'抵抗 曲げ代 mm',function(){return CFG.physical.r.bend;},function(v){CFG.physical.r.bend=v;},0,2,0.1);
+slider(ph,'抵抗 最大スパン mm',function(){return CFG.physical.r.maxSpan;},function(v){CFG.physical.r.maxSpan=v;},8,18,0.5);
+checkbox2(ph,'抵抗の立て実装を許可',function(){return CFG.allowStanding;},function(v){CFG.allowStanding=v;});
+slider(ph,'電解C4 直径 mm',function(){return CFG.partOv.C4.dia;},function(v){CFG.partOv.C4.dia=v;},3,12,0.5);
+slider(ph,'電解C6 直径 mm',function(){return CFG.partOv.C6.dia;},function(v){CFG.partOv.C6.dia=v;},3,12,0.5);
+slider(ee,'高Z配線長上限（穴）',function(){return CFG.classes.HIZ.maxWire;},function(v){CFG.classes.HIZ.maxWire=v;},3,15,1);
+slider(ee,'信号配線長上限（穴）',function(){return CFG.classes.SIG.maxWire;},function(v){CFG.classes.SIG.maxWire=v;},5,25,1);
+slider(ee,'デカップリング距離上限（穴）',function(){return CFG.decoupling.length?CFG.decoupling[0].max:2;},function(v){CFG.decoupling.forEach(function(d,i){if(i<2)d.max=v;});},1,5,1);
+slider(ee,'入出力分離距離（穴）',function(){return CFG.classes.HIZ.keepHoles;},function(v){CFG.classes.HIZ.keepHoles=v;CFG.classes.OUT.keepHoles=v;},0,4,1);
+slider(ee,'パッド接合数上限',function(){return CFG.rules.maxJoints;},function(v){CFG.rules.maxJoints=v;},2,5,1);}
+loadLS();
+buildSliders();
+refreshSel();
+setMode('end');
+loadProp(curI);
+auditNow();
+})();
+</script>
+</body>
+</html>
