@@ -92,6 +92,7 @@ svg{display:block;margin:16px auto}
 <button id="pw-rewire" class="primary">配線を再計算</button>
 <button id="pw-repropose" class="primary">配置を再提案</button>
 <button id="pw-saveas">案として保存</button>
+<button id="pw-diff" title="現在の案を編集前や他の案と比較（Ctrl+Kで案を指定）">比較</button>
 <button id="pw-guide">作業ガイド</button>
 <span class="spacer"></span>
 <button id="pw-lang" title="Language">EN</button>
@@ -224,7 +225,8 @@ var JE={
 'モード: 端子':'Mode: ends','モード: 部品':'Mode: parts','モード: ブリッジ':'Mode: bridges','モード: 穴ブロック':'Mode: block holes','モード: テスター（導通プローブ）':'Mode: probe (continuity)',
 '書き出し（JSON）':'Export (JSON)','ファイルを開く（JSON / KiCAD .net）':'Open file (JSON / KiCAD .net)','URL共有（圧縮リンク生成）':'Share URL (compressed link)','印刷（1:1原寸 — 実基板に重ねて検品。裏面は「裏面」ONで）':'Print (1:1 scale — overlay on the real board; toggle Back for solder side)',
 'ズーム イン':'Zoom in','ズーム アウト':'Zoom out','ズーム 100%':'Zoom 100%','レイヤー: 実寸法 切替':'Layer: toggle true size','レイヤー: 被覆線 切替':'Layer: toggle wires',
-'写真を読み込み（下絵）':'Load photo (underlay)','写真を消去':'Clear photo','裏面ビュー 切替':'Toggle mirror view','作業ガイドを開始':'Start work guide','作業ガイドの進捗をリセット':'Reset guide progress','導通チェックリスト生成':'Generate continuity checklist'};
+'写真を読み込み（下絵）':'Load photo (underlay)','写真を消去':'Clear photo','裏面ビュー 切替':'Toggle mirror view','作業ガイドを開始':'Start work guide','作業ガイドの進捗をリセット':'Reset guide progress','導通チェックリスト生成':'Generate continuity checklist',
+'比較':'Diff','比較を終了':'Close diff','編集前':'unedited original','比較: 編集前と比較':'Diff vs unedited original','比較を終了する':'Close the diff overlay'};
 function tr(s){return (LANG==='en'&&JE[s])||s;}
 var props=INIT.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null};});
 var curI=0,D=null,BASE=30,ZOOM=1,PITCH=30,OX=50,OY=40,mode='end',drag=null,selPart=null,cols=17,rows=14;
@@ -234,6 +236,7 @@ var PHOTO={img:null,x:-0.67,y:-0.67,mul:100,rot90:0,rotF:0,op:55,flip:false,drag
 var GUIDE={on:false,steps:[],i:0,done:{}};
 var MIRROR=false;
 var probeA=null,probeRes=null;
+var DIFF={on:false,base:null,name:''};
 var MODEL={end:'端子',part:'部品',bridge:'ブリッジ',block:'穴ブロック',probe:'テスター'};
 var HINT={end:'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。',part:'本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。',bridge:'隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。',block:'使えない穴をクリックで×指定／解除。再計算が避けます。',probe:'2つの穴を順にクリック → 計画上の導通/非導通と接続グループを表示。実機のテスター当てと突き合わせる。'};
 var LY={parts:true,labels:true,wires:true,bridges:true,ends:true,caut:true,blocked:true,foot:false};
@@ -491,15 +494,16 @@ E('circle',{cx:va[0],cy:va[1],r:PITCH*0.5,fill:'none',stroke:pcc,'stroke-width':
 var pmsg=probeRes.conn?('導通 ✓ '+(probeRes.na||probeRes.nb||'')):
 (probeRes.na&&probeRes.na===probeRes.nb?'非導通 ⚠ 同ネット '+probeRes.na+' が計画上未接続':'非導通 ✗ '+(probeRes.na||'空き')+' / '+(probeRes.nb||'空き'));
 T((va[0]+vb[0])/2-30,Math.min(va[1],vb[1])-16,pmsg,{'font-size':13,fill:pcc});}}
+var ds=null;if(DIFF.on&&DIFF.base)try{ds=diffOverlay();}catch(e){}
 if(tempViz)try{tempViz();}catch(e){}
 if(GUIDE.on&&GUIDE.steps[GUIDE.i]){
 E('rect',{x:0,y:0,width:W2,height:H2,fill:'rgba(5,8,12,0.76)','pointer-events':'none'});
 try{drawStep(GUIDE.steps[GUIDE.i]);}catch(e){}}
 var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)direct++;});});
-document.getElementById('st-stats').innerHTML='被覆線 <b>'+D.wires.length+'</b>（直付 '+direct+'）/ 警告 <b>'+warn+'</b> / ズーム '+Math.round(ZOOM*100)+'%'+(selPart?(' / 選択 <b>'+selPart.id+'</b>'+(selPart.locked?'(ロック)':'')):'');
+document.getElementById('st-stats').innerHTML='被覆線 <b>'+D.wires.length+'</b>（直付 '+direct+'）/ 警告 <b>'+warn+'</b> / ズーム '+Math.round(ZOOM*100)+'%'+(selPart?(' / 選択 <b>'+selPart.id+'</b>'+(selPart.locked?'(ロック)':'')):'')+(ds?(' / 比較[<b>'+DIFF.name+'</b>] 移動'+ds.mv+' 部品+'+ds.pAdd+'−'+ds.pDel+' 線+'+ds.wAdd+'−'+ds.wDel+' 橋+'+ds.bAdd+'−'+ds.bDel):'');
 if(selPart!==palLast){palLast=selPart;buildPalEdit();}
 saveLS();}
-function loadProp(i){if(GUIDE.on)guideEnd();curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];cols=D.grid.cols;rows=D.grid.rows;selPart=null;drag=null;hoverNet=null;buildNetClasses();render();}
+function loadProp(i){if(GUIDE.on)guideEnd();if(DIFF.on){DIFF.on=false;DIFF.base=null;var db=document.getElementById('pw-diff');if(db)db.textContent=tr('比較');}curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];cols=D.grid.cols;rows=D.grid.rows;selPart=null;drag=null;hoverNet=null;buildNetClasses();render();}
 function getPt(e){var r=svg.getBoundingClientRect(),sx=(svg.width.baseVal.value||r.width)/r.width;return[(e.clientX-r.left)*sx,(e.clientY-r.top)*sx];}
 function nearHole(x,y){var ci=Math.round((x-OX)/PITCH),c=MIRROR?cols-ci:ci+1,r=Math.round((y-OY)/PITCH)+1;if(!inb(c,r))return null;var p=xy(c,r);return Math.hypot(x-p[0],y-p[1])<PITCH*0.5?[c,r]:null;}
 function segd(px,py,ax,ay,bx,by){var dx=bx-ax,dy=by-ay,L=dx*dx+dy*dy,t=L?((px-ax)*dx+(py-ay)*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+dx*t),py-(ay+dy*t));}
@@ -601,6 +605,7 @@ document.getElementById('pw-lock').onclick=function(){if(selPart){snap();selPart
 document.getElementById('pw-reset').onclick=function(){snap();props[curI].cur=deep(props[curI].orig);loadProp(curI);auditNow();};
 document.getElementById('pw-prop').onchange=function(){loadProp(parseInt(this.value,10));auditNow();};
 document.getElementById('pw-undo').onclick=undo;
+document.getElementById('pw-diff').onclick=function(){if(DIFF.on)diffEnd();else diffStart(props[curI].orig,tr('編集前'));};
 function doRewire(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-rewire');snap();var wb=D.wires.length;connect();
 calcNote='配線再計算: 被覆線 '+wb+'→'+D.wires.length+'本';render();auditNow();
 b.textContent='✓ 完了';setTimeout(function(){b.textContent='配線を再計算';},900);}
@@ -773,6 +778,41 @@ row.appendChild(nm);row.appendChild(inp);box.appendChild(row);});
 var del=document.createElement('button');del.textContent=tr('この部品を削除');del.style.marginTop='6px';
 del.onclick=function(){if(confirm(p.id+' を削除しますか？（参照する被覆線も消えます）'))delPart(p);};
 box.appendChild(del);}
+function wireSig(w){var a=w.a.direct?w.a.pad:w.a.hole,b=w.b.direct?w.b.pad:w.b.hole,k1=key(a),k2=key(b);
+return w.net+'|'+(k1<k2?k1+'|'+k2:k2+'|'+k1);}
+function bridgeSig(b){var k1=key(b[0]),k2=key(b[1]);return k1<k2?k1+'|'+k2:k2+'|'+k1;}
+function leadsOf(p){return p.kind==='ic'?Object.keys(p.pins).map(function(k){return p.pins[k];}):p.leads;}
+function diffOverlay(){var B=DIFF.base,sum={mv:0,wAdd:0,wDel:0,bAdd:0,bDel:0,pAdd:0,pDel:0};
+var bParts={};B.parts.forEach(function(p){bParts[p.id]=p;});
+var cParts={};D.parts.forEach(function(p){cParts[p.id]=p;});
+B.parts.forEach(function(bp){var cp=cParts[bp.id];
+if(!cp){sum.pDel++;var bl0=leadsOf(bp);bl0.forEach(function(q){var v=xy(q[0],q[1]);
+E('circle',{cx:v[0],cy:v[1],r:7,fill:'none',stroke:'#8b97a3','stroke-width':2,'stroke-dasharray':'3 3','pointer-events':'none'});});
+var v0=xy(bl0[0][0],bl0[0][1]);T(v0[0]+8,v0[1]-8,'−'+bp.id,{fill:'#8b97a3','font-size':11});return;}
+var bl=leadsOf(bp),cl=leadsOf(cp),moved=false,i;
+for(i=0;i<bl.length;i++)if(!cl[i]||bl[i][0]!==cl[i][0]||bl[i][1]!==cl[i][1])moved=true;
+if(moved){sum.mv++;
+for(i=0;i<Math.min(bl.length,cl.length);i++){if(bl[i][0]===cl[i][0]&&bl[i][1]===cl[i][1])continue;
+var a=xy(bl[i][0],bl[i][1]),b2=xy(cl[i][0],cl[i][1]);
+E('circle',{cx:a[0],cy:a[1],r:6,fill:'none',stroke:'#ffb454','stroke-width':2,'stroke-dasharray':'3 3','pointer-events':'none'});
+E('line',{x1:a[0],y1:a[1],x2:b2[0],y2:b2[1],stroke:'#ffb454','stroke-width':1.6,'stroke-dasharray':'5 4',opacity:0.8,'pointer-events':'none'});}}});
+D.parts.forEach(function(cp){if(!bParts[cp.id])sum.pAdd++;});
+var bw={},cw={};B.wires.forEach(function(w){bw[wireSig(w)]=w;});D.wires.forEach(function(w){cw[wireSig(w)]=w;});
+function ept(w){var pa=w.a.direct?xy(w.a.pad[0],w.a.pad[1]):xy(w.a.hole[0],w.a.hole[1]),pb=w.b.direct?xy(w.b.pad[0],w.b.pad[1]):xy(w.b.hole[0],w.b.hole[1]);return[pa,pb];}
+Object.keys(cw).forEach(function(s){if(!bw[s]){sum.wAdd++;var e2=ept(cw[s]);
+T((e2[0][0]+e2[1][0])/2-4,(e2[0][1]+e2[1][1])/2-18,'+',{fill:'#3ddc84','font-size':16});}});
+Object.keys(bw).forEach(function(s){if(!cw[s]){sum.wDel++;var e3=ept(bw[s]);
+E('path',{d:'M'+e3[0][0]+','+e3[0][1]+' Q'+((e3[0][0]+e3[1][0])/2)+','+((e3[0][1]+e3[1][1])/2-14)+' '+e3[1][0]+','+e3[1][1],stroke:'#8b97a3','stroke-width':2,'stroke-dasharray':'5 4',fill:'none',opacity:0.7,'pointer-events':'none'});
+T((e3[0][0]+e3[1][0])/2-4,(e3[0][1]+e3[1][1])/2-18,'−',{fill:'#ff5d5d','font-size':16});}});
+var bb={},cb={};B.padBridges.forEach(function(b3){bb[bridgeSig(b3)]=b3;});D.padBridges.forEach(function(b3){cb[bridgeSig(b3)]=b3;});
+Object.keys(cb).forEach(function(s){if(!bb[s])sum.bAdd++;});
+Object.keys(bb).forEach(function(s){if(!cb[s]){sum.bDel++;var b4=bb[s],a4=xy(b4[0][0],b4[0][1]),q4=xy(b4[1][0],b4[1][1]);
+E('line',{x1:a4[0],y1:a4[1],x2:q4[0],y2:q4[1],stroke:'#ff5d5d','stroke-width':4,'stroke-dasharray':'4 3',opacity:0.8,'pointer-events':'none'});}});
+return sum;}
+function diffStart(base,name){DIFF.on=true;DIFF.base=deep(base);DIFF.name=name;
+document.getElementById('pw-diff').textContent=tr('比較を終了');render();}
+function diffEnd(){DIFF.on=false;DIFF.base=null;
+document.getElementById('pw-diff').textContent=tr('比較');render();}
 function connMap(){var par={};
 function f(x){if(par[x]===undefined)par[x]=x;while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;}
 function u(a,b){par[f(a)]=f(b);}
@@ -888,13 +928,17 @@ var CMDS=[
 {n:'写真を消去',k:'photo clear',f:function(){document.getElementById('ph-clear').click();}},
 {n:'裏面ビュー 切替',k:'mirror flip back',f:function(){setMirror(!MIRROR);}},
 {n:'作業ガイドを開始',k:'guide solder steps',f:function(){guideStart();}},
-{n:'作業ガイドの進捗をリセット',k:'guide reset progress',f:function(){try{localStorage.removeItem(LSKEY+'_guide');}catch(e){}GUIDE.done={};if(GUIDE.on)guideShow();}}
+{n:'作業ガイドの進捗をリセット',k:'guide reset progress',f:function(){try{localStorage.removeItem(LSKEY+'_guide');}catch(e){}GUIDE.done={};if(GUIDE.on)guideShow();}},
+{n:'比較: 編集前と比較',k:'diff original compare',f:function(){diffStart(props[curI].orig,tr('編集前'));}},
+{n:'比較を終了',k:'diff close',f:function(){diffEnd();}}
 ];
+function getCmds(){return CMDS.concat(props.map(function(p,i){
+return{n:'比較: '+p.name,k:'diff compare proposal',f:function(){diffStart(p.cur||p.orig,p.name);}};}));}
 var cpSel=0;
 function cpOpen(){document.getElementById('cpov').style.display='flex';var inp=document.getElementById('cp-in');inp.value='';cpSel=0;cpFilter('');inp.focus();}
 function cpClose(){document.getElementById('cpov').style.display='none';}
 function cpFilter(q){var ls=document.getElementById('cp-ls');ls.innerHTML='';q=q.toLowerCase();
-var hits=CMDS.filter(function(c){return !q||c.n.toLowerCase().indexOf(q)>=0||tr(c.n).toLowerCase().indexOf(q)>=0||c.k.indexOf(q)>=0;});
+var hits=getCmds().filter(function(c){return !q||c.n.toLowerCase().indexOf(q)>=0||tr(c.n).toLowerCase().indexOf(q)>=0||c.k.indexOf(q)>=0;});
 hits.forEach(function(c,i){var li=document.createElement('li');li.textContent=tr(c.n);if(i===cpSel)li.className='sel';
 li.onclick=function(){cpClose();c.f();};ls.appendChild(li);});
 return hits;}
@@ -902,7 +946,7 @@ document.getElementById('pw-cmd').onclick=cpOpen;
 document.getElementById('cpov').addEventListener('pointerdown',function(e){if(e.target===this)cpClose();});
 document.getElementById('cp-in').addEventListener('input',function(){cpSel=0;cpFilter(this.value);});
 document.getElementById('cp-in').addEventListener('keydown',function(e){
-var hits=CMDS.filter(function(c){var q=document.getElementById('cp-in').value.toLowerCase();return !q||c.n.toLowerCase().indexOf(q)>=0||tr(c.n).toLowerCase().indexOf(q)>=0||c.k.indexOf(q)>=0;});
+var hits=getCmds().filter(function(c){var q=document.getElementById('cp-in').value.toLowerCase();return !q||c.n.toLowerCase().indexOf(q)>=0||tr(c.n).toLowerCase().indexOf(q)>=0||c.k.indexOf(q)>=0;});
 if(e.key==='ArrowDown'){e.preventDefault();cpSel=Math.min(hits.length-1,cpSel+1);cpFilter(this.value);}
 else if(e.key==='ArrowUp'){e.preventDefault();cpSel=Math.max(0,cpSel-1);cpFilter(this.value);}
 else if(e.key==='Enter'){e.preventDefault();if(hits[cpSel]){cpClose();hits[cpSel].f();}}
