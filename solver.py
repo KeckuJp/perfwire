@@ -986,6 +986,46 @@ def solve(state, cfg, propose=False):
                     "fabReady": ee_ng == 0}
     return out
 
+def _resolve_guard_net(state, hiz_net):
+    """高Zネットを囲うガード電位を推定: その入力ピンを持つ IC の出力ピンのネット（バッファ出力）。"""
+    for p in state.get("parts", []):
+        if p.get("kind") != "ic":
+            continue
+        pins = p.get("pins") or {}
+        pt = p.get("pinTypes") if isinstance(p.get("pinTypes"), dict) else {}
+        if any(state["leads"].get(p["id"] + "." + pin, {}).get("net") == hiz_net and pt.get(pin) == "in" for pin in pins):
+            for pin in pins:
+                if pt.get(pin) == "out":
+                    return state["leads"].get(p["id"] + "." + pin, {}).get("net")
+    return None
+
+def synthesize_guard(state, cfg, hiz_net, guard_net=None):
+    """高Zノードのガードリングを合成: 露出する隣接空き穴をガード電位の足として追加した新 state を返す。
+    自動適用はしない＝呼び出し側が案として採用。ガードネットは guard_net 引数 > config.guard_of > 推定。"""
+    bd = Board(state, cfg)
+    hiz_holes = [xy for lead, xy in bd.lead_pos.items() if bd.net_of_lead.get(lead) == hiz_net]
+    if not hiz_holes:
+        return None, {"error": "no holes on net " + str(hiz_net)}
+    if guard_net is None:
+        guard_net = (cfg.get("guard_of") or {}).get(hiz_net) or _resolve_guard_net(state, hiz_net)
+    if not guard_net:
+        return None, {"error": "could not resolve a guard net for " + str(hiz_net) + " (pass --guard-net or set config.guard_of)"}
+    ring = set()
+    for h in hiz_holes:
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                q = (h[0] + dx, h[1] + dy)
+                if bd.usable(q):
+                    ring.add(q)
+    new = json.loads(json.dumps(state))
+    safe = re.sub(r"[^A-Za-z0-9]", "", str(hiz_net))
+    for i, q in enumerate(sorted(ring)):
+        new["leads"]["GRD_%s_%d" % (safe, i)] = {"net": guard_net, "at": [q[0], q[1]], "role": "passive"}
+    new["proposal"] = "guard:" + str(hiz_net) + "→" + str(guard_net)
+    return new, {"hiz": hiz_net, "guard": guard_net, "ringHoles": sorted([list(q) for q in ring]), "count": len(ring)}
+
 def propose_multi(state, cfg):
     """複数候補スコアリング: 重み格子で再配置を回し、(eeNg, 被覆線数, 注意数) 最小の案を採用。決定的。"""
     grid = [(bb, wl) for bb in (10, 20, 30) for wl in (0.5, 1.0, 2.0)]
@@ -1012,6 +1052,21 @@ if __name__ == "__main__":
     dst = sys.argv[sys.argv.index("-o") + 1] if "-o" in sys.argv else None
     cfg = load_cfg(cfgp)
     state = json.load(io.open(src, encoding="utf-8"))
+    if "--guard" in sys.argv:
+        hiz = sys.argv[sys.argv.index("--guard") + 1]
+        gn = sys.argv[sys.argv.index("--guard-net") + 1] if "--guard-net" in sys.argv else None
+        targets = [n for n in cfg.get("net_classes", {}).get("HIZ", {}).get("nets", [])] if hiz == "all" else [hiz]
+        cur = state
+        info = []
+        for t in targets:
+            new, meta = synthesize_guard(cur, cfg, t, gn)
+            info.append(meta)
+            if new:
+                cur = new
+        sys.stderr.write("guard synthesis: " + json.dumps(info, ensure_ascii=False) + "\n")
+        out = json.dumps(cur, ensure_ascii=False, separators=(",", ":"))
+        (io.open(dst, "w", encoding="utf-8").write(out) if dst else sys.stdout.write(out + "\n"))
+        sys.exit(0)
     if "--emit-config" in sys.argv:
         out = json.dumps(emit_config(state), ensure_ascii=False, indent=2)
         (io.open(dst, "w", encoding="utf-8").write(out) if dst else sys.stdout.write(out + "\n"))

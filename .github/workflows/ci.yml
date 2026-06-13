@@ -32,3 +32,8 @@ jobs:
         run: node tools/parity_check.mjs
         env:
           PERFWIRE_PYTHON: python
+
+      - name: JS<->Python full-ee parity incl. geometry (headless, skips if no Chrome)
+        run: node tools/parity_headless.mjs
+        env:
+          PERFWIRE_PYTHON: python
