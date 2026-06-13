@@ -48,11 +48,13 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .tgl input::after{content:'';position:absolute;width:14px;height:14px;border-radius:50%;background:#cfd8df;top:2px;left:2px;transition:left .18s,background .18s}
 .tgl input:checked{background:var(--acc2)}
 .tgl input:checked::after{left:16px;background:#fff}
-.sld{display:grid;grid-template-columns:1fr 48px;gap:8px;align-items:center;font-size:12px;margin:9px 0 1px}
+.sld{display:grid;grid-template-columns:1fr 56px;gap:8px;align-items:center;font-size:12px;margin:9px 0 1px}
 .sld .lab{grid-column:1/3;color:var(--tx);font-size:12px;margin-bottom:-5px}
 .sld input[type=range]{width:100%;accent-color:var(--acc2)}
-.sld .val{font:12px Consolas,monospace;color:var(--acc);text-align:right;transition:transform .15s}
-.sld .val.pop{transform:scale(1.25)}
+.sld .val{width:100%;background:rgba(0,0,0,.3);border:1px solid var(--bd);border-radius:5px;font:12px Consolas,monospace;color:var(--acc);text-align:right;padding:2px 3px;transition:transform .15s;-moz-appearance:textfield}
+.sld .val:focus{outline:none;border-color:var(--acc2)}
+.sld .val::-webkit-outer-spin-button,.sld .val::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.sld .val.pop{transform:scale(1.18)}
 .ends{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut);margin:-2px 0 2px}
 #sliderhelp{font-size:11.5px;color:var(--acc);background:rgba(17,168,224,.08);border:1px solid rgba(17,168,224,.25);border-radius:8px;padding:6px 9px;min-height:46px;line-height:1.5;margin:6px 0;transition:border-color .2s}
 details{border:1px solid var(--bd);border-radius:10px;padding:7px 11px;margin:7px 0;background:var(--panel)}
@@ -249,7 +251,7 @@ var JE={
 'デカップリング':'Decoupling','配線長':'Wire length','全クラス上限内':'all within class limits','本体重なり':'Body overlap','警告':'warn','パッド接合数':'Pad joints','以下':' max','ERC':'ERC','クリーン':'clean','トポロジ':'Topology','総合':'Overall','件':'','PASS ✓ 製作可':'PASS ✓ fab-ready',
 'ストリップ短絡':'Strip short','出力競合':'Output contention','オープンネット':'Open net','未接続':'Unconnected','電源ピン浮き':'Floating power pin','電源未到達':'Power unreachable','重複ID':'Duplicate id','極性逆':'Reversed polarity','単一リード':'Single-lead net','未駆動入力':'Undriven input','未分類':'Unclassified','離隔違反':'Keep-away viol','高Zガード推奨':'High-Z guard','平行近接':'Parallel-near','対':' pairs','深':'depth ','穴':'holes ',
 '自動結線: 空の配線を補完（被覆線':'Auto-wired empty board (wires','本）':')',
-'手順':'Step','完了':'done','この手順は済':'this step done','部品':'Part','立て実装':'standing','を挿入:':' — insert at:','はんだブリッジ:':'Solder bridge:','被覆線':'Jumper','の足へ直付け':' direct-solder to lead','に挿し':' insert at',' へブリッジ':' bridge to','※ブリッジ先なし（要修正）':'(no bridge target — fix)','ネット':'net','カット':'Cut','ビルドパケット':'Build packet',
+'手順':'Step','完了':'done','この手順は済':'this step done','立て実装':'standing','を挿入:':' — insert at:','はんだブリッジ:':'Solder bridge:','の足へ直付け':' direct-solder to lead','に挿し':' insert at',' へブリッジ':' bridge to','※ブリッジ先なし（要修正）':'(no bridge target — fix)','ネット':'net','カット':'Cut','ビルドパケット':'Build packet',
 'はじめに':'Intro','確認':'Verify',
 'この基板をはんだ付けする手順です。':'Steps to hand-solder this board.','できあがり:':'You will build:','全体:':'Totals:',
 '必要な道具: はんだごて・ニッパー・テスター。':'Tools: soldering iron, cutters, multimeter.',
@@ -900,13 +902,13 @@ var bl=new Blob([t],{type:'text/markdown'}),a=document.createElement('a');a.href
 showHelp(tr('導通チェックリストを生成しました（テキスト欄・クリップボード・.md ダウンロード）。'));};
 function buildPacketMd(){var L=function(ja,en){return LANG==='en'?en:ja;};
 var pitch=CFG.pitch||2.54,margin=(CFG.rules&&CFG.rules.leadMargin)||5.0;
-var groups={};D.parts.forEach(function(p){var k=(p.kind||'?')+' '+(p.label||p.id);(groups[k]=groups[k]||[]).push(p.id);});
-var bom=Object.keys(groups).sort().map(function(k){return {kind:k.split(' ')[0],label:k.split(' ')[1],qty:groups[k].length,refs:groups[k].sort()};});
+var groups={};D.parts.forEach(function(p){var val=valOf(p.label||'');var k=(p.kind||'?')+'|'+val;if(!groups[k])groups[k]={kind:p.kind||'?',val:val,refs:[]};groups[k].refs.push(p.id);});
+var bom=Object.keys(groups).sort().map(function(k){var g=groups[k];return {kind:g.kind,val:g.val,qty:g.refs.length,refs:g.refs.sort()};});
 var cuts=D.wires.map(function(w){var a=w.a.direct?w.a.pad:w.a.hole,b=w.b.direct?w.b.pad:w.b.hole;
 var st=Math.hypot(a[0]-b[0],a[1]-b[1])*pitch+2*margin,mh=(Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1]))*pitch+2*margin;
 return {net:w.net,from:holeName(a),to:holeName(b),st:Math.round(st*10)/10,mh:Math.round(mh*10)/10};});
-var o=['# perfwire build packet — '+props[curI].name,'','## '+L('部品表','BOM')+' ('+D.parts.length+')','','| kind | label | qty | refs |','|---|---|---|---|'];
-bom.forEach(function(b){o.push('| '+b.kind+' | '+b.label+' | '+b.qty+' | '+b.refs.join(', ')+' |');});
+var o=['# perfwire build packet — '+props[curI].name,'','## '+L('部品表','BOM')+' ('+D.parts.length+')','','| '+L('種別','type')+' | '+L('値','value')+' | '+L('数','qty')+' | refs | '+L('向き/極性','orientation')+' |','|---|---|---|---|---|'];
+bom.forEach(function(b){var fam=KINDJ[b.kind]?tr(KINDJ[b.kind]):b.kind;var note=b.kind==='elec'?L('＋の向き厳守','+ polarity!'):(b.kind==='ic'?L('1番ピンの向き','pin-1 orient.'):'');o.push('| '+fam+' | '+(b.val||'-')+' | '+b.qty+' | '+b.refs.join(', ')+' | '+note+' |');});
 o.push('','## '+L('被覆線 切断長','Jumper cut sheet')+' ('+cuts.length+'; '+L('リード余長','lead margin')+' '+margin+'mm)','','| net | from | to | straight mm | manhattan mm |','|---|---|---|---|---|');
 cuts.forEach(function(c){o.push('| '+c.net+' | '+c.from+' | '+c.to+' | '+c.st+' | '+c.mh+' |');});
 o.push('','## '+L('はんだブリッジ','Solder bridges')+' ('+D.padBridges.length+')','');
@@ -1208,11 +1210,21 @@ E('path',{d:'M'+pa[0]+','+pa[1]+' Q'+((pa[0]+pb[0])/2)+','+((pa[1]+pb[1])/2-18)+
 [w.a,w.b].forEach(function(e){var hp=e.direct?e.pad:e.hole;ring(hp,col,holeName(hp));
 if(!e.direct&&e.bridgeTo){var h1=xy(e.hole[0],e.hole[1]),b1=xy(e.bridgeTo[0],e.bridgeTo[1]);E('line',{x1:h1[0],y1:h1[1],x2:b1[0],y2:b1[1],stroke:'#3ddc84','stroke-width':7,'stroke-linecap':'round'});}});
 T((pa[0]+pb[0])/2-14,(pa[1]+pb[1])/2-24,w.net,{'font-size':13,fill:col});}}
+function stepHoles(s){var hs=[];if(s.t==='part'&&s.p)partLeads(s.p).forEach(function(L){hs.push(L.pos);});
+else if(s.t==='bridge')hs.push(s.a,s.b);
+else if(s.t==='wire'&&s.w)[s.w.a,s.w.b].forEach(function(e){hs.push(e.direct?e.pad:e.hole);});
+return hs;}
+function scrollToStep(s){try{var hs=stepHoles(s);if(!hs.length)return;var xs=[],ys=[];
+hs.forEach(function(h){var p=xy(h[0],h[1]);xs.push(p[0]);ys.push(p[1]);});
+var cx=(Math.min.apply(null,xs)+Math.max.apply(null,xs))/2,cy=(Math.min.apply(null,ys)+Math.max.apply(null,ys))/2;
+var cv=document.getElementById('canvas'),sv=document.getElementById('pw-svg');if(!cv||!sv)return;
+var gp=document.getElementById('guide'),gh=(gp&&gp.style.display!=='none')?gp.offsetHeight+24:0;
+cv.scrollTo({left:sv.offsetLeft+cx-cv.clientWidth/2,top:sv.offsetTop+cy-(cv.clientHeight-gh)/2,behavior:'smooth'});}catch(e){}}
 function guideShow(){var s=GUIDE.steps[GUIDE.i];if(!s){guideEnd();return;}
 var dn=0;GUIDE.steps.forEach(function(st){if(GUIDE.done[st.sig])dn++;});
 var phMap={intro:'はじめに',parts:'部品',bridges:'ブリッジ',wires:'被覆線',verify:'確認'},phName=phMap[s.phase||'']||'';
 document.getElementById('g-count').textContent=tr('作業ガイド')+' · '+(phName?tr(phName)+' · ':'')+tr('手順')+' '+(GUIDE.i+1)+' / '+GUIDE.steps.length+'  '+tr('完了')+' '+dn+(GUIDE.done[s.sig]?'  ✓'+tr('この手順は済'):'');
-document.getElementById('g-text').textContent=stepText(s);render();}
+document.getElementById('g-text').textContent=stepText(s);render();scrollToStep(s);}
 function guideStart(){GUIDE.steps=buildSteps();if(!GUIDE.steps.length)return;
 try{GUIDE.done=JSON.parse(localStorage.getItem(LSKEY+'_guide_'+curI)||'{}');}catch(e){GUIDE.done={};}
 GUIDE.on=true;GUIDE.i=0;
@@ -1316,15 +1328,16 @@ function slider(box,o){o.label=tr(o.label);o.desc=tr(o.desc);if(o.ends)o.ends=[t
 var lab=document.createElement('div');lab.className='sld';
 var l=document.createElement('span');l.className='lab';l.textContent=o.label;
 var i=document.createElement('input');i.type='range';i.min=o.min;i.max=o.max;i.step=o.step;i.value=o.get();i.title=o.desc;
-var v=document.createElement('span');v.className='val';v.textContent=o.get();
+var v=document.createElement('input');v.type='number';v.className='val';v.value=o.get();v.min=o.min;v.max=o.max;v.step=o.step;v.setAttribute('inputmode','decimal');v.title=o.desc;
+function applyVal(nv,fromText){if(isNaN(nv))return;nv=Math.max(o.min,Math.min(o.max,nv));o.set(nv);i.value=nv;if(!fromText)v.value=nv;
+v.classList.add('pop');setTimeout(function(){v.classList.remove('pop');},160);
+if(o.phys)footPreview();if(o.viz)vizPreview(o.viz);auditSoon();saveLS();}
 i.addEventListener('focus',function(){showHelp(o.desc);});
 i.addEventListener('pointerdown',function(){showHelp(o.desc);});
-i.oninput=function(){o.set(parseFloat(i.value));v.textContent=i.value;
-v.classList.add('pop');setTimeout(function(){v.classList.remove('pop');},160);
-showHelp(o.desc);
-if(o.phys)footPreview();
-if(o.viz)vizPreview(o.viz);
-auditSoon();saveLS();};
+i.oninput=function(){showHelp(o.desc);applyVal(parseFloat(i.value),false);};
+v.addEventListener('focus',function(){showHelp(o.desc);});
+v.oninput=function(){applyVal(parseFloat(v.value),true);};/* type a measured value directly (e.g. calipers) */
+v.addEventListener('blur',function(){var nv=parseFloat(v.value);v.value=isNaN(nv)?o.get():Math.max(o.min,Math.min(o.max,nv));});
 lab.appendChild(l);lab.appendChild(i);lab.appendChild(v);box.appendChild(lab);
 var gl=document.createElement('div');gl.style.cssText='font-size:10.5px;color:var(--mut);line-height:1.4;margin:-2px 0 4px';var dsc=o.desc||'';var gm=dsc.match(/^[^。.]*[。.]/);gl.textContent=gm?gm[0]:dsc;box.appendChild(gl);/* at-rest first-sentence gloss (lang-aware split, null-safe) so the meaning shows before any interaction (touch has no hover) */
 if(o.ends){var er=document.createElement('div');er.className='ends';
