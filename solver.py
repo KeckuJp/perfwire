@@ -290,6 +290,9 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
             continue
         names = part_lead_names(p)
         pi = p["plus"]
+        if not isinstance(pi, int) or pi not in (0, 1) or len(names) < 2:
+            pol.append({"part": p["id"], "plusNet": None, "minusNet": None, "ok": None})
+            continue
         pn, mn = bd.net_of_lead.get(names[pi]), bd.net_of_lead.get(names[1 - pi])
         if pn in rank and mn in rank:
             pol.append({"part": p["id"], "plusNet": pn, "minusNet": mn, "ok": rank[pn] > rank[mn]})
@@ -327,6 +330,18 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
             if (supply_net and net == supply_net) or (not supply_net and net in pwr_nets):
                 cov.append({"pin": nm, "net": net, "covered": nm in listed})
     out["decouplingCoverage"] = cov
+
+    # 浮いた電源ピン: IC の電源ピン（PWR クラス）がそのネットに自分しか居ない＝給電未接続。製作阻止 NG
+    floating = []
+    for p in bd.parts:
+        if p["kind"] != "ic":
+            continue
+        for pin in p["pins"]:
+            nm = p["id"] + "." + pin
+            net = bd.net_of_lead.get(nm)
+            if net in pwr_nets and len(leads_per_net.get(net, [])) < 2:
+                floating.append(nm)
+    out["floatingPowerPins"] = sorted(floating)
     return out
 
 def _seg_gap(a, b, c, d):
@@ -559,7 +574,7 @@ def solve(state, cfg, propose=False):
                     union(a, nb)
 
     wires, warnings = [], []
-    for net in sorted({n for n in bd.net_of_lead.values()}):
+    for net in sorted({n for n in bd.net_of_lead.values() if n}):
         while True:
             comps = {}
             for xyv, n in net_of_hole.items():
@@ -650,7 +665,7 @@ def solve(state, cfg, propose=False):
              + sum(1 for x in ee["wireLength"] if not x["ok"])
              + len(ee["openNets"]) + len(ee["unconnectedLeads"]) + len(ee["duplicateIds"])
              + sum(1 for x in ee["polarity"] if x["ok"] is False)
-             + sum(1 for x in ee["powerReach"] if not x["ok"]))
+             + sum(1 for x in ee["powerReach"] if not x["ok"]) + len(ee["floatingPowerPins"]))
     ee_warn = (sum(1 for o in bd.overlaps if o["sev"] == "warn")
                + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"])
                + sum(1 for g in ee["grounding"] if g["daisyReturn"]))
@@ -693,7 +708,8 @@ if __name__ == "__main__":
           " unconnected:", json.dumps(e["unconnectedLeads"], ensure_ascii=False),
           " duplicateIds:", json.dumps(e["duplicateIds"], ensure_ascii=False))
     print(" ERC singleLeadNets:", json.dumps(e["singleLeadNets"], ensure_ascii=False),
-          " unclassified:", json.dumps(e["unclassifiedNets"], ensure_ascii=False))
+          " unclassified:", json.dumps(e["unclassifiedNets"], ensure_ascii=False),
+          " floatingPowerPins:", json.dumps(e["floatingPowerPins"], ensure_ascii=False))
     polbad = [x for x in e["polarity"] if x["ok"] is False]
     preachbad = [x["net"] for x in e["powerReach"] if not x["ok"]]
     print(" EE polarity NG:", json.dumps(polbad, ensure_ascii=False),

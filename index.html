@@ -368,7 +368,7 @@ var leadsPerNet={};
 Object.keys(D.leads).forEach(function(k){var n=D.leads[k].net;if(n)(leadsPerNet[n]=leadsPerNet[n]||[]).push(k);});
 var unconnected=[];
 D.parts.forEach(function(p){partLeads(p).forEach(function(L){if(!(D.leads[L.name]&&D.leads[L.name].net))unconnected.push(L.name);});});
-var allow=(CFG.rules&&CFG.rules.singleLeadAllow)||(DEFCFG.rules.singleLeadAllow)||[];
+var allow=(CFG.rules&&(CFG.rules.singleLeadAllow||CFG.rules.single_lead_allowlist))||DEFCFG.rules.singleLeadAllow||[];
 var single=Object.keys(leadsPerNet).filter(function(n){return leadsPerNet[n].length===1&&allow.indexOf(n)<0;}).sort();
 var par={};
 function f(x){if(par[x]===undefined)par[x]=x;while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;}
@@ -393,9 +393,17 @@ var near=null;holes.forEach(function(it2){var h2=it2[0],n2=it2[1];if(n2===n||kaL
 if(near)ka.push({net:n,hole:hh,d:near.d,nearestNet:near.net});});
 var rank=CFG.railRank||DEFCFG.railRank||{};var pol=[];
 D.parts.forEach(function(p){if(p.kind!=='elec'||p.plus===undefined)return;var names=p.leadNames||[p.id+'.a',p.id+'.b'];
+if((p.plus!==0&&p.plus!==1)||names.length<2)return;
 var pn=D.leads[names[p.plus]]?D.leads[names[p.plus]].net:null,mn=D.leads[names[1-p.plus]]?D.leads[names[1-p.plus]].net:null;
 if(rank[pn]!==undefined&&rank[mn]!==undefined)pol.push({part:p.id,ok:rank[pn]>rank[mn]});});
-return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol};}
+var pe=CFG.powerEntry||DEFCFG.powerEntry||{},powerReach=[];
+Object.keys(pe).forEach(function(net){var rk=roots[net]?Object.keys(roots[net]):[];
+var er=pe[net].map(function(l){return D.leads[l]?f(key(D.leads[l].at)):null;}).filter(Boolean);
+var rooted=er.some(function(r){return roots[net]&&roots[net][r];});
+powerReach.push({net:net,components:rk.length,ok:rk.length<=1&&rooted});});
+var pwrNets=(CFG.classes.PWR&&CFG.classes.PWR.nets)||[],floating=[];
+D.parts.forEach(function(p){if(p.kind!=='ic')return;partLeads(p).forEach(function(L){var net=D.leads[L.name]?D.leads[L.name].net:null;if(pwrNets.indexOf(net)>=0&&(leadsPerNet[net]||[]).length<2)floating.push(L.name);});});
+return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol,powerReach:powerReach,floatingPowerPins:floating.sort()};}
 function holeNetMap(){var hn={};Object.keys(D.leads).forEach(function(k){if(D.leads[k].net)hn[key(D.leads[k].at)]=D.leads[k].net;});
 D.parts.forEach(function(p){partLeads(p).forEach(function(L){var net=D.leads[L.name]?D.leads[L.name].net:null;if(net)hn[key(L.pos)]=net;});});
 D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});return hn;}
@@ -450,11 +458,14 @@ var jNg=0;Object.keys(joints).forEach(function(k){if(joints[k]>CFG.rules.maxJoin
 h+='パッド接合数: '+(jNg?'<span class="ng">NG '+jNg+'</span>':'<span class="ok">'+CFG.rules.maxJoints+'以下 ✓</span>');
 var erc=ercAudit();
 var polbad=erc.polarity.filter(function(x){return x.ok===false;}).map(function(x){return x.part;});
-var ercNg=erc.openNets.length+erc.unconnectedLeads.length+erc.duplicateIds.length+polbad.length;
+var preachbad=erc.powerReach.filter(function(x){return !x.ok;}).map(function(x){return x.net;});
+var ercNg=erc.openNets.length+erc.unconnectedLeads.length+erc.duplicateIds.length+polbad.length+preachbad.length+erc.floatingPowerPins.length;
 ngs+=ercNg;
 var eb=[];
 if(erc.openNets.length)eb.push('<span class="ng">オープンネット '+erc.openNets.join(',')+'</span>');
 if(erc.unconnectedLeads.length)eb.push('<span class="ng">未接続 '+erc.unconnectedLeads.join(',')+'</span>');
+if(erc.floatingPowerPins.length)eb.push('<span class="ng">電源ピン浮き '+erc.floatingPowerPins.join(',')+'</span>');
+if(preachbad.length)eb.push('<span class="ng">電源未到達 '+preachbad.join(',')+'</span>');
 if(erc.duplicateIds.length)eb.push('<span class="ng">重複ID '+erc.duplicateIds.join(',')+'</span>');
 if(polbad.length)eb.push('<span class="ng">極性逆 '+polbad.join(',')+'</span>');
 if(erc.singleLeadNets.length)eb.push('<span class="wr">単一リード '+erc.singleLeadNets.join(',')+'</span>');
@@ -589,7 +600,7 @@ var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.dire
 document.getElementById('st-stats').innerHTML='被覆線 <b>'+D.wires.length+'</b>（直付 '+direct+'）/ 警告 <b>'+warn+'</b> / ズーム '+Math.round(ZOOM*100)+'%'+(selPart?(' / 選択 <b>'+selPart.id+'</b>'+(selPart.locked?'(ロック)':'')):'')+(ds?(' / 比較[<b>'+DIFF.name+'</b>] 移動'+ds.mv+' 部品+'+ds.pAdd+'−'+ds.pDel+' 線+'+ds.wAdd+'−'+ds.wDel+' 橋+'+ds.bAdd+'−'+ds.bDel):'');
 if(selPart!==palLast){palLast=selPart;buildPalEdit();}
 saveLS();}
-function loadProp(i){if(GUIDE.on)guideEnd();if(DIFF.on){DIFF.on=false;DIFF.base=null;var db=document.getElementById('pw-diff');if(db)db.textContent=tr('比較');}curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];cols=D.grid.cols;rows=D.grid.rows;selPart=null;drag=null;hoverNet=null;calcNote='';if(!D.wires||!D.wires.length){try{connect();}catch(e){}}buildNetClasses();render();}
+function loadProp(i){if(GUIDE.on)guideEnd();if(DIFF.on){DIFF.on=false;DIFF.base=null;var db=document.getElementById('pw-diff');if(db)db.textContent=tr('比較');}curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];cols=D.grid.cols;rows=D.grid.rows;selPart=null;drag=null;hoverNet=null;calcNote='';if(!D.wires||!D.wires.length){try{connect();calcNote='自動結線: 空の配線を補完（被覆線 '+D.wires.length+'本）';}catch(e){}}buildNetClasses();render();}
 function getPt(e){var r=svg.getBoundingClientRect(),sx=(svg.width.baseVal.value||r.width)/r.width;return[(e.clientX-r.left)*sx,(e.clientY-r.top)*sx];}
 function nearHole(x,y){var ci=Math.round((x-OX)/PITCH),c=MIRROR?cols-ci:ci+1,r=Math.round((y-OY)/PITCH)+1;if(!inb(c,r))return null;var p=xy(c,r);return Math.hypot(x-p[0],y-p[1])<PITCH*0.5?[c,r]:null;}
 function segd(px,py,ax,ay,bx,by){var dx=bx-ax,dy=by-ay,L=dx*dx+dy*dy,t=L?((px-ax)*dx+(py-ay)*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+dx*t),py-(ay+dy*t));}
@@ -675,7 +686,7 @@ if(d2.cfg&&d2.cfg.weights&&d2.cfg.physical)CFG=d2.cfg;
 cols=D.grid.cols;rows=D.grid.rows;buildSliders();buildNetClasses();refreshSel();render();auditNow();}
 function saveLS(){try{var st={v:APPVER,curI:curI,cfg:CFG,names:props.map(function(p){return p.name;}),states:props.map(function(p){return p.cur;})};localStorage.setItem(LSKEY,JSON.stringify(st,function(k,v){return (typeof k==='string'&&k.charAt(0)==='_')?undefined:v;}));}catch(e){}}
 function loadLS(){try{var st=JSON.parse(localStorage.getItem(LSKEY));if(!st)return;
-if(st.v!==APPVER){try{localStorage.removeItem(LSKEY);}catch(e){}return;}
+if(st.v!==APPVER){try{[LSKEY,LSKEY+'_photo',LSKEY+'_photoT',LSKEY+'_guide'].forEach(function(k){localStorage.removeItem(k);});}catch(e){}return;}
 if(st.cfg&&st.cfg.weights&&st.cfg.physical&&st.cfg.classes&&st.cfg.partOv&&st.cfg.rules)CFG=st.cfg;
 if(st.states)st.states.forEach(function(s,i){if(s){if(!props[i])props[i]={name:(st.names&&st.names[i])||('案'+i),orig:s,cur:null};props[i].cur=s;if(st.names&&st.names[i])props[i].name=st.names[i];}});
 if(typeof st.curI==='number'&&props[st.curI])curI=st.curI;}catch(e){}}
@@ -700,7 +711,7 @@ function doPropose(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-re
 proposeAsync(function(){render();auditNow();b.textContent='✓ 完了';setTimeout(function(){b.textContent='配置を再提案';},900);});}
 document.getElementById('pw-rewire').onclick=doRewire;
 document.getElementById('pw-repropose').onclick=doPropose;
-document.getElementById('pw-saveas').onclick=function(){props.push({name:'案 '+new Date().toLocaleTimeString(),orig:deep(D),cur:deep(D)});curI=props.length-1;refreshSel();loadProp(curI);};
+document.getElementById('pw-saveas').onclick=function(){props.push({name:'案 '+new Date().toLocaleTimeString(),orig:deep(D),cur:deep(D)});curI=props.length-1;refreshSel();loadProp(curI);auditNow();};
 document.getElementById('pw-defcfg').onclick=function(){CFG=deep(DEFCFG);buildSliders();buildNetClasses();saveLS();render();auditNow();};
 document.getElementById('pw-copy').onclick=function(){var b=this;document.getElementById('pw-out').value=exportJSON();if(navigator.clipboard)navigator.clipboard.writeText(exportJSON()).then(function(){b.textContent='コピー済み';setTimeout(function(){b.textContent='コピー';},1400);});};
 document.getElementById('pw-share').onclick=shareURL;

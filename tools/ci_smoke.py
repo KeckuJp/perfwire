@@ -40,13 +40,16 @@ def main() -> None:
                 failures.append(f"{name}: solver produced no wires")
             ee = res.get("ee", {})
             for key in ("openNets", "singleLeadNets", "unconnectedLeads", "duplicateIds",
-                        "polarity", "powerReach", "keepAway", "decouplingCoverage", "fabReady"):
+                        "polarity", "powerReach", "keepAway", "decouplingCoverage",
+                        "floatingPowerPins", "grounding", "guard", "crosstalk", "fabReady"):
                 if key not in ee:
                     failures.append(f"{name}: ee missing ERC key '{key}'")
-            # the bundled sample must have no hard ERC errors (open nets / unconnected / dup id / reversed polarity)
-            for key in ("openNets", "unconnectedLeads", "duplicateIds"):
+            # the bundled sample must have no hard ERC errors (open nets / unconnected / dup id / floating power pin)
+            for key in ("openNets", "unconnectedLeads", "duplicateIds", "floatingPowerPins"):
                 if ee.get(key):
                     failures.append(f"{name}: unexpected ERC error {key}={ee[key]}")
+            if any(not p.get("ok") for p in ee.get("powerReach", [])):
+                failures.append(f"{name}: unexpected power-reachability failure")
             if any(p.get("ok") is False for p in ee.get("polarity", [])):
                 failures.append(f"{name}: unexpected reversed-polarity finding")
             print(f"OK: {name} -> wires={len(res.get('wires', []))} fabReady={ee.get('fabReady')} stats={res.get('stats')}")
