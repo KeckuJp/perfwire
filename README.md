@@ -1,5 +1,7 @@
 # perfwire
 
+![perfwire](docs/hero.png)
+
 **AI-assisted wiring planner for hand-soldered perfboards** — designed to be used together with [Claude Code](https://claude.com/claude-code).
 
 Perfboard (ユニバーサル基板) builds fail in a predictable way: the netlist is right, but the physical execution — which hole each jumper goes into, which pads get solder-bridged, where the decoupling caps actually sit — drifts from the plan. perfwire splits the work the way it should be split:
