@@ -18,6 +18,9 @@ jobs:
       - name: JS parse gate + embedded INIT validation (index.html)
         run: node tools/extract_check.mjs
 
+      - name: Plugin + marketplace manifest checks (drift / required fields)
+        run: node tools/check_manifests.mjs
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

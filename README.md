@@ -9,8 +9,6 @@ Perfboard (ユニバーサル基板) builds fail in a predictable way: the netli
 
 Everything lives in one JSON state file that both sides read and write.
 
-![dark industrial single-page editor](docs/screenshot.png)
-
 ## Quick start
 
 1. Clone this repo.
@@ -18,16 +16,35 @@ Everything lives in one JSON state file that both sides read and write.
 3. Drag wire endpoints / parts, set thresholds with the sliders, hit **配線を再計算** (re-route) or **配置を再提案** (re-place & route).
 4. **書き出し** exports the full state JSON — hand it to Claude Code for deeper audits, or commit it to your project repo.
 
-### With Claude Code
+### Use with Claude Code
 
-Open this repo in Claude Code. The bundled skill (`.claude/skills/perfwire/SKILL.md`) teaches the agent the state schema and the collaboration loop:
+**Primary — clone and open as a project** (lowest friction; works for a private repo):
+
+```bash
+git clone https://github.com/YusukeAraiKecku/perfwire.git
+cd perfwire
+claude .
+```
+
+Accept the workspace-trust prompt once; the bundled skill (`.claude/skills/perfwire/SKILL.md`) auto-loads and triggers on perfboard / wiring requests. It teaches the agent the state schema and the collaboration loop:
 
 ```
 you:    "この回路をユニバーサル基板に組みたい"（ネットリスト/回路図を渡す）
-agent:  state JSON を生成 → solver.py で配置+配線+監査 → index.html を開く
+agent:  state JSON を生成 → solver.py で配置+配線+監査 → index.html#z= リンクで盤面を渡す
 you:    実物に合わせてドラッグ修正 → 書き出し JSON を渡す
 agent:  監査（短絡・デカップリング距離・配線長・本体重なり）→ 確定図/チェックリスト生成
 ```
+
+**Alternative — install as a plugin** (the repo doubles as its own single-plugin marketplace). Needs git auth for this private repo (`gh auth login`, or an SSH key in your agent):
+
+```
+/plugin marketplace add YusukeAraiKecku/perfwire
+/plugin install perfwire@perfwire
+```
+
+The plugin bundles the same skill (namespaced `perfwire:perfwire`; `plugin.json` points its `skills` path at `.claude/skills/`, so there is one copy, not two). For background auto-update of an installed private plugin, export `GH_TOKEN` (scope `repo`) — otherwise updates silently fail.
+
+> **Solver note:** use `python3` on macOS/Linux, `python` on Windows; `solver.py` is standard-library only (no install). Always pass `--config config.example.json` — without it the EE audit (decoupling distance, wire length) silently runs empty. To hand a board to the human pre-loaded, generate a deep link with `python3 tools/make_link.py out.json` and have them open the printed `index.html#z=…` URL.
 
 ## Features
 
@@ -67,13 +84,14 @@ agent:  監査（短絡・デカップリング距離・配線長・本体重な
 
 A wire endpoint is a `hole` (where the copper wire is inserted) plus a `bridgeTo` (the adjacent same-net hole it is solder-bridged to). `hole == pad` with `direct: true` means the wire is soldered straight onto the lead.
 
-Files: `examples/client-hardware_tap_buffer.json` (sample project, 2 proposals), `config.example.json` (threshold file for the Python solver).
+Files: `examples/client-hardware_tap_buffer.json` (sample project, 2 proposals), `config.example.json` / `perfwire_config.json` (threshold file for the Python solver — same content; `perfwire_config.json` is the default the solver loads when `--config` is omitted), `tools/make_link.py` (state JSON → `#z=` editor deep link).
 
 ## CI
 
 `.github/workflows/ci.yml` runs on every push / PR:
 
 - `tools/extract_check.mjs` — parses the inline script of `index.html` (syntax gate) and validates the embedded sample data.
+- `tools/check_manifests.mjs` — validates `.claude-plugin/plugin.json` + `marketplace.json` (required fields, marketplace description, version agreement, and that the skill exists at the path `plugin.json` points to).
 - `tools/ci_smoke.py` — runs `solver.py` on every sample proposal and asserts a schema-complete, fully-wired output.
 
 ## Background

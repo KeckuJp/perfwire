@@ -22,7 +22,9 @@ def main() -> None:
             out_p = pathlib.Path(td) / "out.json"
             state_p.write_text(json.dumps(prop["state"]), encoding="utf-8")
             r = subprocess.run(
-                [sys.executable, str(ROOT / "solver.py"), str(state_p), "-o", str(out_p)],
+                # mirror the documented command: --config is required, else the EE audit runs empty
+                [sys.executable, str(ROOT / "solver.py"), str(state_p),
+                 "--config", str(ROOT / "config.example.json"), "-o", str(out_p)],
                 capture_output=True,
                 text=True,
             )

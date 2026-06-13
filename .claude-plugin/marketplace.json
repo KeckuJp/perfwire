@@ -1,0 +1,13 @@
+{
+  "name": "perfwire",
+  "owner": { "name": "Yusuke Arai", "email": "yusuke.arai@kecku.com" },
+  "description": "perfwire — AI-assisted hand-soldered perfboard wiring planner (single-plugin marketplace).",
+  "plugins": [
+    {
+      "name": "perfwire",
+      "source": "./",
+      "description": "AI-assisted wiring planner for hand-soldered perfboards (universal board / protoboard).",
+      "version": "0.1.0"
+    }
+  ]
+}
