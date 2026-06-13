@@ -514,6 +514,7 @@ T(v[0]+8,v[1]-8,String(joints[k]),{'font-size':11,fill:over?'#ff5d5d':'#3ddc84'}
 if(over)E('circle',{cx:v[0],cy:v[1],r:PITCH*0.4,fill:'none',stroke:'#ff5d5d','stroke-width':2.4,'pointer-events':'none'});});}
 function vizPreview(fn){tempViz=fn;render();clearTimeout(vizTimer);vizTimer=setTimeout(function(){tempViz=null;render();},1600);}
 function render(){
+if(!D)return;
 PITCH=BASE*ZOOM;
 while(svg.firstChild)svg.removeChild(svg.firstChild);
 var W2=OX+(cols-1)*PITCH+34,H2=OY+(rows-1)*PITCH+34,c,r;
