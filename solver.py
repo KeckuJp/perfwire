@@ -433,6 +433,42 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
         if rs and all(r == "in" for r in rs):
             undriven.append(net)
     out["undrivenNets"] = undriven
+
+    # 値考慮の EE 深化（すべて任意入力依存・後方互換）:
+    rail_volts = cfg.get("rail_volts", {}) if isinstance(cfg.get("rail_volts"), dict) else {}
+    # 抵抗の消費電力: 両端ネットの電位が rail_volts で既知なら P=ΔV^2/R。定格(rated_w 既定0.25W)超で NG。
+    res_power = []
+    for p in bd.parts:
+        if p.get("kind") != "r":
+            continue
+        R = p.get("value")
+        if not isinstance(R, (int, float)) or R <= 0:
+            continue
+        nm = p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
+        n1, n2 = bd.net_of_lead.get(nm[0]), bd.net_of_lead.get(nm[1])
+        if n1 in rail_volts and n2 in rail_volts:
+            w = (rail_volts[n1] - rail_volts[n2]) ** 2 / R
+            rated = p.get("rated_w", 0.25)
+            res_power.append({"part": p["id"], "watts": round(w, 4), "rated": rated, "ok": w <= rated})
+    out["resistorPower"] = res_power
+    # デカップリング値の妥当性: バイパスに 1uF 超を割り当てていれば HF 不足の警告（0.01-0.1uF 推奨）。
+    listed_caps = {d["cap"] for d in cfg.get("decoupling", [])}
+    dec_val = []
+    for p in bd.parts:
+        if p["id"] in listed_caps and isinstance(p.get("value"), (int, float)) and p["value"] > 1e-6:
+            dec_val.append({"cap": p["id"], "farads": p["value"]})
+    out["decouplingValueWarn"] = dec_val
+    # ピン競合: 同一ネットに out(論理出力) と pwr/pwr_out(電源源) = 出力を電源に短絡＝NG。
+    roles_by_net = {}
+    for nm2, net in bd.net_of_lead.items():
+        r = role.get(nm2)
+        if net and r:
+            roles_by_net.setdefault(net, set()).add(r)
+    pin_conflicts = []
+    for net, rs in sorted(roles_by_net.items()):
+        if "out" in rs and (rs & {"pwr", "pwr_out"}):
+            pin_conflicts.append({"net": net, "kinds": sorted(rs)})
+    out["pinConflicts"] = pin_conflicts
     return out
 
 def _seg_gap(a, b, c, d):
@@ -889,10 +925,12 @@ def solve(state, cfg, propose=False):
              + len(ee["openNets"]) + len(ee["unconnectedLeads"]) + len(ee["duplicateIds"])
              + sum(1 for x in ee["polarity"] if x["ok"] is False)
              + sum(1 for x in ee["powerReach"] if not x["ok"]) + len(ee["floatingPowerPins"])
-             + len(ee["multipleDrivers"]) + len(ee["stripShorts"]))
+             + len(ee["multipleDrivers"]) + len(ee["stripShorts"])
+             + sum(1 for x in ee["resistorPower"] if not x["ok"]) + len(ee["pinConflicts"]))
     ee_warn = (sum(1 for o in bd.overlaps if o["sev"] == "warn")
                + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"])
-               + sum(1 for g in ee["grounding"] if g["daisyReturn"]) + len(ee["undrivenNets"]))
+               + sum(1 for g in ee["grounding"] if g["daisyReturn"]) + len(ee["undrivenNets"])
+               + len(ee["decouplingValueWarn"]))
 
     out = json.loads(json.dumps(state))
     out["parts"] = bd.parts
@@ -954,6 +992,9 @@ if __name__ == "__main__":
     print(" multipleDrivers(out-out short):", json.dumps(e["multipleDrivers"], ensure_ascii=False),
           " undrivenNets:", json.dumps(e["undrivenNets"], ensure_ascii=False),
           " stripShorts:", json.dumps(e["stripShorts"], ensure_ascii=False))
+    print(" resistorPower NG:", json.dumps([x for x in e["resistorPower"] if not x["ok"]], ensure_ascii=False),
+          " pinConflicts:", json.dumps(e["pinConflicts"], ensure_ascii=False),
+          " decouplingValueWarn:", json.dumps(e["decouplingValueWarn"], ensure_ascii=False))
     for w in result["warnings"]:
         print("  *", w)
     if dst:

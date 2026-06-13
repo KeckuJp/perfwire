@@ -21,7 +21,7 @@ function grab(re, label) {
 }
 // Pull DEFCFG + the helpers ercAudit needs + ercAudit itself, straight from index.html.
 const DEFCFG_SRC = grab(/var DEFCFG=[\s\S]*?\]\};/, 'DEFCFG');
-const ERC_SRC = grab(/function ercAudit\(\)\{[\s\S]*?stripShorts:stripShorts\};\}/, 'ercAudit');
+const ERC_SRC = grab(/function ercAudit\(\)\{[\s\S]*?pinConflicts:pinConflicts\};\}/, 'ercAudit');
 const STRIP_SRC = grab(/function stripSegs\([\s\S]*?return segs;\}/, 'stripSegs');
 
 function key(p) { return p[0] + ',' + p[1]; }
@@ -58,6 +58,9 @@ const FIELDS = {
   polarity: a => N.okmap(a, 'part'), powerReach: a => N.okmap(a, 'net'), keepAway: N.count,
   stripShorts: a => JSON.stringify((a || []).map(s => ({ seg: s.segment, nets: s.nets.slice().sort() }))
     .sort((x, y) => JSON.stringify(x) < JSON.stringify(y) ? -1 : 1)),
+  resistorPower: a => JSON.stringify((a || []).map(x => ({ part: x.part, ok: !!x.ok })).sort((p, q) => p.part < q.part ? -1 : 1)),
+  decouplingValueWarn: a => JSON.stringify((a || []).map(x => x.cap).sort()),
+  pinConflicts: a => JSON.stringify((a || []).map(x => x.net).sort()),
 };
 
 // synthetic stripboard fixtures so the golden test also covers strip connectivity / shorts / cuts
@@ -85,6 +88,7 @@ for (const c of Object.keys(cmap)) {
 if (DEFCFG.rules.maxJoints !== PYCFG.rules.max_joints_per_pad) cfgFails.push('rules.maxJoints != max_joints_per_pad');
 if (JSON.stringify((DEFCFG.rules.singleLeadAllow || []).slice().sort()) !== JSON.stringify((PYCFG.rules.single_lead_allowlist || []).slice().sort())) cfgFails.push('single-lead allowlist differ');
 if (JSON.stringify(DEFCFG.railRank) !== JSON.stringify(PYCFG.rail_rank)) cfgFails.push('rail_rank differ');
+if (JSON.stringify(DEFCFG.railVolts || null) !== JSON.stringify(PYCFG.rail_volts || null)) cfgFails.push('rail_volts differ');
 if (JSON.stringify(DEFCFG.powerEntry) !== JSON.stringify(PYCFG.power_entry)) cfgFails.push('power_entry differ');
 const jdec = (DEFCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max).sort();
 const pdec = (PYCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max_holes).sort();

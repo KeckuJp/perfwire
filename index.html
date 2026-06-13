@@ -237,6 +237,7 @@ var JE={
 '配線再計算: 被覆線':'Rewire: jumpers','本':'','提案:':'Proposed:','部品を再配置 / 被覆線':'parts re-placed / jumpers',
 '許容ゾーン':'allowed zone','高Z分離ゾーン':'high-Z keep-out','(縦)':'(vert)',
 '直付':'direct','ズーム':'zoom','選択':'sel','ロック':'lock','移動':'moved','線':'wires','橋':'bridges',
+'出力電源競合':'Output-to-power','抵抗過負荷':'Resistor over-power','パスコン値':'Decoupling value',
 'モード: カット（ストリップ基板）':'Mode: cut (stripboard)','基板種別を切替（ユニバーサル⇄ストリップ）':'Toggle board type (perfboard / stripboard)','ストリップ向き切替（行⇄列）':'Toggle strip axis (row / column)',
 'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。':'Ring = jumper insertion hole. Drag to a free adjacent hole (the bridge follows). Drop onto a lead to direct-solder.',
 '本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。':'Drag bodies or leads; valid holes glow green while dragging a lead. Click to select, then toggle lock.',
@@ -430,7 +431,13 @@ var drv={};Object.keys(D.leads).forEach(function(k){var net=D.leads[k].net;if(ne
 var multi=Object.keys(drv).filter(function(n){return drv[n].length>=2;}).sort().map(function(n){return {net:n,pins:drv[n].sort()};});
 var rolesByNet={};Object.keys(D.leads).forEach(function(k){var net=D.leads[k].net;if(net)(rolesByNet[net]=rolesByNet[net]||[]).push(role[k]);});
 var undriven=Object.keys(rolesByNet).filter(function(n){return rolesByNet[n].length&&rolesByNet[n].every(function(r){return r==='in';});}).sort();
-return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol,powerReach:powerReach,floatingPowerPins:floating.sort(),multipleDrivers:multi,undrivenNets:undriven,stripShorts:stripShorts};}
+var railVolts=(CFG.railVolts&&typeof CFG.railVolts==='object')?CFG.railVolts:((DEFCFG.railVolts&&typeof DEFCFG.railVolts==='object')?DEFCFG.railVolts:{});
+var resPower=[];D.parts.forEach(function(p){if(p.kind!=='r'||typeof p.value!=='number'||p.value<=0)return;var nm=p.leadNames||[p.id+'.a',p.id+'.b'];var n1=D.leads[nm[0]]?D.leads[nm[0]].net:null,n2=D.leads[nm[1]]?D.leads[nm[1]].net:null;if(railVolts[n1]!==undefined&&railVolts[n2]!==undefined){var w=Math.pow(railVolts[n1]-railVolts[n2],2)/p.value,rated=(typeof p.ratedW==='number')?p.ratedW:0.25;resPower.push({part:p.id,watts:Math.round(w*1e4)/1e4,rated:rated,ok:w<=rated});}});
+var listedCaps={};(CFG.decoupling||[]).forEach(function(d){listedCaps[d.cap]=1;});
+var decVal=[];D.parts.forEach(function(p){if(listedCaps[p.id]&&typeof p.value==='number'&&p.value>1e-6)decVal.push({cap:p.id,farads:p.value});});
+var rbnSet={};Object.keys(D.leads).forEach(function(k){var net=D.leads[k].net,r=role[k];if(net&&r)(rbnSet[net]=rbnSet[net]||{})[r]=1;});
+var pinConflicts=[];Object.keys(rbnSet).sort().forEach(function(net){var s=rbnSet[net];if(s['out']&&(s['pwr']||s['pwr_out']))pinConflicts.push({net:net,kinds:Object.keys(s).sort()});});
+return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol,powerReach:powerReach,floatingPowerPins:floating.sort(),multipleDrivers:multi,undrivenNets:undriven,stripShorts:stripShorts,resistorPower:resPower,decouplingValueWarn:decVal,pinConflicts:pinConflicts};}
 function stripSegs(cols,rows,axis,cuts){var segs=[],a,b,seg;
 if(axis==='col'){for(var c=1;c<=cols;c++){seg=[[c,1]];for(var r=2;r<=rows;r++){if(cuts[key([c,r-1])+'|'+key([c,r])]){segs.push(seg);seg=[];}seg.push([c,r]);}if(seg.length)segs.push(seg);}}
 else{for(var r2=1;r2<=rows;r2++){seg=[[1,r2]];for(var c2=2;c2<=cols;c2++){if(cuts[key([c2-1,r2])+'|'+key([c2,r2])]){segs.push(seg);seg=[];}seg.push([c2,r2]);}if(seg.length)segs.push(seg);}}
@@ -491,9 +498,13 @@ h+=tr('パッド接合数')+': '+(jNg?'<span class="ng">NG '+jNg+'</span>':'<spa
 var erc=ercAudit();
 var polbad=erc.polarity.filter(function(x){return x.ok===false;}).map(function(x){return x.part;});
 var preachbad=erc.powerReach.filter(function(x){return !x.ok;}).map(function(x){return x.net;});
-var ercNg=erc.openNets.length+erc.unconnectedLeads.length+erc.duplicateIds.length+polbad.length+preachbad.length+erc.floatingPowerPins.length+erc.multipleDrivers.length+erc.stripShorts.length;
+var respbad=erc.resistorPower.filter(function(x){return !x.ok;}).map(function(x){return x.part+' '+x.watts+'W';});
+var ercNg=erc.openNets.length+erc.unconnectedLeads.length+erc.duplicateIds.length+polbad.length+preachbad.length+erc.floatingPowerPins.length+erc.multipleDrivers.length+erc.stripShorts.length+respbad.length+erc.pinConflicts.length;
 ngs+=ercNg;
 var eb=[];
+if(erc.pinConflicts.length)eb.push('<span class="ng">'+tr('出力電源競合')+' '+erc.pinConflicts.map(function(x){return x.net;}).join(',')+'</span>');
+if(respbad.length)eb.push('<span class="ng">'+tr('抵抗過負荷')+' '+respbad.join(',')+'</span>');
+if(erc.decouplingValueWarn.length)eb.push('<span class="wr">'+tr('パスコン値')+' '+erc.decouplingValueWarn.map(function(x){return x.cap;}).join(',')+'</span>');
 if(erc.stripShorts.length)eb.push('<span class="ng">'+tr('ストリップ短絡')+' '+erc.stripShorts.map(function(s){return s.nets.join('/');}).join(' ')+'</span>');
 if(erc.multipleDrivers.length)eb.push('<span class="ng">'+tr('出力競合')+' '+erc.multipleDrivers.map(function(m){return m.net+'('+m.pins.join('+')+')';}).join(' ')+'</span>');
 if(erc.openNets.length)eb.push('<span class="ng">'+tr('オープンネット')+' '+erc.openNets.join(',')+'</span>');
