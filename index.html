@@ -259,7 +259,9 @@ var JE={
 '裏面ビュー: はんだ面から見た左右反転表示。テスターモードは使用可、編集はロックされます。':'Mirror view: flipped as seen from the solder side. Probe mode works; editing is locked.',
 '{0} を追加しました。ドラッグで配置し、下の欄でネットを割り当ててください。':'Added {0}. Drag to position it, then assign nets in the panel below.',
 '{0} を「{1}」クラスにしました。監査と再配置の基準が変わります。':'Set {0} to class "{1}". Audit and re-placement criteria change accordingly.',
-'JSON 取込: {0} 件の指摘（error {1}）— {2}':'Imported JSON: {0} issue(s) (errors {1}) — {2}'};
+'JSON 取込: {0} 件の指摘（error {1}）— {2}':'Imported JSON: {0} issue(s) (errors {1}) — {2}',
+'列 <b>{0}</b> 行 <b>{1}</b>':'Col <b>{0}</b> Row <b>{1}</b>','ネット <b>{0}</b>（{1}）':'Net <b>{0}</b> ({1})','銅線端子 <b>{0}</b>':'Wire end <b>{0}</b>','空き穴':'Empty hole',
+'✓ 完了':'✓ done','コピー済み':'Copied',' ロック中':' locked','監査エラー: {0}':'Audit error: {0}'};
 function tr(s){return LANG==='en'&&Object.prototype.hasOwnProperty.call(JE,s)?JE[s]:s;}
 function trf(s){var t=tr(s),a=arguments;return t.replace(/\{(\d+)\}/g,function(m,i){var v=a[+i+1];return v===undefined?m:v;});}
 var props=INIT.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null};});
@@ -726,12 +728,12 @@ selPart=null;render();});
 svg.addEventListener('pointermove',function(ev){if(drag||pinch0)return;var pt=getPt(ev),h=nearHole(pt[0],pt[1]);
 var sp=document.getElementById('st-pos'),sn=document.getElementById('st-net'),newNet=null;
 if(!h){sp.textContent='—';sn.style.display='none';}
-else{sp.innerHTML='列 <b>'+h[0]+'</b> 行 <b>'+String.fromCharCode(64+h[1])+'</b>';
+else{sp.innerHTML=trf('列 <b>{0}</b> 行 <b>{1}</b>',h[0],String.fromCharCode(64+h[1]));
 var lm=leadMap(),o=lm[key(h)],e2=endAt(h[0],h[1]);
-if(o){sn.innerHTML='ネット <b>'+o.net+'</b>（'+o.name+'）';sn.style.display='';newNet=o.net;}
-else if(e2){sn.innerHTML='銅線端子 <b>'+e2.w.net+'</b>';sn.style.display='';newNet=e2.w.net;}
-else if(blockedIdx(h[0],h[1])>=0){sn.innerHTML='<span style="color:var(--wr)">ブロック穴</span>';sn.style.display='';}
-else{sn.innerHTML='空き穴';sn.style.display='';}}
+if(o){sn.innerHTML=trf('ネット <b>{0}</b>（{1}）',o.net,o.name);sn.style.display='';newNet=o.net;}
+else if(e2){sn.innerHTML=trf('銅線端子 <b>{0}</b>',e2.w.net);sn.style.display='';newNet=e2.w.net;}
+else if(blockedIdx(h[0],h[1])>=0){sn.innerHTML='<span style="color:var(--wr)">'+tr('ブロック穴')+'</span>';sn.style.display='';}
+else{sn.innerHTML=tr('空き穴');sn.style.display='';}}
 if(newNet!==hoverNet){hoverNet=newNet;render();}});
 svg.addEventListener('pointerleave',function(){if(hoverNet){hoverNet=null;render();}});
 window.addEventListener('pointermove',function(ev){
@@ -806,9 +808,9 @@ document.getElementById('pw-undo').onclick=undo;
 document.getElementById('pw-diff').onclick=function(){if(DIFF.on)diffEnd();else diffStart(props[curI].orig,tr('編集前'));};
 function doRewire(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-rewire');snap();var wb=D.wires.length;connect();
 calcNote=tr('配線再計算: 被覆線')+' '+wb+'→'+D.wires.length+tr('本');render();auditNow();
-b.textContent='✓ 完了';setTimeout(function(){b.textContent='配線を再計算';},900);}
+b.textContent=tr('✓ 完了');setTimeout(function(){b.textContent=tr('配線を再計算');},900);}
 function doPropose(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-repropose');snap();
-proposeAsync(function(){render();auditNow();b.textContent='✓ 完了';setTimeout(function(){b.textContent='配置を再提案';},900);});}
+proposeAsync(function(){render();auditNow();b.textContent=tr('✓ 完了');setTimeout(function(){b.textContent=tr('配置を再提案');},900);});}
 function resolveGuardNet(hiz){for(var i=0;i<D.parts.length;i++){var p=D.parts[i];if(p.kind!=='ic')continue;var pt=(p.pinTypes&&typeof p.pinTypes==='object')?p.pinTypes:{},pins=p.pins||{};
 var hasIn=Object.keys(pins).some(function(pin){return D.leads[p.id+'.'+pin]&&D.leads[p.id+'.'+pin].net===hiz&&pt[pin]==='in';});
 if(hasIn){var outs=Object.keys(pins).filter(function(pin){return pt[pin]==='out';});if(outs.length&&D.leads[p.id+'.'+outs[0]])return D.leads[p.id+'.'+outs[0]].net;}}return null;}
@@ -837,7 +839,7 @@ document.getElementById('pw-rewire').onclick=doRewire;
 document.getElementById('pw-repropose').onclick=doPropose;
 document.getElementById('pw-saveas').onclick=function(){props.push({name:'案 '+new Date().toLocaleTimeString(),orig:deep(D),cur:deep(D)});curI=props.length-1;refreshSel();loadProp(curI);auditNow();};
 document.getElementById('pw-defcfg').onclick=function(){CFG=deep(DEFCFG);buildSliders();buildNetClasses();saveLS();render();auditNow();};
-document.getElementById('pw-copy').onclick=function(){var b=this;document.getElementById('pw-out').value=exportJSON();if(navigator.clipboard)navigator.clipboard.writeText(exportJSON()).then(function(){b.textContent='コピー済み';setTimeout(function(){b.textContent='コピー';},1400);});};
+document.getElementById('pw-copy').onclick=function(){var b=this;document.getElementById('pw-out').value=exportJSON();if(navigator.clipboard)navigator.clipboard.writeText(exportJSON()).then(function(){b.textContent=tr('コピー済み');setTimeout(function(){b.textContent=tr('コピー');},1400);});};
 document.getElementById('pw-share').onclick=shareURL;
 document.getElementById('pw-print').onclick=printView;
 document.getElementById('pw-export').onclick=function(){var j=exportJSON();document.getElementById('pw-out').value=j;if(navigator.clipboard)navigator.clipboard.writeText(j);var bl=new Blob([j],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='perfwire_export.json';a.click();};
@@ -960,7 +962,7 @@ psld(box,'不透明度 %',0,100,1,function(){return PHOTO.op;},function(v){PHOTO
 psld(box,'拡大率 %',10,400,0.5,function(){return PHOTO.mul;},function(v){PHOTO.mul=v;});
 psld(box,'回転 微調整°',-15,15,0.1,function(){return PHOTO.rotF;},function(v){PHOTO.rotF=v;});
 var row=document.createElement('div');row.style.cssText='display:flex;gap:6px;margin:6px 0;flex-wrap:wrap';
-var b90=document.createElement('button');b90.textContent='90°回転';b90.onclick=function(){PHOTO.rot90=(PHOTO.rot90+90)%360;render();savePhotoT();};row.appendChild(b90);box.appendChild(row);
+var b90=document.createElement('button');b90.textContent=tr('90°回転');b90.onclick=function(){PHOTO.rot90=(PHOTO.rot90+90)%360;render();savePhotoT();};row.appendChild(b90);box.appendChild(row);
 pchk(box,'左右反転（裏面写真）',function(){return PHOTO.flip;},function(v){PHOTO.flip=v;});
 pchk(box,'ドラッグで写真を移動',function(){return PHOTO.drag;},function(v){PHOTO.drag=v;});}
 function photoSet(url,keepT){var im=new Image();im.onload=function(){PHOTO.img=im;PHOTO.fit=((cols-1)*BASE+40)/im.naturalWidth;
@@ -1007,7 +1009,7 @@ if(!selPart){box.style.display='none';hint.style.display='';return;}
 box.style.display='';hint.style.display='none';box.innerHTML='';
 var p=selPart;
 var ttl=document.createElement('div');ttl.style.cssText='font-weight:600;font-size:13px;margin-bottom:3px';
-ttl.textContent=p.id+'（'+tr(KINDJ[p.kind]||p.kind)+'）'+(p.locked?(LANG==='en'?' locked':' ロック中'):'');box.appendChild(ttl);
+ttl.textContent=p.id+' ('+tr(KINDJ[p.kind]||p.kind)+')'+(p.locked?tr(' ロック中'):'');box.appendChild(ttl);
 var lab=document.createElement('input');lab.type='text';lab.value=p.label||'';lab.placeholder=tr('ラベル（例: R14 10k）');
 lab.onchange=function(){snap();p.label=lab.value;render();};box.appendChild(lab);
 partLeads(p).forEach(function(L){var row=document.createElement('div');row.style.cssText='display:flex;gap:6px;align-items:center;margin:3px 0';
@@ -1210,7 +1212,7 @@ if(e.key==='Enter'||e.key===' '){e.preventDefault();gDone();return;}
 if(e.key==='Escape'){guideEnd();return;}}
 if(e.ctrlKey&&e.key.toLowerCase()==='z'){e.preventDefault();undo();return;}
 if(e.key==='1')setMode('end');if(e.key==='2')setMode('part');if(e.key==='3')setMode('bridge');if(e.key==='4')setMode('block');if(e.key==='5')setMode('probe');if(e.key==='6')setMode('cut');});
-function auditNow(){try{audit();}catch(e){document.getElementById('audit').textContent='監査エラー: '+e.message;}}
+function auditNow(){try{audit();}catch(e){document.getElementById('audit').textContent=trf('監査エラー: {0}',e.message);}}
 function auditSoon(){clearTimeout(auditTimer);auditTimer=setTimeout(auditNow,220);}
 function footPreview(){tempFoot=true;render();clearTimeout(footTimer);footTimer=setTimeout(function(){tempFoot=false;render();},1300);}
 function tgl(box,label,k){label=tr(label);var d=document.createElement('label');d.className='tgl';
@@ -1290,7 +1292,7 @@ if(nd.nodeType===3){var k=nd.nodeValue.trim();if(k&&JE[k])nd.nodeValue=nd.nodeVa
 document.getElementById('cp-in').placeholder=tr('コマンドを検索…（例: 再計算 / モード / ズーム）');
 document.getElementById('pw-out').placeholder=tr('エクスポート/インポート用JSON');
 document.getElementById('sliderhelp').textContent=tr('スライダーに触れると、ここに「何が起きるか」の説明が出ます。物理寸法・EE制約は動かした瞬間、基板上にも効果がプレビューされます。');}
-document.getElementById('pw-lang').textContent=LANG==='en'?'日本語':'EN';
+document.getElementById('pw-lang').textContent=LANG==='en'?'日本語':'EN'/*i18n-allow: toggle shows the OTHER language by design*/;
 document.getElementById('pw-lang').onclick=function(){try{localStorage.setItem('perfwire_lang',LANG==='en'?'ja':'en');}catch(e){}location.reload();};
 applyStatic();
 loadLS();

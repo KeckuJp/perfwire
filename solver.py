@@ -422,7 +422,7 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
         else:
             for nm in part_lead_names(p):
                 role[nm] = "passive"
-    for nm, L in bd.state["leads"].items():
+    for nm, L in (bd.state.get("leads") or {}).items():
         if L.get("role"):
             role[nm] = L["role"]
     # 出力-出力ショート（ドライバ衝突）: 同一ネットに role=out の端子が 2 本以上＝確実な競合。
