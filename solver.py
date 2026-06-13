@@ -120,9 +120,12 @@ class Board:
         # 不正形状の部品（pins 欠落/空/非dict の IC、leads が list でない/2本未満の素子）は取り込み時に
         # 除外し、監査全体が例外で落ちないようにする（電気的実体が無いので報告対象も無い）。
         def _valid(p):
-            if p.get("kind") == "ic":
+            k = p.get("kind")
+            if k == "ic":
                 return isinstance(p.get("pins"), dict) and len(p["pins"]) > 0
-            return isinstance(p.get("leads"), list) and len(p["leads"]) >= 2
+            if k in ("r", "film", "disc", "elec"):
+                return isinstance(p.get("leads"), list) and len(p["leads"]) >= 2
+            return False  # kind 欠落 or 未知 kind は取り込み時に除外（rebuild/footprint の KeyError 防止）
         self.parts = [p for p in json.loads(json.dumps(state["parts"])) if _valid(p)]
         self.state = state
         self.cls_of_net = {}
@@ -189,9 +192,14 @@ class Board:
     def cdef(self, net):
         return self.cfg["net_classes"].get(self.cls(net), {})
 
+def _ic_pins(p):
+    """IC の pins を安全に dict として返す（非 dict/欠落は空 dict）。emit_config 等で例外を防ぐ。"""
+    pins = p.get("pins")
+    return pins if isinstance(pins, dict) else {}
+
 def part_lead_names(p):
     if p["kind"] == "ic":
-        return [p["id"] + "." + k for k in p["pins"]]
+        return [p["id"] + "." + k for k in _ic_pins(p)]
     return p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
 
 def strip_segments(cols, rows, axis, cutset):
@@ -644,7 +652,7 @@ def emit_config(state):
     for p in parts:
         if p.get("kind") == "ic":
             pt = p.get("pinTypes") if isinstance(p.get("pinTypes"), dict) else {}
-            for pin in (p.get("pins") or {}):
+            for pin in _ic_pins(p):
                 if pt.get(pin):
                     role[p["id"] + "." + pin] = pt[pin]
         else:
@@ -676,13 +684,13 @@ def emit_config(state):
     leadpos = {nm: tuple(v["at"]) for nm, v in leads.items() if v.get("at")}
     for p in parts:
         if p.get("kind") == "ic":
-            for pin, xy in (p.get("pins") or {}).items():
+            for pin, xy in _ic_pins(p).items():
                 leadpos[p["id"] + "." + pin] = tuple(xy)
     decoup = []
     for p in parts:
         if p.get("kind") != "ic":
             continue
-        for pin in (p.get("pins") or {}):
+        for pin in _ic_pins(p):
             nm = p["id"] + "." + pin
             net = leads.get(nm, {}).get("net")
             if not net or not _is_pwr(net) or rank.get(net, 2) == 0 or nm not in leadpos:
@@ -991,7 +999,7 @@ def _resolve_guard_net(state, hiz_net):
     for p in state.get("parts", []):
         if p.get("kind") != "ic":
             continue
-        pins = p.get("pins") or {}
+        pins = _ic_pins(p)
         pt = p.get("pinTypes") if isinstance(p.get("pinTypes"), dict) else {}
         if any(state["leads"].get(p["id"] + "." + pin, {}).get("net") == hiz_net and pt.get(pin) == "in" for pin in pins):
             for pin in pins:
@@ -1046,6 +1054,10 @@ def propose_multi(state, cfg):
     return best[1]
 
 if __name__ == "__main__":
+    try:  # 非ASCII（em-dash, 日本語コメント）を stdout へ書く際に cp932 等で落ちないよう UTF-8 を強制
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
     src = sys.argv[1]
     propose = "--propose" in sys.argv
     cfgp = sys.argv[sys.argv.index("--config") + 1] if "--config" in sys.argv else os.path.join(os.path.dirname(os.path.abspath(__file__)), "perfwire_config.json")
