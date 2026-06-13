@@ -135,7 +135,7 @@ svg{display:block;margin:16px auto}
 <div class="hint">JSON貼り付け→インポート、またはファイルをドロップ。編集・設定は自動保存。</div>
 <textarea id="pw-out" placeholder="エクスポート/インポート用JSON"></textarea>
 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">
-<button id="pw-copy">コピー</button><button id="pw-import">インポート</button><button id="pw-beep">導通リスト</button><button id="pw-print">印刷 1:1</button><button id="pw-sample">サンプル復元</button><button id="pw-clearls">保存データ消去</button>
+<button id="pw-copy">コピー</button><button id="pw-import">インポート</button><button id="pw-beep">導通リスト</button><button id="pw-packet">ビルドパケット</button><button id="pw-print">印刷 1:1</button><button id="pw-sample">サンプル復元</button><button id="pw-clearls">保存データ消去</button>
 </div>
 </aside>
 <main>
@@ -164,7 +164,7 @@ var DEFCFG={pitch:2.54,allowStanding:true,
  disc:{pitchMin:1,pitchMax:3,diag:true,tall:true,bodyLen:5,bodyWid:2.5},
  elec:{pitchMin:1,pitchMax:3,diag:true,tall:true,dia:6.5}},
  partOv:{C4:{dia:5.0},C6:{dia:6.5}},
- rules:{maxJoints:3,singleLeadAllow:['IF_MIC','MIC_IN','SPK_N','SPK_P']},
+ rules:{maxJoints:3,leadMargin:5.0,singleLeadAllow:['IF_MIC','MIC_IN','SPK_N','SPK_P']},
  railRank:{V3V3:2,VMID:1,GND:0},
  powerEntry:{V3V3:['W.RED'],GND:['W.BLK1','W.BLK2']},
  classes:{HIZ:{nets:['INA_P'],maxWire:6,adjPen:8,keepAway:['OUT','PWR'],keepHoles:2},
@@ -232,7 +232,8 @@ var JE={
 'デカップリング':'Decoupling','配線長':'Wire length','全クラス上限内':'all within class limits','本体重なり':'Body overlap','警告':'warn','パッド接合数':'Pad joints','以下':' max','ERC':'ERC','クリーン':'clean','トポロジ':'Topology','総合':'Overall','件':'','PASS ✓ 製作可':'PASS ✓ fab-ready',
 'ストリップ短絡':'Strip short','出力競合':'Output contention','オープンネット':'Open net','未接続':'Unconnected','電源ピン浮き':'Floating power pin','電源未到達':'Power unreachable','重複ID':'Duplicate id','極性逆':'Reversed polarity','単一リード':'Single-lead net','未駆動入力':'Undriven input','未分類':'Unclassified','離隔違反':'Keep-away viol','高Zガード推奨':'High-Z guard','平行近接':'Parallel-near','対':' pairs','深':'depth ','穴':'holes ',
 '自動結線: 空の配線を補完（被覆線':'Auto-wired empty board (wires','本）':')',
-'手順':'Step','完了':'done','この手順は済':'this step done','部品':'Part','立て実装':'standing','を挿入:':' — insert at:','はんだブリッジ:':'Solder bridge:','被覆線':'Jumper','の足へ直付け':' direct-solder to lead','に挿し':' insert at',' へブリッジ':' bridge to','※ブリッジ先なし（要修正）':'(no bridge target — fix)','ネット':'net','カット':'Cut',
+'手順':'Step','完了':'done','この手順は済':'this step done','部品':'Part','立て実装':'standing','を挿入:':' — insert at:','はんだブリッジ:':'Solder bridge:','被覆線':'Jumper','の足へ直付け':' direct-solder to lead','に挿し':' insert at',' へブリッジ':' bridge to','※ブリッジ先なし（要修正）':'(no bridge target — fix)','ネット':'net','カット':'Cut','ビルドパケット':'Build packet',
+'ビルドパケット（BOM＋切断長＋ブリッジ＋基板PNG）を出力しました。':'Build packet exported (BOM + cut sheet + bridges + board PNG).',
 '配線再計算: 被覆線':'Rewire: jumpers','本':'','提案:':'Proposed:','部品を再配置 / 被覆線':'parts re-placed / jumpers',
 '許容ゾーン':'allowed zone','高Z分離ゾーン':'high-Z keep-out','(縦)':'(vert)',
 '直付':'direct','ズーム':'zoom','選択':'sel','ロック':'lock','移動':'moved','線':'wires','橋':'bridges',
@@ -769,6 +770,28 @@ document.getElementById('pw-beep').onclick=function(){var t=beepList();document.
 if(navigator.clipboard)navigator.clipboard.writeText(t);
 var bl=new Blob([t],{type:'text/markdown'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='continuity_checklist.md';a.click();
 showHelp('導通チェックリストを生成しました（テキスト欄・クリップボード・.md ダウンロード）。');};
+function buildPacketMd(){var L=function(ja,en){return LANG==='en'?en:ja;};
+var pitch=CFG.pitch||2.54,margin=(CFG.rules&&CFG.rules.leadMargin)||5.0;
+var groups={};D.parts.forEach(function(p){var k=(p.kind||'?')+' '+(p.label||p.id);(groups[k]=groups[k]||[]).push(p.id);});
+var bom=Object.keys(groups).sort().map(function(k){return {kind:k.split(' ')[0],label:k.split(' ')[1],qty:groups[k].length,refs:groups[k].sort()};});
+var cuts=D.wires.map(function(w){var a=w.a.direct?w.a.pad:w.a.hole,b=w.b.direct?w.b.pad:w.b.hole;
+var st=Math.hypot(a[0]-b[0],a[1]-b[1])*pitch+2*margin,mh=(Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1]))*pitch+2*margin;
+return {net:w.net,from:holeName(a),to:holeName(b),st:Math.round(st*10)/10,mh:Math.round(mh*10)/10};});
+var o=['# perfwire build packet — '+props[curI].name,'','## '+L('部品表','BOM')+' ('+D.parts.length+')','','| kind | label | qty | refs |','|---|---|---|---|'];
+bom.forEach(function(b){o.push('| '+b.kind+' | '+b.label+' | '+b.qty+' | '+b.refs.join(', ')+' |');});
+o.push('','## '+L('被覆線 切断長','Jumper cut sheet')+' ('+cuts.length+'; '+L('リード余長','lead margin')+' '+margin+'mm)','','| net | from | to | straight mm | manhattan mm |','|---|---|---|---|---|');
+cuts.forEach(function(c){o.push('| '+c.net+' | '+c.from+' | '+c.to+' | '+c.st+' | '+c.mh+' |');});
+o.push('','## '+L('はんだブリッジ','Solder bridges')+' ('+D.padBridges.length+')','');
+D.padBridges.forEach(function(b){o.push('- '+holeName(b[0])+' — '+holeName(b[1]));});
+return o.join('\n')+'\n';}
+function svgPng(cb){try{var s=new XMLSerializer().serializeToString(svg),bl=new Blob([s],{type:'image/svg+xml'}),url=URL.createObjectURL(bl),im=new Image();
+im.onload=function(){var cv=document.createElement('canvas');cv.width=svg.width.baseVal.value;cv.height=svg.height.baseVal.value;var cx=cv.getContext('2d');cx.fillStyle='#0d0f12';cx.fillRect(0,0,cv.width,cv.height);cx.drawImage(im,0,0);URL.revokeObjectURL(url);cv.toBlob(cb,'image/png');};
+im.onerror=function(){cb(null);};im.src=url;}catch(e){cb(null);}}
+document.getElementById('pw-packet').onclick=function(){var md=buildPacketMd();document.getElementById('pw-out').value=md;if(navigator.clipboard)navigator.clipboard.writeText(md);
+var dl=function(blob,name){var a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();};
+dl(new Blob([md],{type:'text/markdown'}),'build_packet.md');
+svgPng(function(png){if(png)dl(png,'board.png');});
+showHelp(tr('ビルドパケット（BOM＋切断長＋ブリッジ＋基板PNG）を出力しました。'));};
 document.getElementById('pw-sample').onclick=function(){props=INIT.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null};});curI=0;refreshSel();loadProp(0);auditNow();};
 document.getElementById('pw-clearls').onclick=function(){try{localStorage.removeItem(LSKEY);}catch(e){}location.reload();};
 document.getElementById('pw-open').onclick=function(){document.getElementById('pw-file').click();};

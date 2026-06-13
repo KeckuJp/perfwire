@@ -11,6 +11,7 @@
     "body_overlap": false,
     "max_joints_per_pad": 3,
     "edge_margin_holes": 0,
+    "lead_margin_mm": 5.0,
     "_single_lead_allowlist": "ERC: 単一リードを許可する I/O 点（外部マイク/スピーカ等。空配列なら全て警告）",
     "single_lead_allowlist": ["IF_MIC", "MIC_IN", "SPK_N", "SPK_P"]
   },

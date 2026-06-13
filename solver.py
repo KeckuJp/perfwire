@@ -11,6 +11,7 @@ import sys
 import io
 import os
 import math
+import re
 
 DEF_CFG = {
     "grid_pitch_mm": 2.54,
@@ -548,6 +549,134 @@ def topology_audit(bd, net_of_hole, pad_bridges, wires, cfg):
                                          "hiz": bd.cls(n1) == "HIZ" or bd.cls(n2) == "HIZ"})
     return out
 
+def _hole_name(p):
+    return str(p[0]) + chr(64 + p[1])
+
+def cut_sheet(state, cfg):
+    """各被覆線の物理切断長（端点間距離×ピッチ + 両端のリード余長）。経路は端点直線で近似。"""
+    pitch = cfg.get("grid_pitch_mm", 2.54)
+    margin = cfg.get("rules", {}).get("lead_margin_mm", 5.0)
+    rows = []
+    for w in state.get("wires", []):
+        a = w["a"]["pad"] if w["a"].get("direct") else w["a"]["hole"]
+        b = w["b"]["pad"] if w["b"].get("direct") else w["b"]["hole"]
+        straight = math.hypot(a[0] - b[0], a[1] - b[1]) * pitch
+        manhattan = (abs(a[0] - b[0]) + abs(a[1] - b[1])) * pitch
+        rows.append({"net": w["net"], "from": _hole_name(a), "to": _hole_name(b),
+                     "straight_mm": round(straight + 2 * margin, 1), "manhattan_mm": round(manhattan + 2 * margin, 1)})
+    return rows
+
+def bom_rows(state):
+    """部品を kind+label でまとめた BOM。"""
+    groups = {}
+    for p in state.get("parts", []):
+        key = (p.get("kind", "?"), p.get("label") or p.get("id", "?"))
+        groups.setdefault(key, []).append(p.get("id", "?"))
+    return [{"kind": k[0], "label": k[1], "qty": len(ids), "refs": sorted(ids)} for k, ids in sorted(groups.items())]
+
+def build_packet_md(state, cfg):
+    """ベンチ用ビルドパケット（BOM + 切断長表 + ブリッジ一覧）を markdown で。"""
+    bom = bom_rows(state)
+    cuts = cut_sheet(state, cfg)
+    out = ["# perfwire build packet — " + str(state.get("proposal", "")), "",
+           "## BOM (" + str(sum(b["qty"] for b in bom)) + " parts)", "",
+           "| kind | label | qty | refs |", "|---|---|---|---|"]
+    for b in bom:
+        out.append("| " + b["kind"] + " | " + b["label"] + " | " + str(b["qty"]) + " | " + ", ".join(b["refs"]) + " |")
+    out += ["", "## Jumper cut sheet (" + str(len(cuts)) + " wires; lead margin " + str(cfg.get("rules", {}).get("lead_margin_mm", 5.0)) + "mm each end)", "",
+            "| net | from | to | straight mm | manhattan mm |", "|---|---|---|---|---|"]
+    for c in cuts:
+        out.append("| " + c["net"] + " | " + c["from"] + " | " + c["to"] + " | " + str(c["straight_mm"]) + " | " + str(c["manhattan_mm"]) + " |")
+    br = state.get("padBridges", [])
+    out += ["", "## Solder bridges (" + str(len(br)) + ")", ""]
+    out += ["- " + _hole_name(b[0]) + " — " + _hole_name(b[1]) for b in br] or ["(none)"]
+    return "\n".join(out) + "\n"
+
+_PWR_NAMES = ("GND", "VSS", "VEE", "VCC", "VDD", "VMID", "VREF", "AGND", "DGND", "V3V3", "3V3", "5V", "1V8")
+
+def _is_pwr(n):
+    u = (n or "").upper()
+    return u in _PWR_NAMES or bool(re.match(r"^[+\-]?\d+V\d*$", u)) or bool(re.match(r"^V\d+$", u))
+
+def emit_config(state):
+    """盤面状態から perfwire_config.json の叩き台を導出（ヒューリスティック）。人がレビュー前提。
+    既存の DEF_CFG をベースに、推定できる net_classes / rail_rank / power_entry /
+    single_lead_allowlist / decoupling を埋め、不確実な箇所は _TODO で印を付ける。"""
+    leads = state.get("leads", {})
+    parts = state.get("parts", [])
+    role = {}
+    for p in parts:
+        if p.get("kind") == "ic":
+            pt = p.get("pinTypes") if isinstance(p.get("pinTypes"), dict) else {}
+            for pin in (p.get("pins") or {}):
+                if pt.get(pin):
+                    role[p["id"] + "." + pin] = pt[pin]
+        else:
+            for nm in (p.get("leadNames") or [p.get("id", "") + ".a", p.get("id", "") + ".b"]):
+                role[nm] = "passive"
+    for nm, v in leads.items():
+        if v.get("role"):
+            role[nm] = v["role"]
+    lpn = {}
+    for nm, v in leads.items():
+        n = v.get("net")
+        if n:
+            lpn.setdefault(n, []).append(nm)
+    nets = sorted(lpn)
+    classes = {"HIZ": [], "SIG": [], "OUT": [], "PWR": []}
+    for n in nets:
+        if _is_pwr(n):
+            classes["PWR"].append(n)
+        elif any(role.get(l) == "out" for l in lpn[n]):
+            classes["OUT"].append(n)
+        else:
+            classes["SIG"].append(n)
+    rank = {}
+    for n in classes["PWR"]:
+        u = n.upper()
+        rank[n] = 0 if any(x in u for x in ("GND", "VSS", "VEE", "AGND", "DGND")) else (1 if ("VMID" in u or "VREF" in u) else 2)
+    pe = {n: [l for l in lpn[n] if l.startswith("W.")] for n in classes["PWR"] if any(l.startswith("W.") for l in lpn[n])}
+    allow = [n for n in nets if len(lpn[n]) == 1]
+    leadpos = {nm: tuple(v["at"]) for nm, v in leads.items() if v.get("at")}
+    for p in parts:
+        if p.get("kind") == "ic":
+            for pin, xy in (p.get("pins") or {}).items():
+                leadpos[p["id"] + "." + pin] = tuple(xy)
+    decoup = []
+    for p in parts:
+        if p.get("kind") != "ic":
+            continue
+        for pin in (p.get("pins") or {}):
+            nm = p["id"] + "." + pin
+            net = leads.get(nm, {}).get("net")
+            if not net or not _is_pwr(net) or rank.get(net, 2) == 0 or nm not in leadpos:
+                continue
+            best = None
+            for q in parts:
+                if q.get("kind") not in ("disc", "film", "elec"):
+                    continue
+                for ql in (q.get("leadNames") or []):
+                    if leads.get(ql, {}).get("net") == net and ql in leadpos:
+                        d = max(abs(leadpos[ql][0] - leadpos[nm][0]), abs(leadpos[ql][1] - leadpos[nm][1]))
+                        if best is None or d < best[0]:
+                            best = (d, q["id"])
+            if best:
+                decoup.append({"cap": best[1], "pin": nm, "max_holes": max(2, best[0])})
+    cfg = json.loads(json.dumps(DEF_CFG))
+    cfg["_comment"] = "perfwire_config draft from solver.py --emit-config. REVIEW: net classes are heuristic (PWR by name, OUT by role=out, rest SIG); mark high-Z nodes into HIZ; tune limits."
+    cfg["net_classes"] = {
+        "HIZ": {"_TODO": "move true high-impedance nodes (e.g. op-amp inputs) here", "nets": [], "max_wire_holes": 6, "adj_penalty": 8, "keep_away_from": ["OUT", "PWR"], "keep_away_holes": 2},
+        "SIG": {"nets": classes["SIG"], "max_wire_holes": 14, "adj_penalty": 3, "keep_away_from": [], "keep_away_holes": 0},
+        "OUT": {"nets": classes["OUT"], "max_wire_holes": 99, "adj_penalty": 2, "keep_away_from": ["HIZ"], "keep_away_holes": 2},
+        "PWR": {"nets": classes["PWR"], "max_wire_holes": 99, "adj_penalty": 1, "keep_away_from": [], "keep_away_holes": 0},
+    }
+    cfg["rail_rank"] = rank
+    cfg["power_entry"] = pe
+    cfg["decoupling"] = decoup
+    cfg.setdefault("rules", {})["single_lead_allowlist"] = allow
+    cfg["rules"]["_single_lead_allowlist_TODO"] = "auto-listed single-lead nets (likely external I/O ports); remove any that are genuine wiring gaps"
+    return cfg
+
 def solve(state, cfg, propose=False):
     bd = Board(state, cfg)
     W = cfg["weights"]
@@ -790,6 +919,15 @@ if __name__ == "__main__":
     dst = sys.argv[sys.argv.index("-o") + 1] if "-o" in sys.argv else None
     cfg = load_cfg(cfgp)
     state = json.load(io.open(src, encoding="utf-8"))
+    if "--emit-config" in sys.argv:
+        out = json.dumps(emit_config(state), ensure_ascii=False, indent=2)
+        (io.open(dst, "w", encoding="utf-8").write(out) if dst else sys.stdout.write(out + "\n"))
+        sys.exit(0)
+    if "--emit-packet" in sys.argv:
+        result = solve(state, cfg, propose=propose)
+        md = build_packet_md(result, cfg)
+        (io.open(dst, "w", encoding="utf-8").write(md) if dst else sys.stdout.write(md))
+        sys.exit(0)
     result = solve(state, cfg, propose=propose)
     print(("PROPOSE" if propose else "ALLOCATE"), json.dumps(result["stats"], ensure_ascii=False))
     e = result["ee"]
