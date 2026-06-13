@@ -105,7 +105,7 @@ svg{display:block;margin:16px auto}
 <div id="prog"><div></div></div>
 <div class="layout">
 <aside>
-<h4>モード <span style="color:var(--mut);text-transform:none;letter-spacing:0">(1-5キー)</span></h4>
+<h4>モード <span style="color:var(--mut);text-transform:none;letter-spacing:0">(1-6キー)</span></h4>
 <div class="seggrp">
 <button id="m-end">端子</button><button id="m-part">部品</button><button id="m-bridge">ブリッジ</button><button id="m-block">穴×</button><button id="m-probe">テスター</button><button id="m-cut">カット</button>
 </div>
@@ -178,7 +178,7 @@ var CFG=deep(DEFCFG),LSKEY='perfwire_v1',APPVER='0.3.0';
 var LANG=(function(){try{return localStorage.getItem('perfwire_lang')||((navigator.language||'').indexOf('ja')===0?'ja':'en');}catch(e){return 'ja';}})();
 var JE={
 '配線を再計算':'Rewire','配置を再提案':'Re-place & route','案として保存':'Save as proposal','作業ガイド':'Work guide','元に戻す':'Undo','開く…':'Open…','書き出し':'Export','URL共有':'Share URL',
-'モード':'Mode','(1-5キー)':'(keys 1-5)','レイヤー':'Layers','写真下絵':'Photo underlay','しきい値':'Thresholds','部品':'Parts','監査':'Audit','— ライブ更新':'— live','データ':'Data',
+'モード':'Mode','(1-6キー)':'(keys 1-6)','レイヤー':'Layers','写真下絵':'Photo underlay','しきい値':'Thresholds','部品':'Parts','監査':'Audit','— ライブ更新':'— live','データ':'Data',
 '端子':'Ends','ブリッジ':'Bridges','穴×':'Block','テスター':'Probe',
 'ロック切替':'Toggle lock','案をリセット':'Reset proposal','設定を既定値に戻す':'Reset config to defaults','コピー':'Copy','インポート':'Import','導通リスト':'Continuity list','印刷 1:1':'Print 1:1','サンプル復元':'Restore sample','保存データ消去':'Clear saved data',
 '写真を読み込み…':'Load photo…','消去':'Clear','90°回転':'Rotate 90°','この部品を削除':'Delete this part','＋ 追加':'+ Add',
