@@ -63,7 +63,7 @@ The plugin bundles the same skill (namespaced `perfwire:perfwire`; `plugin.json`
 - **KiCAD netlist import** — open or drop a `.net` (s-expression) file: 2-pin and DIP-8 components are placed on a fresh board with nets and colors, ready for the solver.
 - **1:1 print** — print at exact 2.54mm pitch and lay the sheet on the real board to verify; combine with mirror view for a backside (solder-side) sheet.
 - **Diff view** — live overlay comparing the current board against its unedited original (plan vs as-built) or any other proposal (pick from Ctrl+K): moved parts, added/removed wires and bridges, with a delta summary in the status bar.
-- **Editor UX** — segmented modes (1-5 keys), command palette (Ctrl+K), undo (Ctrl+Z), zoom / pinch zoom, hover inspector (hole / net), layer toggles, lock parts, block holes, proposals as switchable tabs, autosave to localStorage, JSON drag & drop. English / Japanese UI (auto-detected, toggle in header).
+- **Editor UX** — segmented modes (1-6 keys, incl. stripboard cut mode), command palette (Ctrl+K), undo (Ctrl+Z), zoom / pinch zoom, hover inspector (hole / net), layer toggles, lock parts, block holes, proposals as switchable tabs, autosave to localStorage, JSON drag & drop. English / Japanese UI **and reports** (auto-detected, toggle in header).
 
 ## State schema (v1)
 
@@ -107,7 +107,7 @@ Extracted from a real project: a 2× opamp-ic active buffer for a telephone-clie
 ## Roadmap
 
 - Guard-ring *synthesis* (auto-placing guard holes/traces — today only an advisory is emitted) and a routed crosstalk model (today: an endpoint-segment heuristic, since jumper routes aren't modelled). Star/daisy ground-topology scoring, high-Z guard advisories, keep-away re-audit and power-reachability ERC already ship.
-- i18n: UI chrome (buttons, sliders, hints, commands) ships in English/Japanese (auto-detected, toggle in the header). Generated reports (audit panel, guide steps, continuity checklist) are still Japanese-only.
+- (i18n done) UI chrome and generated reports (audit panel, guide steps, continuity checklist) both ship in English/Japanese — auto-detected from the browser, toggle in the header.
 
 ## License
 
