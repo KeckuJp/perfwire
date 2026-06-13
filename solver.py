@@ -116,7 +116,11 @@ class Board:
         self.rows = state["grid"]["rows"]
         self.blocked = {tuple(h) for h in state.get("blockedHoles", [])}
         self.net_of_lead = {k: v["net"] for k, v in state["leads"].items()}
-        self.parts = json.loads(json.dumps(state["parts"]))
+        # 不正形状の部品（pins 欠落/空の IC、leads が2本未満の素子）は取り込み時に除外し、
+        # 監査全体が例外で落ちないようにする（電気的実体が無いので報告対象も無い）。
+        def _valid(p):
+            return bool(p.get("pins")) if p.get("kind") == "ic" else (bool(p.get("leads")) and len(p["leads"]) >= 2)
+        self.parts = [p for p in json.loads(json.dumps(state["parts"])) if _valid(p)]
         self.state = state
         self.cls_of_net = {}
         for cname, cdef in cfg.get("net_classes", {}).items():
@@ -128,7 +132,9 @@ class Board:
         self.lead_pos, self.ic_block, self.body, self.overlaps = {}, set(), {}, []
         for p in self.parts:
             if p["kind"] == "ic":
-                pins = {k: tuple(v) for k, v in p["pins"].items()}
+                pins = {k: tuple(v) for k, v in (p.get("pins") or {}).items()}
+                if not pins:
+                    continue  # 不正形状（pins 欠落/空）は監査を止めず黙ってスキップ
                 for k, xyv in pins.items():
                     self.lead_pos[p["id"] + "." + k] = xyv
                 xs = sorted({v[0] for v in pins.values()})
