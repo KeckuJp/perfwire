@@ -238,6 +238,7 @@ var JE={
 '許容ゾーン':'allowed zone','高Z分離ゾーン':'high-Z keep-out','(縦)':'(vert)',
 '直付':'direct','ズーム':'zoom','選択':'sel','ロック':'lock','移動':'moved','線':'wires','橋':'bridges',
 '出力電源競合':'Output-to-power','抵抗過負荷':'Resistor over-power','パスコン値':'Decoupling value',
+'修正提案':'Suggested fixes','最良配置を自動探索（重み格子）':'Auto-search best placement (weight grid)','探索':'search','最良配置:':'Best placement:','ジャンパーで接続':'connect with a jumper','track cutで分離':'split with a track cut','ドライバを1つに':'leave one driver','ネット割当':'assign a net','refdes一意化':'make refdes unique','電源へ接続':'connect to supply','+を高電位へ':'+ lead to higher rail','給電へ結線':'wire to supply entry','出力を電源から分離':'separate output from power','定格up/値見直し':'raise rated W / revise R','経路短縮/再配置':'shorten run / re-place',
 'モード: カット（ストリップ基板）':'Mode: cut (stripboard)','基板種別を切替（ユニバーサル⇄ストリップ）':'Toggle board type (perfboard / stripboard)','ストリップ向き切替（行⇄列）':'Toggle strip axis (row / column)',
 'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。':'Ring = jumper insertion hole. Drag to a free adjacent hole (the bridge follows). Drop onto a lead to direct-solder.',
 '本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。':'Drag bodies or leads; valid holes glow green while dragging a lead. Click to select, then toggle lock.',
@@ -525,6 +526,19 @@ if(topo.guard.length)tb.push('<span class="mut2">'+tr('高Zガード推奨')+' '
 if(topo.crosstalk)tb.push('<span class="mut2">'+tr('平行近接')+' '+topo.crosstalk+tr('対')+'</span>');
 h+='<br>'+tr('トポロジ')+': '+(tb.length?tb.join(' '):'<span class="ok">—</span>');
 h+='<br>'+tr('総合')+': '+(ngs?'<span class="ng">NG '+ngs+tr('件')+'</span>':'<span class="ok">'+tr('PASS ✓ 製作可')+'</span>');
+var fixes=[];
+erc.openNets.forEach(function(n){fixes.push(tr('オープンネット')+' '+n+': '+tr('ジャンパーで接続'));});
+erc.stripShorts.forEach(function(s){fixes.push(tr('ストリップ短絡')+' '+s.nets.join('/')+': '+tr('track cutで分離'));});
+erc.multipleDrivers.forEach(function(m){fixes.push(tr('出力競合')+' '+m.net+': '+tr('ドライバを1つに'));});
+erc.unconnectedLeads.forEach(function(l){fixes.push(tr('未接続')+' '+l+': '+tr('ネット割当'));});
+erc.duplicateIds.forEach(function(i2){fixes.push(tr('重複ID')+' '+i2+': '+tr('refdes一意化'));});
+erc.floatingPowerPins.forEach(function(pp){fixes.push(tr('電源ピン浮き')+' '+pp+': '+tr('電源へ接続'));});
+polbad.forEach(function(pb){fixes.push(tr('極性逆')+' '+pb+': '+tr('+を高電位へ'));});
+preachbad.forEach(function(nn){fixes.push(tr('電源未到達')+' '+nn+': '+tr('給電へ結線'));});
+erc.pinConflicts.forEach(function(c){fixes.push(tr('出力電源競合')+' '+c.net+': '+tr('出力を電源から分離'));});
+respbad.forEach(function(rb){fixes.push(tr('抵抗過負荷')+' '+rb+': '+tr('定格up/値見直し'));});
+D.wires.forEach(function(w){var wl=dist(w.a.hole,w.b.hole),mx=cdef(w.net).maxWire;if(wl>mx)fixes.push(tr('配線長')+' '+w.net+': '+tr('経路短縮/再配置'));});
+if(fixes.length)h+='<br>'+tr('修正提案')+':<br>'+fixes.map(function(x){return '<span class="mut2">• '+x+'</span>';}).join('<br>');
 var el=document.getElementById('audit');el.innerHTML=h;
 el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');
 setTimeout(function(){el.classList.remove('flash');},700);}
@@ -768,6 +782,19 @@ calcNote=tr('配線再計算: 被覆線')+' '+wb+'→'+D.wires.length+tr('本');
 b.textContent='✓ 完了';setTimeout(function(){b.textContent='配線を再計算';},900);}
 function doPropose(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-repropose');snap();
 proposeAsync(function(){render();auditNow();b.textContent='✓ 完了';setTimeout(function(){b.textContent='配置を再提案';},900);});}
+function ercHardCount(){var e=ercAudit();return e.openNets.length+e.unconnectedLeads.length+e.duplicateIds.length+e.floatingPowerPins.length+e.multipleDrivers.length+e.stripShorts.length+e.pinConflicts.length+e.polarity.filter(function(x){return x.ok===false;}).length+e.powerReach.filter(function(x){return !x.ok;}).length+e.resistorPower.filter(function(x){return !x.ok;}).length;}
+function proposeMultiBest(){if(busy||GUIDE.on)return;var grid=[];[10,20,30].forEach(function(bb){[0.5,1.0,2.0].forEach(function(wl){grid.push([bb,wl]);});});
+var origW=deep(CFG.weights),base=deep(D),out=[],i=0;snap();
+(function step(){
+if(i>=grid.length){CFG.weights=origW;out.sort(function(a,b){return a.s[0]-b.s[0]||a.s[1]-b.s[1];});
+props[curI].cur=deep(out[0].st);D=props[curI].cur;
+var seen={};seen[JSON.stringify(out[0].st.wires)]=1;var added=0;
+for(var k=1;k<out.length&&added<2;k++){var kk=JSON.stringify(out[k].st.wires);if(seen[kk])continue;seen[kk]=1;props.push({name:tr('探索')+' bb'+out[k].w[0]+'/wl'+out[k].w[1],orig:deep(out[k].st),cur:deep(out[k].st)});added++;}
+calcNote=tr('最良配置:')+' bb'+out[0].w[0]+'/wl'+out[0].w[1]+' (NG'+out[0].s[0]+' '+tr('線')+out[0].s[1]+')';
+refreshSel();render();auditNow();return;}
+CFG.weights.bridgeBonus=grid[i][0];CFG.weights.wireLen=grid[i][1];D=deep(base);props[curI].cur=D;
+proposeAsync(function(){out.push({w:grid[i].slice(),st:deep(D),s:[ercHardCount(),D.wires.length]});i++;step();});
+})();}
 document.getElementById('pw-rewire').onclick=doRewire;
 document.getElementById('pw-repropose').onclick=doPropose;
 document.getElementById('pw-saveas').onclick=function(){props.push({name:'案 '+new Date().toLocaleTimeString(),orig:deep(D),cur:deep(D)});curI=props.length-1;refreshSel();loadProp(curI);auditNow();};
@@ -1085,6 +1112,7 @@ document.getElementById('z-fit').onclick=function(){ZOOM=1;render();};
 var CMDS=[
 {n:'配線を再計算',k:'recalc rewire',f:doRewire},
 {n:'配置を再提案',k:'propose place',f:doPropose},
+{n:'最良配置を自動探索（重み格子）',k:'propose multi best grid auto search',f:proposeMultiBest},
 {n:'案として保存',k:'save proposal',f:function(){document.getElementById('pw-saveas').click();}},
 {n:'元に戻す',k:'undo',f:undo},
 {n:'書き出し（JSON）',k:'export download',f:function(){document.getElementById('pw-export').click();}},

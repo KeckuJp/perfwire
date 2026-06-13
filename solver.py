@@ -713,6 +713,41 @@ def emit_config(state):
     cfg["rules"]["_single_lead_allowlist_TODO"] = "auto-listed single-lead nets (likely external I/O ports); remove any that are genuine wiring gaps"
     return cfg
 
+def fix_suggestions(ee):
+    """各監査指摘に機械可読な対処案を添える（advisory; 自動適用はしない）。"""
+    fx = []
+    for n in ee.get("openNets", []):
+        fx_add = ("openNet", n, "ジャンパーで分断された島を接続 / connect the islands with a jumper")
+        fx.append({"finding": fx_add[0], "target": fx_add[1], "suggestion": fx_add[2]})
+    for s in ee.get("stripShorts", []):
+        fx.append({"finding": "stripShort", "target": "/".join(s["nets"]), "suggestion": "セグメント " + str(s["segment"]) + " に track cut を入れて分離 / add a track cut to split"})
+    for m in ee.get("multipleDrivers", []):
+        fx.append({"finding": "multipleDrivers", "target": m["net"], "suggestion": "ドライバ " + ",".join(m["pins"]) + " の片方を外す / remove one driver"})
+    for nm in ee.get("unconnectedLeads", []):
+        fx.append({"finding": "unconnectedLead", "target": nm, "suggestion": "ネットを割り当てる / assign a net"})
+    for i in ee.get("duplicateIds", []):
+        fx.append({"finding": "duplicateId", "target": i, "suggestion": "一意の refdes に変更 / make the refdes unique"})
+    for nm in ee.get("floatingPowerPins", []):
+        fx.append({"finding": "floatingPowerPin", "target": nm, "suggestion": "電源レールに接続 / connect to the supply rail"})
+    for p in ee.get("polarity", []):
+        if p.get("ok") is False:
+            fx.append({"finding": "polarity", "target": p["part"], "suggestion": "+ 足を高電位側へ / put the + lead on the higher rail"})
+    for p in ee.get("powerReach", []):
+        if not p.get("ok"):
+            fx.append({"finding": "powerReach", "target": p["net"], "suggestion": "給電リードまで結線 / wire it back to the supply entry"})
+    for d in ee.get("decoupling", []):
+        if not d.get("ok"):
+            fx.append({"finding": "decoupling", "target": d["cap"] + "->" + d["pin"], "suggestion": "パスコンをピンの " + str(d["max"]) + " 穴以内へ移動 / move the cap within " + str(d["max"]) + " holes"})
+    for w in ee.get("wireLength", []):
+        if not w.get("ok"):
+            fx.append({"finding": "wireLength", "target": w["net"], "suggestion": "経路短縮または再配置 / shorten the run or re-place"})
+    for c in ee.get("pinConflicts", []):
+        fx.append({"finding": "pinConflict", "target": c["net"], "suggestion": "論理出力を電源レールから切り離す / separate the output from the power rail"})
+    for r in ee.get("resistorPower", []):
+        if not r.get("ok"):
+            fx.append({"finding": "resistorPower", "target": r["part"], "suggestion": "定格Wを上げる or 抵抗値を見直す / increase rated W or revise R"})
+    return fx
+
 def solve(state, cfg, propose=False):
     bd = Board(state, cfg)
     W = cfg["weights"]
@@ -940,6 +975,7 @@ def solve(state, cfg, propose=False):
     out["warnings"] = warnings
     out["cautions"] = cautions
     ee["fabReady"] = ee_ng == 0
+    ee["fixes"] = fix_suggestions(ee)
     out["ee"] = ee
     out["stats"] = {"bridges": len(pad_bridges) + sum(1 for w in wires for e in (w["a"], w["b"]) if not e["direct"]),
                     "wires": len(wires),
@@ -949,6 +985,25 @@ def solve(state, cfg, propose=False):
                     "eeWarn": ee_warn,
                     "fabReady": ee_ng == 0}
     return out
+
+def propose_multi(state, cfg):
+    """複数候補スコアリング: 重み格子で再配置を回し、(eeNg, 被覆線数, 注意数) 最小の案を採用。決定的。"""
+    grid = [(bb, wl) for bb in (10, 20, 30) for wl in (0.5, 1.0, 2.0)]
+    best, scored = None, []
+    for bb, wl in grid:
+        c = json.loads(json.dumps(cfg))
+        c.setdefault("weights", {})
+        c["weights"]["bridge_bonus"] = bb
+        c["weights"]["wire_len"] = wl
+        r = solve(json.loads(json.dumps(state)), c, propose=True)
+        s = r["stats"]
+        score = (s["eeNg"], s["wires"], s["cautions"])
+        scored.append({"bridge_bonus": bb, "wire_len": wl, "eeNg": s["eeNg"], "wires": s["wires"], "cautions": s["cautions"]})
+        if best is None or score < best[0]:
+            best = (score, r, (bb, wl))
+    best[1]["proposeScores"] = scored
+    best[1]["proposeBest"] = {"bridge_bonus": best[2][0], "wire_len": best[2][1], "eeNg": best[0][0], "wires": best[0][1]}
+    return best[1]
 
 if __name__ == "__main__":
     src = sys.argv[1]
@@ -966,7 +1021,12 @@ if __name__ == "__main__":
         md = build_packet_md(result, cfg)
         (io.open(dst, "w", encoding="utf-8").write(md) if dst else sys.stdout.write(md))
         sys.exit(0)
-    result = solve(state, cfg, propose=propose)
+    if "--propose-n" in sys.argv:
+        result = propose_multi(state, cfg)
+        print("PROPOSE-N best", json.dumps(result["proposeBest"], ensure_ascii=False))
+        print(" scores:", json.dumps(result["proposeScores"], ensure_ascii=False))
+    else:
+        result = solve(state, cfg, propose=propose)
     print(("PROPOSE" if propose else "ALLOCATE"), json.dumps(result["stats"], ensure_ascii=False))
     e = result["ee"]
     print(" fabReady:", e["fabReady"])
