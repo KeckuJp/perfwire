@@ -27,3 +27,8 @@ jobs:
 
       - name: Python solver smoke test (all sample proposals)
         run: python tools/ci_smoke.py
+
+      - name: JS<->Python ERC parity (golden test)
+        run: node tools/parity_check.mjs
+        env:
+          PERFWIRE_PYTHON: python

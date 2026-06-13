@@ -97,6 +97,7 @@ Files: `examples/client-hardware_tap_buffer.json` (sample project, 2 proposals),
 - `tools/extract_check.mjs` — parses the inline script of `index.html` (syntax gate) and validates the embedded sample data.
 - `tools/check_manifests.mjs` — validates `.claude-plugin/plugin.json` + `marketplace.json` (required fields, marketplace description, version agreement, and that the skill exists at the path `plugin.json` points to).
 - `tools/ci_smoke.py` — runs `solver.py` on every sample proposal and asserts a schema-complete, fully-wired output.
+- `tools/parity_check.mjs` — golden test that the in-browser ERC audit (extracted from `index.html`) and `solver.py` agree on every gate-affecting field for each sample proposal (locks the two engines and the two config files against drift).
 
 ## Background
 
@@ -106,7 +107,6 @@ Extracted from a real project: a 2× opamp-ic active buffer for a telephone-clie
 
 - Guard-ring *synthesis* (auto-placing guard holes/traces — today only an advisory is emitted) and a routed crosstalk model (today: an endpoint-segment heuristic, since jumper routes aren't modelled). Star/daisy ground-topology scoring, high-Z guard advisories, keep-away re-audit and power-reachability ERC already ship.
 - Stripboard (Veroboard) support — copper strips + track cuts instead of solder bridges
-- JS↔Python solver parity (golden tests) — requires factoring the in-browser solver into an importable module first
 - i18n: UI chrome (buttons, sliders, hints, commands) ships in English/Japanese (auto-detected, toggle in the header). Generated reports (audit panel, guide steps, continuity checklist) are still Japanese-only.
 
 ## License

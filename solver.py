@@ -366,6 +366,19 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
         if net and role.get(nm) == "out":
             drivers.setdefault(net, []).append(nm)
     out["multipleDrivers"] = [{"net": n, "pins": sorted(ps)} for n, ps in sorted(drivers.items()) if len(ps) >= 2]
+
+    # 未駆動ネット（フローティング入力）: そのネットの全リードが role=in（入力のみ・ドライバもパッシブも無い）。
+    # 抵抗等(passive)でバイアスされた高Z入力(INA_P等)は passive リードを持つので除外＝誤検出回避。
+    DRIVER_ROLES = {"out", "bidir", "oc", "od", "tri", "pwr", "pwr_out"}
+    undriven = []
+    leads_role_per_net = {}
+    for nm, net in bd.net_of_lead.items():
+        if net:
+            leads_role_per_net.setdefault(net, []).append(role.get(nm))
+    for net, rs in sorted(leads_role_per_net.items()):
+        if rs and all(r == "in" for r in rs):
+            undriven.append(net)
+    out["undrivenNets"] = undriven
     return out
 
 def _seg_gap(a, b, c, d):
@@ -440,6 +453,7 @@ def topology_audit(bd, net_of_hole, pad_bridges, wires, cfg):
             continue
         hs = sorted([h for h, n in net_of_hole.items() if n == net])
         exposed = 0
+        ring = set()  # 具体的なガード穴候補（HIZ穴に隣接する空き穴。ここをガード電位で囲う）
         for h in hs:
             for dx in (-1, 0, 1):
                 for dy in (-1, 0, 1):
@@ -448,8 +462,11 @@ def topology_audit(bd, net_of_hole, pad_bridges, wires, cfg):
                     q = (h[0] + dx, h[1] + dy)
                     if net_of_hole.get(q) != net and bd.inb(q):
                         exposed += 1
+                        if q not in net_of_hole and q not in bd.blocked and q not in bd.body_cells and q not in bd.ic_block:
+                            ring.add(q)
         out["guard"].append({"net": net, "holes": [list(h) for h in hs], "exposedSides": exposed,
-                             "note": "高Zノード。隣接の空き/異ネット辺をガード電位（通常はバッファ出力など低Z同電位）で囲うとリーク/結合を低減"})
+                             "ringHoles": sorted([list(q) for q in ring]),
+                             "note": "高Zノード。ringHoles の空き穴をガード電位（通常はバッファ出力など低Z同電位）で囲うとリーク/結合を低減"})
 
     # クロストーク（端点近似）: 異ネットの被覆線が平行かつ近接、片方が HIZ/SIG
     sens = {"HIZ", "SIG"}
@@ -693,7 +710,7 @@ def solve(state, cfg, propose=False):
              + len(ee["multipleDrivers"]))
     ee_warn = (sum(1 for o in bd.overlaps if o["sev"] == "warn")
                + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"])
-               + sum(1 for g in ee["grounding"] if g["daisyReturn"]))
+               + sum(1 for g in ee["grounding"] if g["daisyReturn"]) + len(ee["undrivenNets"]))
 
     out = json.loads(json.dumps(state))
     out["parts"] = bd.parts
@@ -743,7 +760,8 @@ if __name__ == "__main__":
           " decoupCoverage:", sum(1 for x in e["decouplingCoverage"] if x["covered"]), "/", len(e["decouplingCoverage"]))
     print(" GND topology:", json.dumps(e["grounding"], ensure_ascii=False),
           " guard(HIZ):", len(e["guard"]), " crosstalk pairs:", len(e["crosstalk"]))
-    print(" multipleDrivers(out-out short):", json.dumps(e["multipleDrivers"], ensure_ascii=False))
+    print(" multipleDrivers(out-out short):", json.dumps(e["multipleDrivers"], ensure_ascii=False),
+          " undrivenNets:", json.dumps(e["undrivenNets"], ensure_ascii=False))
     for w in result["warnings"]:
         print("  *", w)
     if dst:

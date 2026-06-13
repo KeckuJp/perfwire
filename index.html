@@ -408,7 +408,9 @@ D.parts.forEach(function(p){if(p.kind==='ic'){var pt=p.pinTypes||{};Object.keys(
 Object.keys(D.leads).forEach(function(k){if(D.leads[k].role)role[k]=D.leads[k].role;});
 var drv={};Object.keys(D.leads).forEach(function(k){var net=D.leads[k].net;if(net&&role[k]==='out')(drv[net]=drv[net]||[]).push(k);});
 var multi=Object.keys(drv).filter(function(n){return drv[n].length>=2;}).sort().map(function(n){return {net:n,pins:drv[n].sort()};});
-return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol,powerReach:powerReach,floatingPowerPins:floating.sort(),multipleDrivers:multi};}
+var rolesByNet={};Object.keys(D.leads).forEach(function(k){var net=D.leads[k].net;if(net)(rolesByNet[net]=rolesByNet[net]||[]).push(role[k]);});
+var undriven=Object.keys(rolesByNet).filter(function(n){return rolesByNet[n].length&&rolesByNet[n].every(function(r){return r==='in';});}).sort();
+return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol,powerReach:powerReach,floatingPowerPins:floating.sort(),multipleDrivers:multi,undrivenNets:undriven};}
 function holeNetMap(){var hn={};Object.keys(D.leads).forEach(function(k){if(D.leads[k].net)hn[key(D.leads[k].at)]=D.leads[k].net;});
 D.parts.forEach(function(p){partLeads(p).forEach(function(L){var net=D.leads[L.name]?D.leads[L.name].net:null;if(net)hn[key(L.pos)]=net;});});
 D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});return hn;}
@@ -430,9 +432,10 @@ var reached=Object.keys(seen).length,maxD=0;Object.keys(depth).forEach(function(
 var rootDeg=0;roots.forEach(function(r){Object.keys(adj[r]||{}).forEach(function(vv){if(hn[vv]===net)rootDeg++;});});
 var topo=maxD<=2?'star':(maxD>=Math.max(4,reached*0.6)?'daisy-chain':'mixed');
 grounding.push({net:net,reached:reached,maxDepth:maxD,topology:topo,daisyReturn:(topo==='daisy-chain'&&net===ret)});});
-var guard=[];Object.keys(hn).reduce(function(acc,kk){return acc;},0);
-var hizNets={};Object.keys(hn).forEach(function(kk){if(clsOf(hn[kk])==='HIZ')hizNets[hn[kk]]=1;});
-Object.keys(hizNets).forEach(function(net){guard.push(net);});
+var gg=geom(),blk={};(D.blockedHoles||[]).forEach(function(b){blk[key(b)]=1;});
+var guard=[];var hizHoles={};Object.keys(hn).forEach(function(kk){if(clsOf(hn[kk])==='HIZ')(hizHoles[hn[kk]]=hizHoles[hn[kk]]||[]).push(kk.split(',').map(Number));});
+Object.keys(hizHoles).sort().forEach(function(net){var ring={};hizHoles[net].forEach(function(h){for(var dx=-1;dx<=1;dx++)for(var dy=-1;dy<=1;dy++){if(!dx&&!dy)continue;var q=[h[0]+dx,h[1]+dy],kq=key(q);if(hn[kq]!==net&&inb(q[0],q[1])&&!hn[kq]&&!gg.occ[kq]&&!gg.icSet[kq]&&!gg.bodySet[kq]&&!blk[kq])ring[kq]=q;}});
+guard.push({net:net,ringHoles:Object.keys(ring).map(function(k){return ring[k];}).sort(function(a,b){return a[0]-b[0]||a[1]-b[1];})});});
 var sens={HIZ:1,SIG:1},segs=[];
 D.wires.forEach(function(w){var a=w.a.direct?w.a.pad:w.a.hole,b=w.b.direct?w.b.pad:w.b.hole;if(dist(a,b)>=1.5)segs.push([w.net,a,b]);});
 var cross=0;for(var i=0;i<segs.length;i++)for(var j=i+1;j<segs.length;j++){var n1=segs[i][0],n2=segs[j][0];if(n1===n2)continue;if(!(sens[clsOf(n1)]||sens[clsOf(n2)]))continue;
@@ -475,13 +478,14 @@ if(preachbad.length)eb.push('<span class="ng">電源未到達 '+preachbad.join('
 if(erc.duplicateIds.length)eb.push('<span class="ng">重複ID '+erc.duplicateIds.join(',')+'</span>');
 if(polbad.length)eb.push('<span class="ng">極性逆 '+polbad.join(',')+'</span>');
 if(erc.singleLeadNets.length)eb.push('<span class="wr">単一リード '+erc.singleLeadNets.join(',')+'</span>');
+if(erc.undrivenNets.length)eb.push('<span class="wr">未駆動入力 '+erc.undrivenNets.join(',')+'</span>');
 if(erc.unclassifiedNets.length)eb.push('<span class="wr">未分類 '+erc.unclassifiedNets.join(',')+'</span>');
 if(erc.keepAway.length)eb.push('<span class="wr">離隔違反 '+erc.keepAway.length+'</span>');
 h+='<br>ERC: '+(eb.length?eb.join(' '):'<span class="ok">クリーン ✓</span>');
 var topo=topoAudit();
 var tb=[];
 topo.grounding.forEach(function(gr){tb.push((gr.daisyReturn?'<span class="wr">':'<span class="mut2">')+gr.net+' '+gr.topology+'(深'+gr.maxDepth+')</span>');});
-if(topo.guard.length)tb.push('<span class="mut2">高Zガード推奨 '+topo.guard.join(',')+'</span>');
+if(topo.guard.length)tb.push('<span class="mut2">高Zガード推奨 '+topo.guard.map(function(x){return x.net+'(穴'+x.ringHoles.length+')';}).join(',')+'</span>');
 if(topo.crosstalk)tb.push('<span class="mut2">平行近接 '+topo.crosstalk+'対</span>');
 h+='<br>トポロジ: '+(tb.length?tb.join(' '):'<span class="ok">—</span>');
 h+='<br>総合: '+(ngs?'<span class="ng">NG '+ngs+'件</span>':'<span class="ok">PASS ✓ 製作可</span>');
