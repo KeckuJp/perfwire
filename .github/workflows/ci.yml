@@ -21,6 +21,9 @@ jobs:
       - name: Plugin + marketplace manifest checks (drift / required fields)
         run: node tools/check_manifests.mjs
 
+      - name: i18n coverage gate (no raw-Japanese runtime messages)
+        run: node tools/i18n_check.mjs
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

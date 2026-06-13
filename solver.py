@@ -113,10 +113,13 @@ def spans(kind, cfg):
 class Board:
     def __init__(self, state, cfg):
         self.cfg = cfg
-        self.cols = state["grid"]["cols"]
-        self.rows = state["grid"]["rows"]
+        # トップレベルキーが欠落していても KeyError で落とさず、空盤面として degrade する。
+        # 契約違反は validate_state() が CLI プリフライトで人間可読に報告する（traceback ではなく）。
+        g = state.get("grid") or {}
+        self.cols = int(g.get("cols") or 0)
+        self.rows = int(g.get("rows") or 0)
         self.blocked = {tuple(h) for h in state.get("blockedHoles", [])}
-        self.net_of_lead = {k: v.get("net") for k, v in state["leads"].items()}
+        self.net_of_lead = {k: v.get("net") for k, v in (state.get("leads") or {}).items()}
         # 不正形状の部品（pins 欠落/空/非dict の IC、leads が list でない/2本未満の素子）は取り込み時に
         # 除外し、監査全体が例外で落ちないようにする（電気的実体が無いので報告対象も無い）。
         def _valid(p):
@@ -126,7 +129,7 @@ class Board:
             if k in ("r", "film", "disc", "elec"):
                 return isinstance(p.get("leads"), list) and len(p["leads"]) >= 2
             return False  # kind 欠落 or 未知 kind は取り込み時に除外（rebuild/footprint の KeyError 防止）
-        self.parts = [p for p in json.loads(json.dumps(state["parts"])) if _valid(p)]
+        self.parts = [p for p in json.loads(json.dumps(state.get("parts") or [])) if _valid(p)]
         self.state = state
         self.cls_of_net = {}
         for cname, cdef in cfg.get("net_classes", {}).items():
@@ -160,7 +163,7 @@ class Board:
                 a, b = tuple(lds[0]), tuple(lds[1])
                 self.lead_pos[names[0]], self.lead_pos[names[1]] = a, b
                 self.body[p["id"]] = footprint(p["kind"], a, b, self.cfg, p.get("standing", False), p["id"])
-        for k, v in self.state["leads"].items():
+        for k, v in (self.state.get("leads") or {}).items():
             if k not in self.lead_pos and v.get("at"):
                 self.lead_pos[k] = tuple(v["at"])
         self.occupied = set(self.lead_pos.values())
@@ -456,7 +459,7 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
         n1, n2 = bd.net_of_lead.get(nm[0]), bd.net_of_lead.get(nm[1])
         if n1 in rail_volts and n2 in rail_volts:
             w = (rail_volts[n1] - rail_volts[n2]) ** 2 / R
-            rated = p.get("rated_w", 0.25)
+            rated = p.get("rated_w", p.get("ratedW", 0.25))  # JS/Py 両綴りを許容（パリティ）
             res_power.append({"part": p["id"], "watts": round(w, 4), "rated": rated, "ok": w <= rated})
     out["resistorPower"] = res_power
     # デカップリング値の妥当性: バイパスに 1uF 超を割り当てていれば HF 不足の警告（0.01-0.1uF 推奨）。
@@ -994,18 +997,48 @@ def solve(state, cfg, propose=False):
                     "fabReady": ee_ng == 0}
     return out
 
-def _resolve_guard_net(state, hiz_net):
-    """高Zネットを囲うガード電位を推定: その入力ピンを持つ IC の出力ピンのネット（バッファ出力）。"""
-    for p in state.get("parts", []):
+def _guard_candidates(state, hiz_net):
+    """高Zネットを囲うガード電位の候補をスコア付きで列挙（高スコア順）。
+    根拠: その高Z入力ピンを持つ IC の「同セクションの出力ピン」のネット（バッファ出力）。
+    スコア = 100 − (高Z入力ピンとの最近接距離×10) − (出力ネットのファンアウト)。
+    距離が小さい＝同じアンプ段（例 opamp-ic のセクションA/B）の出力を優先し、
+    先頭一致の取り違え（別セクションの出力を拾う）を避ける。曖昧（複数候補）なら呼び出し側が明示する。"""
+    leads = state.get("leads") or {}
+    cands = []
+    for p in (state.get("parts") or []):
         if p.get("kind") != "ic":
             continue
         pins = _ic_pins(p)
         pt = p.get("pinTypes") if isinstance(p.get("pinTypes"), dict) else {}
-        if any(state["leads"].get(p["id"] + "." + pin, {}).get("net") == hiz_net and pt.get(pin) == "in" for pin in pins):
-            for pin in pins:
-                if pt.get(pin) == "out":
-                    return state["leads"].get(p["id"] + "." + pin, {}).get("net")
-    return None
+        in_pins = [pin for pin in pins if leads.get(p["id"] + "." + pin, {}).get("net") == hiz_net and pt.get(pin) == "in"]
+        if not in_pins:
+            continue
+        for opin in pins:
+            if pt.get(opin) != "out":
+                continue
+            onet = leads.get(p["id"] + "." + opin, {}).get("net")
+            if not onet:
+                continue
+            try:
+                op = pins[opin]
+                dmin = min(math.hypot(op[0] - pins[ip][0], op[1] - pins[ip][1]) for ip in in_pins if ip in pins)
+            except (ValueError, TypeError):
+                dmin = 99.0
+            fanout = sum(1 for L in leads.values() if L.get("net") == onet)
+            score = round(100 - dmin * 10 - fanout, 2)
+            cands.append({"net": onet, "score": score,
+                          "reason": "%s pin%s (out), section-dist %.1f, fanout %d" % (p["id"], opin, dmin, fanout)})
+    best = {}
+    for c in cands:  # 同一ネットは最良スコアのみ残す
+        if c["net"] not in best or c["score"] > best[c["net"]]["score"]:
+            best[c["net"]] = c
+    return sorted(best.values(), key=lambda c: (-c["score"], c["net"]))
+
+
+def _resolve_guard_net(state, hiz_net):
+    """後方互換: 最良候補のネット名のみ返す。"""
+    c = _guard_candidates(state, hiz_net)
+    return c[0]["net"] if c else None
 
 def synthesize_guard(state, cfg, hiz_net, guard_net=None):
     """高Zノードのガードリングを合成: 露出する隣接空き穴をガード電位の足として追加した新 state を返す。
@@ -1014,10 +1047,20 @@ def synthesize_guard(state, cfg, hiz_net, guard_net=None):
     hiz_holes = [xy for lead, xy in bd.lead_pos.items() if bd.net_of_lead.get(lead) == hiz_net]
     if not hiz_holes:
         return None, {"error": "no holes on net " + str(hiz_net)}
+    candidates, ambiguous, source = None, False, "explicit"
     if guard_net is None:
-        guard_net = (cfg.get("guard_of") or {}).get(hiz_net) or _resolve_guard_net(state, hiz_net)
+        cfg_guard = (cfg.get("guard_of") or {}).get(hiz_net)
+        if cfg_guard:
+            guard_net, source = cfg_guard, "config.guard_of"
+        else:
+            candidates = _guard_candidates(state, hiz_net)
+            if candidates:
+                guard_net = candidates[0]["net"]
+                ambiguous = len(candidates) > 1  # 複数候補＝黙って先頭採用ではなく明示する
+                source = "inferred"
     if not guard_net:
-        return None, {"error": "could not resolve a guard net for " + str(hiz_net) + " (pass --guard-net or set config.guard_of)"}
+        return None, {"error": "could not resolve a guard net for " + str(hiz_net) + " (pass --guard-net or set config.guard_of)",
+                      "candidates": candidates or []}
     ring = set()
     for h in hiz_holes:
         for dx in (-1, 0, 1):
@@ -1032,7 +1075,11 @@ def synthesize_guard(state, cfg, hiz_net, guard_net=None):
     for i, q in enumerate(sorted(ring)):
         new["leads"]["GRD_%s_%d" % (safe, i)] = {"net": guard_net, "at": [q[0], q[1]], "role": "passive"}
     new["proposal"] = "guard:" + str(hiz_net) + "→" + str(guard_net)
-    return new, {"hiz": hiz_net, "guard": guard_net, "ringHoles": sorted([list(q) for q in ring]), "count": len(ring)}
+    meta = {"hiz": hiz_net, "guard": guard_net, "ringHoles": sorted([list(q) for q in ring]),
+            "count": len(ring), "source": source, "ambiguous": ambiguous}
+    if candidates is not None:
+        meta["candidates"] = candidates
+    return new, meta
 
 def propose_multi(state, cfg):
     """複数候補スコアリング: 重み格子で再配置を回し、(eeNg, 被覆線数, 注意数) 最小の案を採用。決定的。"""
@@ -1053,9 +1100,105 @@ def propose_multi(state, cfg):
     best[1]["proposeBest"] = {"bridge_bonus": best[2][0], "wire_len": best[2][1], "eeNg": best[0][0], "wires": best[0][1]}
     return best[1]
 
+_KNOWN_KINDS = {"ic", "r", "film", "disc", "elec"}
+
+
+def validate_state(state):
+    """状態JSONの契約検証（perfwire lint）。クラッシュではなく構造化診断を返す。
+    返り値: [{"level":"error"|"warn", "code":str, "msg":str, "where":str}]。
+    error = solve/監査がそのままでは成立しない致命的契約違反。warn = 取り込み時に
+    黙って無視されるか ERC が後段で報告する軽微な不整合。AI と人間が共有する JSON が
+    壊れたとき、traceback ではなく直せる指摘を出すための層。"""
+    out = []
+
+    def err(code, msg, where=""):
+        out.append({"level": "error", "code": code, "msg": msg, "where": where})
+
+    def warn(code, msg, where=""):
+        out.append({"level": "warn", "code": code, "msg": msg, "where": where})
+
+    if not isinstance(state, dict):
+        err("not_object", "top-level state must be a JSON object", type(state).__name__)
+        return out
+    # grid（盤面寸法）— 欠落/型不正は致命的
+    g = state.get("grid")
+    if not isinstance(g, dict):
+        err("grid_missing", "required key 'grid' is missing or not an object", "grid")
+    else:
+        for k in ("cols", "rows"):
+            v = g.get(k)
+            if not isinstance(v, int) or isinstance(v, bool) or v <= 0:
+                err("grid_dim", "grid.%s must be a positive integer (got %r)" % (k, v), "grid." + k)
+        if g.get("type") == "strip" and g.get("stripAxis") not in ("row", "col"):
+            warn("strip_axis", "strip board without stripAxis 'row'|'col'; strip connectivity/short checks may be inert", "grid.stripAxis")
+    # leads — 致命的なのは型のみ。中身の不整合は warn（ERC が拾う）
+    leads = state.get("leads")
+    if leads is None:
+        warn("leads_missing", "no 'leads' map; nothing to audit electrically", "leads")
+        leads = {}
+    elif not isinstance(leads, dict):
+        err("leads_type", "'leads' must be an object (name -> {net, at})", "leads")
+        leads = {}
+    else:
+        for nm, v in leads.items():
+            if not isinstance(v, dict):
+                err("lead_shape", "lead %r must be an object" % nm, "leads." + str(nm))
+                continue
+            if not v.get("net"):
+                warn("lead_no_net", "lead %r has no net (will read as unconnected)" % nm, "leads." + str(nm))
+            at = v.get("at")
+            if at is not None and not (isinstance(at, (list, tuple)) and len(at) == 2):
+                err("lead_at", "lead %r 'at' must be [col,row]" % nm, "leads." + str(nm))
+    # parts — 型は致命的、個々の不正形状は warn（Board が取り込み時に除外）
+    parts = state.get("parts")
+    if parts is None:
+        warn("parts_missing", "no 'parts' list", "parts")
+        parts = []
+    elif not isinstance(parts, list):
+        err("parts_type", "'parts' must be a list", "parts")
+        parts = []
+    seen_ids = {}
+    for i, p in enumerate(parts):
+        where = "parts[%d]" % i
+        if not isinstance(p, dict):
+            err("part_shape", "part must be an object", where)
+            continue
+        pid = p.get("id")
+        if not pid:
+            err("part_no_id", "part is missing 'id'", where)
+        else:
+            seen_ids[pid] = seen_ids.get(pid, 0) + 1
+        k = p.get("kind")
+        if k not in _KNOWN_KINDS:
+            warn("part_kind", "part %r has missing/unknown kind %r; it will be dropped from the board" % (pid, k), where)
+        elif k == "ic":
+            if not (isinstance(p.get("pins"), dict) and p["pins"]):
+                warn("ic_pins", "IC %r has no valid 'pins' dict; dropped" % pid, where)
+        else:
+            lds = p.get("leads")
+            if not (isinstance(lds, list) and len(lds) >= 2):
+                warn("part_leads", "part %r needs a 'leads' list of >=2 holes; dropped" % pid, where)
+    for pid, n in seen_ids.items():
+        if n > 1:
+            warn("dup_id", "duplicate part id %r (x%d); ERC will flag duplicateIds" % (pid, n), "parts")
+    return out
+
+
+def _print_lint(problems):
+    for p in problems:
+        line = "[%s] %s: %s" % (p["level"], p["code"], p["msg"])
+        if p.get("where"):
+            line += "  (%s)" % p["where"]
+        print(line)
+    errs = sum(1 for p in problems if p["level"] == "error")
+    print("LINT: %s  (%d error, %d warn)" % ("FAIL" if errs else "PASS", errs, len(problems) - errs))
+    return errs
+
+
 if __name__ == "__main__":
-    try:  # 非ASCII（em-dash, 日本語コメント）を stdout へ書く際に cp932 等で落ちないよう UTF-8 を強制
+    try:  # 非ASCII（em-dash, 日本語）を stdout/stderr へ書く際に cp932 等で落ちない/エスケープされないよう UTF-8 を強制
         sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
     src = sys.argv[1]
@@ -1064,6 +1207,17 @@ if __name__ == "__main__":
     dst = sys.argv[sys.argv.index("-o") + 1] if "-o" in sys.argv else None
     cfg = load_cfg(cfgp)
     state = json.load(io.open(src, encoding="utf-8"))
+    # perfwire lint: 契約検証。--lint なら診断のみ出して終了。それ以外でも error があれば
+    # 後段の KeyError 等で落ちる前に人間可読メッセージで停止する（プリフライト）。
+    problems = validate_state(state)
+    errs = [p for p in problems if p["level"] == "error"]
+    if "--lint" in sys.argv:
+        sys.exit(2 if _print_lint(problems) else 0)
+    if errs:
+        sys.stderr.write("perfwire: input state has %d contract error(s) — run `--lint` for details:\n" % len(errs))
+        for p in errs:
+            sys.stderr.write("  - %s: %s%s\n" % (p["code"], p["msg"], ("  (%s)" % p["where"]) if p.get("where") else ""))
+        sys.exit(2)
     if "--guard" in sys.argv:
         hiz = sys.argv[sys.argv.index("--guard") + 1]
         gn = sys.argv[sys.argv.index("--guard-net") + 1] if "--guard-net" in sys.argv else None
@@ -1075,6 +1229,11 @@ if __name__ == "__main__":
             info.append(meta)
             if new:
                 cur = new
+            if meta.get("ambiguous"):  # 複数候補＝AIに推測させず人間に選ばせる
+                cl = meta.get("candidates", [])
+                sys.stderr.write("WARNING: guard net for %s is ambiguous — %d candidates, picked %r. "
+                                 "Override with --guard-net <net> or set config.guard_of. candidates: %s\n"
+                                 % (t, len(cl), meta.get("guard"), json.dumps(cl, ensure_ascii=False)))
         sys.stderr.write("guard synthesis: " + json.dumps(info, ensure_ascii=False) + "\n")
         out = json.dumps(cur, ensure_ascii=False, separators=(",", ":"))
         (io.open(dst, "w", encoding="utf-8").write(out) if dst else sys.stdout.write(out + "\n"))

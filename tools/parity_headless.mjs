@@ -63,6 +63,7 @@ for (const prop of sample.proposals) {
   }
   if (norm.padJoints(js.padJoints) !== norm.padJoints(py.padJoints)) fails.push(`${prop.name} :: padJoints count ${norm.padJoints(js.padJoints)} != ${norm.padJoints(py.padJoints)}`);
   if (norm.bodyOverlaps_ng(js) !== norm.bodyOverlaps_ng(py)) fails.push(`${prop.name} :: bodyOverlaps.ng ${norm.bodyOverlaps_ng(js)} != ${norm.bodyOverlaps_ng(py)}`);
+  if (norm.bodyOverlaps_wr(js) !== norm.bodyOverlaps_wr(py)) fails.push(`${prop.name} :: bodyOverlaps.wr ${norm.bodyOverlaps_wr(js)} != ${norm.bodyOverlaps_wr(py)}`);
   if (js.fabReady !== py.fabReady) fails.push(`${prop.name} :: fabReady ${js.fabReady} != ${py.fabReady}`);
 }
 if (fails.length) { console.error('NG: headless ee parity (geometry fields):\n  - ' + fails.join('\n  - ')); process.exit(1); }

@@ -72,6 +72,24 @@ const STRIP = (cuts) => ({
           { id: 'P2', kind: 'r', leads: [[4, 1], [4, 3]], leadNames: ['P2.a', 'P2.b'] }],
   padBridges: [], wires: [], blockedHoles: [], trackCuts: cuts,
 });
+// value-aware fixture: intentionally trips resistorPower (R across V3V3-GND, 33ohm -> 0.33W > 0.25),
+// decouplingValueWarn (C3 is a listed bypass cap with 10uF > 1uF), pinConflicts (net NET carries both an
+// out driver and a pwr source), and multipleDrivers (two out drivers on NET = output contention).
+// Proves these gate-affecting fields on the POPULATED path, not just empty.
+const VALUE = {
+  grid: { cols: 8, rows: 6, type: 'perf' }, netColors: { V3V3: '#f00', GND: '#000', NET: '#0a0' },
+  leads: {
+    'R9.a': { net: 'V3V3', at: [1, 1] }, 'R9.b': { net: 'GND', at: [1, 3] },
+    'C3.p': { net: 'V3V3', at: [3, 1] }, 'C3.n': { net: 'GND', at: [3, 3] },
+    'W.DRV': { net: 'NET', at: [6, 1], role: 'out' }, 'W.DRV2': { net: 'NET', at: [6, 5], role: 'out' },
+    'W.PWR': { net: 'NET', at: [6, 3], role: 'pwr' },
+  },
+  parts: [
+    { id: 'R9', kind: 'r', leads: [[1, 1], [1, 3]], leadNames: ['R9.a', 'R9.b'], value: 33 },
+    { id: 'C3', kind: 'disc', leads: [[3, 1], [3, 3]], leadNames: ['C3.p', 'C3.n'], value: 1e-5 },
+  ],
+  padBridges: [], wires: [], blockedHoles: [], trackCuts: [],
+};
 // Config-agreement: the two threshold files (editor DEFCFG camelCase vs solver
 // config.example.json snake_case) must encode the SAME EE limits, or a gate-affecting
 // field like wire-length could drift between the engines while ercAudit parity stays green.
@@ -101,7 +119,13 @@ const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'client-hardware_t
 const WIRING_DEP = ['openNets', 'powerReach'];
 const cases = sample.proposals.map(p => ({ name: p.name, state: p.state, skip: [] }))
   .concat([{ name: 'strip:short', state: STRIP([]), skip: WIRING_DEP },
-           { name: 'strip:cut', state: STRIP([[[3, 1], [4, 1]]]), skip: WIRING_DEP }]);
+           { name: 'strip:cut', state: STRIP([[[3, 1], [4, 1]]]), skip: WIRING_DEP },
+           { name: 'value:over-power+bypass+pinconflict', state: VALUE, skip: WIRING_DEP }]);
+// fixture-completeness: these gate-affecting fields are easy to ship "always empty" (they need
+// value/role/rail inputs). Require at least one case to exercise each on the non-empty path,
+// so a regression that silently zeroes them out can't pass the golden test.
+const MUST_COVER = ['resistorPower', 'decouplingValueWarn', 'pinConflicts', 'multipleDrivers', 'stripShorts'];
+const coverage = Object.fromEntries(MUST_COVER.map(f => [f, 0]));
 const tmp = mkdtempSync(join(tmpdir(), 'pw-parity-'));
 const failures = [];
 for (const prop of cases) {
@@ -116,10 +140,13 @@ for (const prop of cases) {
     if (JSON.stringify(a) !== JSON.stringify(b))
       failures.push(`${prop.name} :: ${f}\n    JS    = ${a}\n    PY    = ${b}`);
   }
+  for (const f of MUST_COVER) if ((ee[f] || []).length > 0) coverage[f]++;
 }
-const allFails = cfgFails.map(f => 'config-drift :: ' + f).concat(failures);
+const uncovered = MUST_COVER.filter(f => coverage[f] === 0);
+const covFails = uncovered.map(f => `fixture-coverage :: no case exercises ee.${f} on the non-empty path`);
+const allFails = cfgFails.map(f => 'config-drift :: ' + f).concat(covFails).concat(failures);
 if (allFails.length) {
   console.error('NG: JS<->Python parity / config mismatch:\n  - ' + allFails.join('\n  - '));
   process.exit(1);
 }
-console.log(`OK: JS<->Python ERC parity holds across ${cases.length} cases (${Object.keys(FIELDS).length} fields) + config files agree on EE limits`);
+console.log(`OK: JS<->Python ERC parity holds across ${cases.length} cases (${Object.keys(FIELDS).length} fields) + config files agree on EE limits + ${MUST_COVER.length} fields covered non-empty`);

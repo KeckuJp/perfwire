@@ -28,13 +28,17 @@ description: Plans and audits hand-soldered perfboard (universal board / protobo
 
 ```bash
 # macOS/Linux は python3、Windows は python。エージェントは自分が動いている解釈系で呼ぶ（CI と同じ）。
+python3 solver.py <project>.json --lint                                               # 契約検証（生成直後に推奨）。クラッシュではなく構造化診断
 python3 solver.py <project>.json --propose --config config.example.json -o out.json   # 配置提案+配線+監査
 python3 solver.py <project>.json --config config.example.json -o out.json             # 配線のみ（配置は維持）
 python3 solver.py <project>.json --emit-config -o perfwire_config.json                # 状態から config 叩き台を生成（要レビュー）
 python3 solver.py <project>.json --propose-n --config config.example.json             # 重み格子で最良配置を探索
 python3 solver.py out.json --emit-packet -o build_packet.md                           # BOM＋切断長＋ブリッジのビルドパケット
 python3 solver.py out.json --guard INA_P --config config.example.json -o guarded.json # 高Zネットのガードリングを合成（案）
+python3 solver.py out.json --guard INA_P --guard-net SPK_OUT --config config.example.json -o guarded.json # ガード電位を明示指定
 ```
+
+**生成した JSON は `--lint` で先に検証する**: 欠落キー・型不正・未知 kind・refdes 重複などの契約違反を、traceback ではなく人間可読な診断（error/warn）で返す。error があれば他のコマンドも実行前にクリーンに停止する。`--guard` 自動推定で候補が複数あると stderr に `ambiguous` 警告＋スコア付き候補一覧が出る（黙って先頭採用しない）＝ `--guard-net` で明示するか `config.guard_of` を設定する。`rail_volts`（V3V3/VMID/GND）は既定 config に同梱済みで、抵抗に `value`Ω があれば消費電力監査がそのまま効く。
 
 **`--config` は必須**: 省くと solver は内蔵 DEF_CFG にフォールバックし、デカップリング距離と配線長の監査が空になる（スキルの中核機能が無言で無効化される）。同梱の `perfwire_config.json` は `config.example.json` と同内容で、`--config` 無指定時の既定パス＝どちらを渡しても結果は同じ。しきい値（部品寸法・ネットクラス・デカップリング近接・重み）はこの JSON をコピーして調整。
 solver.py は標準ライブラリのみ（インストール不要）。出力の `stats` / `ee` / `warnings` を必ず確認し、NG はユーザーに報告する。
