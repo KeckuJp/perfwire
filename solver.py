@@ -1201,12 +1201,29 @@ if __name__ == "__main__":
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
+    # CLI ブートストラップも human-readable に: 引数なし/ファイル無し/JSON 不正で traceback を出さない。
+    if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
+        sys.stderr.write("perfwire: usage: solver.py <state.json> [--lint | --propose | --propose-n | "
+                         "--emit-config | --emit-packet | --guard <net> [--guard-net <net>]] "
+                         "[--config <file>] [-o <out>]\n")
+        sys.exit(2)
     src = sys.argv[1]
     propose = "--propose" in sys.argv
     cfgp = sys.argv[sys.argv.index("--config") + 1] if "--config" in sys.argv else os.path.join(os.path.dirname(os.path.abspath(__file__)), "perfwire_config.json")
     dst = sys.argv[sys.argv.index("-o") + 1] if "-o" in sys.argv else None
-    cfg = load_cfg(cfgp)
-    state = json.load(io.open(src, encoding="utf-8"))
+    try:
+        cfg = load_cfg(cfgp)
+    except (OSError, ValueError) as e:
+        sys.stderr.write("perfwire: cannot read config %r: %s\n" % (cfgp, e))
+        sys.exit(2)
+    try:
+        state = json.load(io.open(src, encoding="utf-8"))
+    except FileNotFoundError:
+        sys.stderr.write("perfwire: input file not found: %s\n" % src)
+        sys.exit(2)
+    except (OSError, ValueError) as e:  # ValueError は JSONDecodeError も含む
+        sys.stderr.write("perfwire: cannot parse %s: %s\n" % (src, e))
+        sys.exit(2)
     # perfwire lint: 契約検証。--lint なら診断のみ出して終了。それ以外でも error があれば
     # 後段の KeyError 等で落ちる前に人間可読メッセージで停止する（プリフライト）。
     problems = validate_state(state)
