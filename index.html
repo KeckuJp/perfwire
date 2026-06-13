@@ -232,8 +232,9 @@ var JE={
 'デカップリング':'Decoupling','配線長':'Wire length','全クラス上限内':'all within class limits','本体重なり':'Body overlap','警告':'warn','パッド接合数':'Pad joints','以下':' max','ERC':'ERC','クリーン':'clean','トポロジ':'Topology','総合':'Overall','件':'','PASS ✓ 製作可':'PASS ✓ fab-ready',
 'ストリップ短絡':'Strip short','出力競合':'Output contention','オープンネット':'Open net','未接続':'Unconnected','電源ピン浮き':'Floating power pin','電源未到達':'Power unreachable','重複ID':'Duplicate id','極性逆':'Reversed polarity','単一リード':'Single-lead net','未駆動入力':'Undriven input','未分類':'Unclassified','離隔違反':'Keep-away viol','高Zガード推奨':'High-Z guard','平行近接':'Parallel-near','対':' pairs','深':'depth ','穴':'holes ',
 '自動結線: 空の配線を補完（被覆線':'Auto-wired empty board (wires','本）':')',
-'手順':'Step','完了':'done','この手順は済':'this step done','部品':'Part','立て実装':'standing','を挿入:':' — insert at:','はんだブリッジ:':'Solder bridge:','被覆線':'Jumper','の足へ直付け':' direct-solder to lead','に挿し':' insert at',' へブリッジ':' bridge to','※ブリッジ先なし（要修正）':'(no bridge target — fix)','ネット':'net'};
-function tr(s){return (LANG==='en'&&JE[s])||s;}
+'手順':'Step','完了':'done','この手順は済':'this step done','部品':'Part','立て実装':'standing','を挿入:':' — insert at:','はんだブリッジ:':'Solder bridge:','被覆線':'Jumper','の足へ直付け':' direct-solder to lead','に挿し':' insert at',' へブリッジ':' bridge to','※ブリッジ先なし（要修正）':'(no bridge target — fix)','ネット':'net','カット':'Cut',
+'配線再計算: 被覆線':'Rewire: jumpers','本':'','提案:':'Proposed:','部品を再配置 / 被覆線':'parts re-placed / jumpers'};
+function tr(s){return LANG==='en'&&Object.prototype.hasOwnProperty.call(JE,s)?JE[s]:s;}
 var props=INIT.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null};});
 var curI=0,D=null,BASE=30,ZOOM=1,PITCH=30,OX=50,OY=40,mode='end',drag=null,selPart=null,cols=17,rows=14;
 var hoverNet=null,tempFoot=false,footTimer=null,auditTimer=null,tempViz=null,vizTimer=null,busy=false,calcNote='';
@@ -361,7 +362,7 @@ var wb=D.wires.length,ctx=preparePropose(),i=0,n=ctx.movable.length;
 setProg(0.04);
 (function step(){
 if(i>=n){connect();setProg(1);
-calcNote='提案: '+n+'部品を再配置 / 被覆線 '+wb+'→'+D.wires.length+'本';
+calcNote=tr('提案:')+' '+n+' '+tr('部品を再配置 / 被覆線')+' '+wb+'→'+D.wires.length+tr('本');
 busy=false;document.getElementById('pw-repropose').disabled=false;document.getElementById('pw-rewire').disabled=false;
 setTimeout(function(){setProg(0);},500);
 if(done)done();return;}
@@ -406,7 +407,7 @@ if((p.plus!==0&&p.plus!==1)||names.length<2)return;
 var pn=D.leads[names[p.plus]]?D.leads[names[p.plus]].net:null,mn=D.leads[names[1-p.plus]]?D.leads[names[1-p.plus]].net:null;
 if(rank[pn]!==undefined&&rank[mn]!==undefined)pol.push({part:p.id,ok:rank[pn]>rank[mn]});});
 var pe=CFG.powerEntry||DEFCFG.powerEntry||{},powerReach=[];
-Object.keys(pe).forEach(function(net){var rk=roots[net]?Object.keys(roots[net]):[];
+Object.keys(pe).forEach(function(net){if(!leadsPerNet[net])return;var rk=roots[net]?Object.keys(roots[net]):[];
 var er=pe[net].map(function(l){return D.leads[l]?f(key(D.leads[l].at)):null;}).filter(Boolean);
 var rooted=er.some(function(r){return roots[net]&&roots[net][r];});
 powerReach.push({net:net,components:rk.length,ok:rk.length<=1&&rooted});});
@@ -740,7 +741,7 @@ document.getElementById('pw-prop').onchange=function(){loadProp(parseInt(this.va
 document.getElementById('pw-undo').onclick=undo;
 document.getElementById('pw-diff').onclick=function(){if(DIFF.on)diffEnd();else diffStart(props[curI].orig,tr('編集前'));};
 function doRewire(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-rewire');snap();var wb=D.wires.length;connect();
-calcNote='配線再計算: 被覆線 '+wb+'→'+D.wires.length+'本';render();auditNow();
+calcNote=tr('配線再計算: 被覆線')+' '+wb+'→'+D.wires.length+tr('本');render();auditNow();
 b.textContent='✓ 完了';setTimeout(function(){b.textContent='配線を再計算';},900);}
 function doPropose(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-repropose');snap();
 proposeAsync(function(){render();auditNow();b.textContent='✓ 完了';setTimeout(function(){b.textContent='配置を再提案';},900);});}
@@ -820,7 +821,7 @@ showHelp('共有URLをコピーしました（約'+Math.round(url.length/102.4)/
 function loadHash(){var m=location.hash.match(/^#z=(.+)$/);if(!m||!window.DecompressionStream)return;
 new Response(new Blob([b64dec(m[1])]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text().then(function(t){
 var d2=JSON.parse(t);
-var st={version:1,grid:d2.grid,netColors:d2.netColors||{},leads:d2.leads||{},parts:d2.parts||[],padBridges:d2.padBridges||[],wires:d2.wires||[],blockedHoles:d2.blockedHoles||[]};
+var st={version:1,grid:d2.grid,netColors:d2.netColors||{},leads:d2.leads||{},parts:d2.parts||[],padBridges:d2.padBridges||[],wires:d2.wires||[],blockedHoles:d2.blockedHoles||[],trackCuts:d2.trackCuts||[]};
 props.push({name:'共有: '+(d2.proposal||'盤面'),orig:st,cur:null});
 if(d2.cfg&&d2.cfg.weights&&d2.cfg.physical){CFG=d2.cfg;buildSliders();}
 curI=props.length-1;refreshSel();loadProp(curI);auditNow();
@@ -1011,7 +1012,7 @@ if(!e.direct&&e.bridgeTo){var h1=xy(e.hole[0],e.hole[1]),b1=xy(e.bridgeTo[0],e.b
 T((pa[0]+pb[0])/2-14,(pa[1]+pb[1])/2-24,w.net,{'font-size':13,fill:col});}}
 function guideShow(){var s=GUIDE.steps[GUIDE.i];if(!s){guideEnd();return;}
 var dn=0;GUIDE.steps.forEach(function(st){if(GUIDE.done[st.sig])dn++;});
-document.getElementById('g-count').textContent='手順 '+(GUIDE.i+1)+' / '+GUIDE.steps.length+'　完了 '+dn+(GUIDE.done[s.sig]?'　✓この手順は済':'');
+document.getElementById('g-count').textContent=tr('手順')+' '+(GUIDE.i+1)+' / '+GUIDE.steps.length+'  '+tr('完了')+' '+dn+(GUIDE.done[s.sig]?'  ✓'+tr('この手順は済'):'');
 document.getElementById('g-text').textContent=stepText(s);render();}
 function guideStart(){GUIDE.steps=buildSteps();if(!GUIDE.steps.length)return;
 try{GUIDE.done=JSON.parse(localStorage.getItem(LSKEY+'_guide')||'{}');}catch(e){GUIDE.done={};}

@@ -69,6 +69,27 @@ const STRIP = (cuts) => ({
           { id: 'P2', kind: 'r', leads: [[4, 1], [4, 3]], leadNames: ['P2.a', 'P2.b'] }],
   padBridges: [], wires: [], blockedHoles: [], trackCuts: cuts,
 });
+// Config-agreement: the two threshold files (editor DEFCFG camelCase vs solver
+// config.example.json snake_case) must encode the SAME EE limits, or a gate-affecting
+// field like wire-length could drift between the engines while ercAudit parity stays green.
+const cfgFails = [];
+const PYCFG = JSON.parse(readFileSync(join(ROOT, 'config.example.json'), 'utf8'));
+const cmap = { HIZ: 'HIZ', SIG: 'SIG', OUT: 'OUT', PWR: 'PWR' };
+for (const c of Object.keys(cmap)) {
+  const j = DEFCFG.classes[c], p = (PYCFG.net_classes || {})[c] || {};
+  const cmp = [['maxWire', 'max_wire_holes'], ['adjPen', 'adj_penalty'], ['keepHoles', 'keep_away_holes']];
+  for (const [jk, pk] of cmp) if (j[jk] !== p[pk]) cfgFails.push(`net_classes.${c}.${jk}(${j[jk]}) != config.${pk}(${p[pk]})`);
+  if (JSON.stringify((j.nets || []).slice().sort()) !== JSON.stringify((p.nets || []).slice().sort())) cfgFails.push(`net_classes.${c}.nets differ`);
+  if (JSON.stringify((j.keepAway || []).slice().sort()) !== JSON.stringify((p.keep_away_from || []).slice().sort())) cfgFails.push(`net_classes.${c}.keepAway differ`);
+}
+if (DEFCFG.rules.maxJoints !== PYCFG.rules.max_joints_per_pad) cfgFails.push('rules.maxJoints != max_joints_per_pad');
+if (JSON.stringify((DEFCFG.rules.singleLeadAllow || []).slice().sort()) !== JSON.stringify((PYCFG.rules.single_lead_allowlist || []).slice().sort())) cfgFails.push('single-lead allowlist differ');
+if (JSON.stringify(DEFCFG.railRank) !== JSON.stringify(PYCFG.rail_rank)) cfgFails.push('rail_rank differ');
+if (JSON.stringify(DEFCFG.powerEntry) !== JSON.stringify(PYCFG.power_entry)) cfgFails.push('power_entry differ');
+const jdec = (DEFCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max).sort();
+const pdec = (PYCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max_holes).sort();
+if (JSON.stringify(jdec) !== JSON.stringify(pdec)) cfgFails.push('decoupling list differ');
+
 const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'client-hardware_tap_buffer.json'), 'utf8'));
 // openNets/powerReach depend on the solver's auto-routing (Python adds jumpers, the editor
 // evaluates the as-given wiring), so they only match on fully-wired inputs (the sample proposals).
@@ -92,8 +113,9 @@ for (const prop of cases) {
       failures.push(`${prop.name} :: ${f}\n    JS    = ${a}\n    PY    = ${b}`);
   }
 }
-if (failures.length) {
-  console.error('NG: JS<->Python ERC parity mismatch:\n  - ' + failures.join('\n  - '));
+const allFails = cfgFails.map(f => 'config-drift :: ' + f).concat(failures);
+if (allFails.length) {
+  console.error('NG: JS<->Python parity / config mismatch:\n  - ' + allFails.join('\n  - '));
   process.exit(1);
 }
-console.log(`OK: JS<->Python ERC parity holds across ${sample.proposals.length} proposals (${Object.keys(FIELDS).length} fields each)`);
+console.log(`OK: JS<->Python ERC parity holds across ${cases.length} cases (${Object.keys(FIELDS).length} fields) + config files agree on EE limits`);

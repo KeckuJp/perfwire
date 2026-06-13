@@ -141,12 +141,15 @@ class Board:
                 self.ic_block |= cells
                 self.body[p["id"]] = (cells, True)
             else:
+                lds = p.get("leads")
+                if not lds or len(lds) < 2:
+                    continue  # 不正形状（leads 欠落）は監査を止めず黙ってスキップ（ERC が未接続として報告）
                 names = p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
-                a, b = tuple(p["leads"][0]), tuple(p["leads"][1])
+                a, b = tuple(lds[0]), tuple(lds[1])
                 self.lead_pos[names[0]], self.lead_pos[names[1]] = a, b
                 self.body[p["id"]] = footprint(p["kind"], a, b, self.cfg, p.get("standing", False), p["id"])
         for k, v in self.state["leads"].items():
-            if k not in self.lead_pos:
+            if k not in self.lead_pos and v.get("at"):
                 self.lead_pos[k] = tuple(v["at"])
         self.occupied = set(self.lead_pos.values())
         ids = list(self.body.keys())
@@ -344,6 +347,8 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
     pe = cfg.get("power_entry", {})
     preach = []
     for net, entry_leads in pe.items():
+        if net not in leads_per_net:
+            continue  # この基板で未使用の電源ネットは対象外（config の powerEntry が他基板の名を含むケース）
         roots = roots_per_net.get(net, set())
         entry_pos = [bd.lead_pos[l] for l in entry_leads if l in bd.lead_pos]
         rooted = any(f(p2) in roots for p2 in entry_pos)
@@ -409,8 +414,7 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
 
     # 未駆動ネット（フローティング入力）: そのネットの全リードが role=in（入力のみ・ドライバもパッシブも無い）。
     # 抵抗等(passive)でバイアスされた高Z入力(INA_P等)は passive リードを持つので除外＝誤検出回避。
-    DRIVER_ROLES = {"out", "bidir", "oc", "od", "tri", "pwr", "pwr_out"}
-    undriven = []
+    undriven = []  # 全リードが in（型付き入力のみ）＝ドライバ無し。未型付け(None)が混じる場合は保守的に非該当
     leads_role_per_net = {}
     for nm, net in bd.net_of_lead.items():
         if net:
