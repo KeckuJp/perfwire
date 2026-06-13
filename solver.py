@@ -1117,6 +1117,10 @@ def validate_state(state):
     def warn(code, msg, where=""):
         out.append({"level": "warn", "code": code, "msg": msg, "where": where})
 
+    def _is_coord(c):  # 穴座標 = [col,row]、両要素が数値（bool 除く）。文字列/None は solve() を TypeError で落とすので error
+        return (isinstance(c, (list, tuple)) and len(c) == 2
+                and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in c))
+
     if not isinstance(state, dict):
         err("not_object", "top-level state must be a JSON object", type(state).__name__)
         return out
@@ -1147,8 +1151,8 @@ def validate_state(state):
             if not v.get("net"):
                 warn("lead_no_net", "lead %r has no net (will read as unconnected)" % nm, "leads." + str(nm))
             at = v.get("at")
-            if at is not None and not (isinstance(at, (list, tuple)) and len(at) == 2):
-                err("lead_at", "lead %r 'at' must be [col,row]" % nm, "leads." + str(nm))
+            if at is not None and not _is_coord(at):
+                err("lead_at", "lead %r 'at' must be [col,row] numbers (got %r)" % (nm, at), "leads." + str(nm))
     # parts — 型は致命的、個々の不正形状は warn（Board が取り込み時に除外）
     parts = state.get("parts")
     if parts is None:
@@ -1172,12 +1176,21 @@ def validate_state(state):
         if k not in _KNOWN_KINDS:
             warn("part_kind", "part %r has missing/unknown kind %r; it will be dropped from the board" % (pid, k), where)
         elif k == "ic":
-            if not (isinstance(p.get("pins"), dict) and p["pins"]):
+            pins = p.get("pins")
+            if not (isinstance(pins, dict) and pins):
                 warn("ic_pins", "IC %r has no valid 'pins' dict; dropped" % pid, where)
+            else:
+                for pin, c in pins.items():  # 非数値ピン座標は rebuild/footprint を落とす＝error
+                    if not _is_coord(c):
+                        err("ic_pin_coord", "IC %r pin %r position must be [col,row] numbers (got %r)" % (pid, pin, c), where)
         else:
             lds = p.get("leads")
             if not (isinstance(lds, list) and len(lds) >= 2):
                 warn("part_leads", "part %r needs a 'leads' list of >=2 holes; dropped" % pid, where)
+            else:
+                for j, c in enumerate(lds[:2]):  # 非数値リード座標は footprint を落とす＝error
+                    if not _is_coord(c):
+                        err("part_lead_coord", "part %r leads[%d] must be [col,row] numbers (got %r)" % (pid, j, c), where)
     for pid, n in seen_ids.items():
         if n > 1:
             warn("dup_id", "duplicate part id %r (x%d); ERC will flag duplicateIds" % (pid, n), "parts")
@@ -1207,10 +1220,17 @@ if __name__ == "__main__":
                          "--emit-config | --emit-packet | --guard <net> [--guard-net <net>]] "
                          "[--config <file>] [-o <out>]\n")
         sys.exit(2)
+    def _arg_after(flag):  # 末尾に値なしフラグが来ても IndexError ではなく human-readable に
+        i = sys.argv.index(flag)
+        if i + 1 >= len(sys.argv):
+            sys.stderr.write("perfwire: %s requires a value\n" % flag)
+            sys.exit(2)
+        return sys.argv[i + 1]
+
     src = sys.argv[1]
     propose = "--propose" in sys.argv
-    cfgp = sys.argv[sys.argv.index("--config") + 1] if "--config" in sys.argv else os.path.join(os.path.dirname(os.path.abspath(__file__)), "perfwire_config.json")
-    dst = sys.argv[sys.argv.index("-o") + 1] if "-o" in sys.argv else None
+    cfgp = _arg_after("--config") if "--config" in sys.argv else os.path.join(os.path.dirname(os.path.abspath(__file__)), "perfwire_config.json")
+    dst = _arg_after("-o") if "-o" in sys.argv else None
     try:
         cfg = load_cfg(cfgp)
     except (OSError, ValueError) as e:
@@ -1236,8 +1256,8 @@ if __name__ == "__main__":
             sys.stderr.write("  - %s: %s%s\n" % (p["code"], p["msg"], ("  (%s)" % p["where"]) if p.get("where") else ""))
         sys.exit(2)
     if "--guard" in sys.argv:
-        hiz = sys.argv[sys.argv.index("--guard") + 1]
-        gn = sys.argv[sys.argv.index("--guard-net") + 1] if "--guard-net" in sys.argv else None
+        hiz = _arg_after("--guard")
+        gn = _arg_after("--guard-net") if "--guard-net" in sys.argv else None
         targets = [n for n in cfg.get("net_classes", {}).get("HIZ", {}).get("nets", [])] if hiz == "all" else [hiz]
         cur = state
         info = []
