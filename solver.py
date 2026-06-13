@@ -182,6 +182,31 @@ def part_lead_names(p):
         return [p["id"] + "." + k for k in p["pins"]]
     return p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
 
+def strip_segments(cols, rows, axis, cutset):
+    """ストリップボードの導通セグメント。各ストリップ（行 or 列）を track cut で分割した連続穴の並び。"""
+    segs = []
+    if axis == "col":
+        for c in range(1, cols + 1):
+            seg = [(c, 1)]
+            for r in range(2, rows + 1):
+                if frozenset(((c, r - 1), (c, r))) in cutset:
+                    segs.append(seg)
+                    seg = []
+                seg.append((c, r))
+            if seg:
+                segs.append(seg)
+    else:
+        for r in range(1, rows + 1):
+            seg = [(1, r)]
+            for c in range(2, cols + 1):
+                if frozenset(((c - 1, r), (c, r))) in cutset:
+                    segs.append(seg)
+                    seg = []
+                seg.append((c, r))
+            if seg:
+                segs.append(seg)
+    return segs
+
 def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
     """ネットリスト/トポロジ系の電気ルールチェック（ERC）と設計レビュー系の監査。
     すべて状態グラフ（leads / parts / padBridges / wires / net_classes）から計算する。
@@ -232,6 +257,21 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
             if not e.get("direct") and e.get("bridgeTo"):
                 u(h, tuple(e["bridgeTo"]))
         u(pts[0], pts[1])
+    # ストリップボード: 同一ストリップ（cut で分割した連続穴）は銅箔で連結。セグメント内を union し、
+    # 同セグメントに異ネットのリードが乗っていれば確実なショート（要 track cut）= stripShorts。
+    grid = bd.state.get("grid", {})
+    strip_shorts = []
+    if grid.get("type") == "strip":
+        cutset = set()
+        for cc in bd.state.get("trackCuts", []):
+            cutset.add(frozenset((tuple(cc[0]), tuple(cc[1]))))
+        for seg in strip_segments(bd.cols, bd.rows, grid.get("stripAxis", "row"), cutset):
+            for i in range(1, len(seg)):
+                u(seg[i - 1], seg[i])
+            nets_on = sorted({node_net.get(h) for h in seg if node_net.get(h)})
+            if len(nets_on) >= 2:
+                strip_shorts.append({"segment": [list(seg[0]), list(seg[-1])], "nets": nets_on})
+    out["stripShorts"] = strip_shorts
     roots_per_net = {}
     for node, net in node_net.items():
         if net:
@@ -707,7 +747,7 @@ def solve(state, cfg, propose=False):
              + len(ee["openNets"]) + len(ee["unconnectedLeads"]) + len(ee["duplicateIds"])
              + sum(1 for x in ee["polarity"] if x["ok"] is False)
              + sum(1 for x in ee["powerReach"] if not x["ok"]) + len(ee["floatingPowerPins"])
-             + len(ee["multipleDrivers"]))
+             + len(ee["multipleDrivers"]) + len(ee["stripShorts"]))
     ee_warn = (sum(1 for o in bd.overlaps if o["sev"] == "warn")
                + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"])
                + sum(1 for g in ee["grounding"] if g["daisyReturn"]) + len(ee["undrivenNets"]))
@@ -761,7 +801,8 @@ if __name__ == "__main__":
     print(" GND topology:", json.dumps(e["grounding"], ensure_ascii=False),
           " guard(HIZ):", len(e["guard"]), " crosstalk pairs:", len(e["crosstalk"]))
     print(" multipleDrivers(out-out short):", json.dumps(e["multipleDrivers"], ensure_ascii=False),
-          " undrivenNets:", json.dumps(e["undrivenNets"], ensure_ascii=False))
+          " undrivenNets:", json.dumps(e["undrivenNets"], ensure_ascii=False),
+          " stripShorts:", json.dumps(e["stripShorts"], ensure_ascii=False))
     for w in result["warnings"]:
         print("  *", w)
     if dst:

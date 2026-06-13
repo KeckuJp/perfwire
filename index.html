@@ -107,7 +107,7 @@ svg{display:block;margin:16px auto}
 <aside>
 <h4>モード <span style="color:var(--mut);text-transform:none;letter-spacing:0">(1-5キー)</span></h4>
 <div class="seggrp">
-<button id="m-end">端子</button><button id="m-part">部品</button><button id="m-bridge">ブリッジ</button><button id="m-block">穴×</button><button id="m-probe">テスター</button>
+<button id="m-end">端子</button><button id="m-part">部品</button><button id="m-bridge">ブリッジ</button><button id="m-block">穴×</button><button id="m-probe">テスター</button><button id="m-cut">カット</button>
 </div>
 <div class="hint" id="modehint"></div>
 <div style="margin:7px 0;display:flex;gap:6px;flex-wrap:wrap"><button id="pw-lock">ロック切替</button><button id="pw-reset">案をリセット</button></div>
@@ -240,7 +240,7 @@ var MIRROR=false;
 var probeA=null,probeRes=null;
 var DIFF={on:false,base:null,name:''};
 var MODEL={end:'端子',part:'部品',bridge:'ブリッジ',block:'穴ブロック',probe:'テスター'};
-var HINT={end:'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。',part:'本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。',bridge:'隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。',block:'使えない穴をクリックで×指定／解除。再計算が避けます。',probe:'2つの穴を順にクリック → 計画上の導通/非導通と接続グループを表示。実機のテスター当てと突き合わせる。'};
+var HINT={end:'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。',part:'本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。',bridge:'隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。',block:'使えない穴をクリックで×指定／解除。再計算が避けます。',probe:'2つの穴を順にクリック → 計画上の導通/非導通と接続グループを表示。実機のテスター当てと突き合わせる。',cut:'ストリップ基板用: ストリップ上の隣接2穴の間をクリックで track cut を追加/削除。異ネットが同ストリップに乗る短絡を切って分離する。'};
 var LY={parts:true,labels:true,wires:true,bridges:true,ends:true,caut:true,blocked:true,foot:false};
 var undoStack=[];
 var svg=document.getElementById('pw-svg');
@@ -378,6 +378,11 @@ Object.keys(D.leads).forEach(function(k){var kk=key(D.leads[k].at);nodeNet[kk]=D
 D.parts.forEach(function(p){partLeads(p).forEach(function(L){var kk=key(L.pos);if(nodeNet[kk]===undefined){var net=D.leads[L.name]?D.leads[L.name].net:null;if(net)nodeNet[kk]=net;}f(kk);});});
 D.padBridges.forEach(function(b){u(key(b[0]),key(b[1]));});
 D.wires.forEach(function(w){var pts=[];[w.a,w.b].forEach(function(e){var hp=e.direct?e.pad:e.hole,kk=key(hp);if(nodeNet[kk]===undefined)nodeNet[kk]=w.net;f(kk);pts.push(kk);if(!e.direct&&e.bridgeTo)u(kk,key(e.bridgeTo));});u(pts[0],pts[1]);});
+var stripShorts=[];
+if(D.grid.type==='strip'){var cuts={};(D.trackCuts||[]).forEach(function(cc){cuts[key(cc[0])+'|'+key(cc[1])]=1;cuts[key(cc[1])+'|'+key(cc[0])]=1;});
+stripSegs(cols,rows,D.grid.stripAxis||'row',cuts).forEach(function(seg){for(var i=1;i<seg.length;i++)u(key(seg[i-1]),key(seg[i]));
+var ns={};seg.forEach(function(h){var n=nodeNet[key(h)];if(n)ns[n]=1;});var nl=Object.keys(ns).sort();
+if(nl.length>=2)stripShorts.push({segment:[seg[0],seg[seg.length-1]],nets:nl});});}
 var roots={};Object.keys(nodeNet).forEach(function(kk){var n=nodeNet[kk];if(n){roots[n]=roots[n]||{};roots[n][f(kk)]=1;}});
 var open=Object.keys(roots).filter(function(n){return Object.keys(roots[n]).length>1;}).sort();
 var cnt={};D.parts.forEach(function(p){cnt[p.id]=(cnt[p.id]||0)+1;});
@@ -410,7 +415,11 @@ var drv={};Object.keys(D.leads).forEach(function(k){var net=D.leads[k].net;if(ne
 var multi=Object.keys(drv).filter(function(n){return drv[n].length>=2;}).sort().map(function(n){return {net:n,pins:drv[n].sort()};});
 var rolesByNet={};Object.keys(D.leads).forEach(function(k){var net=D.leads[k].net;if(net)(rolesByNet[net]=rolesByNet[net]||[]).push(role[k]);});
 var undriven=Object.keys(rolesByNet).filter(function(n){return rolesByNet[n].length&&rolesByNet[n].every(function(r){return r==='in';});}).sort();
-return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol,powerReach:powerReach,floatingPowerPins:floating.sort(),multipleDrivers:multi,undrivenNets:undriven};}
+return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol,powerReach:powerReach,floatingPowerPins:floating.sort(),multipleDrivers:multi,undrivenNets:undriven,stripShorts:stripShorts};}
+function stripSegs(cols,rows,axis,cuts){var segs=[],a,b,seg;
+if(axis==='col'){for(var c=1;c<=cols;c++){seg=[[c,1]];for(var r=2;r<=rows;r++){if(cuts[key([c,r-1])+'|'+key([c,r])]){segs.push(seg);seg=[];}seg.push([c,r]);}if(seg.length)segs.push(seg);}}
+else{for(var r2=1;r2<=rows;r2++){seg=[[1,r2]];for(var c2=2;c2<=cols;c2++){if(cuts[key([c2-1,r2])+'|'+key([c2,r2])]){segs.push(seg);seg=[];}seg.push([c2,r2]);}if(seg.length)segs.push(seg);}}
+return segs;}
 function holeNetMap(){var hn={};Object.keys(D.leads).forEach(function(k){if(D.leads[k].net)hn[key(D.leads[k].at)]=D.leads[k].net;});
 D.parts.forEach(function(p){partLeads(p).forEach(function(L){var net=D.leads[L.name]?D.leads[L.name].net:null;if(net)hn[key(L.pos)]=net;});});
 D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});return hn;}
@@ -467,9 +476,10 @@ h+='パッド接合数: '+(jNg?'<span class="ng">NG '+jNg+'</span>':'<span class
 var erc=ercAudit();
 var polbad=erc.polarity.filter(function(x){return x.ok===false;}).map(function(x){return x.part;});
 var preachbad=erc.powerReach.filter(function(x){return !x.ok;}).map(function(x){return x.net;});
-var ercNg=erc.openNets.length+erc.unconnectedLeads.length+erc.duplicateIds.length+polbad.length+preachbad.length+erc.floatingPowerPins.length+erc.multipleDrivers.length;
+var ercNg=erc.openNets.length+erc.unconnectedLeads.length+erc.duplicateIds.length+polbad.length+preachbad.length+erc.floatingPowerPins.length+erc.multipleDrivers.length+erc.stripShorts.length;
 ngs+=ercNg;
 var eb=[];
+if(erc.stripShorts.length)eb.push('<span class="ng">ストリップ短絡 '+erc.stripShorts.map(function(s){return s.nets.join('/');}).join(' ')+'</span>');
 if(erc.multipleDrivers.length)eb.push('<span class="ng">出力競合 '+erc.multipleDrivers.map(function(m){return m.net+'('+m.pins.join('+')+')';}).join(' ')+'</span>');
 if(erc.openNets.length)eb.push('<span class="ng">オープンネット '+erc.openNets.join(',')+'</span>');
 if(erc.unconnectedLeads.length)eb.push('<span class="ng">未接続 '+erc.unconnectedLeads.join(',')+'</span>');
@@ -529,7 +539,12 @@ PITCH=BASE*ZOOM;
 while(svg.firstChild)svg.removeChild(svg.firstChild);
 var W2=OX+(cols-1)*PITCH+34,H2=OY+(rows-1)*PITCH+34,c,r;
 svg.setAttribute('width',W2);svg.setAttribute('height',H2);
-E('rect',{x:OX-20,y:OY-20,width:(cols-1)*PITCH+40,height:(rows-1)*PITCH+40,rx:10,fill:'#2c6e46',stroke:'#1c4a30','stroke-width':2});
+E('rect',{x:OX-20,y:OY-20,width:(cols-1)*PITCH+40,height:(rows-1)*PITCH+40,rx:10,fill:D.grid.type==='strip'?'#3a2a1c':'#2c6e46',stroke:D.grid.type==='strip'?'#5a3a20':'#1c4a30','stroke-width':2});
+if(D.grid.type==='strip'){var ax=D.grid.stripAxis||'row';
+if(ax==='row'){for(var sr=1;sr<=rows;sr++){var sa=xy(1,sr),sbb=xy(cols,sr);E('rect',{x:sa[0]-PITCH*0.42,y:sa[1]-PITCH*0.32,width:(cols-1)*PITCH+PITCH*0.84,height:PITCH*0.64,rx:PITCH*0.3,fill:'rgba(206,140,80,.45)',stroke:'rgba(150,90,45,.7)','stroke-width':1});}}
+else{for(var sc=1;sc<=cols;sc++){var ta=xy(sc,1);E('rect',{x:ta[0]-PITCH*0.32,y:ta[1]-PITCH*0.42,width:PITCH*0.64,height:(rows-1)*PITCH+PITCH*0.84,rx:PITCH*0.3,fill:'rgba(206,140,80,.45)',stroke:'rgba(150,90,45,.7)','stroke-width':1});}}
+(D.trackCuts||[]).forEach(function(cc){var a=xy(cc[0][0],cc[0][1]),b=xy(cc[1][0],cc[1][1]),mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,horiz=cc[0][1]===cc[1][1];
+if(horiz)E('line',{x1:mx,y1:my-PITCH*0.34,x2:mx,y2:my+PITCH*0.34,stroke:'#1a0f08','stroke-width':3});else E('line',{x1:mx-PITCH*0.34,y1:my,x2:mx+PITCH*0.34,y2:my,stroke:'#1a0f08','stroke-width':3});});}
 if(PHOTO.img&&PHOTO.op>0){var psc=PHOTO.fit*PHOTO.mul/100*ZOOM,pw=PHOTO.img.naturalWidth*psc,phh=PHOTO.img.naturalHeight*psc;
 var ppx=OX+PHOTO.x*PITCH,ppy=OY+PHOTO.y*PITCH;
 var ptr='translate('+ppx+' '+ppy+') rotate('+(PHOTO.rot90+PHOTO.rotF)+' '+(pw/2)+' '+(phh/2)+')'+(PHOTO.flip?' translate('+pw+' 0) scale(-1 1)':'');
@@ -638,6 +653,10 @@ if(MIRROR)return;
 if(PHOTO.img&&PHOTO.drag){drag={t:'photo',s:pt,ox:PHOTO.x,oy:PHOTO.y};return;}
 if(mode==='bridge'){for(i=0;i<D.padBridges.length;i++){var b=D.padBridges[i];if(b._px&&segd(pt[0],pt[1],b._px[0][0],b._px[0][1],b._px[1][0],b._px[1][1])<8){snap();D.padBridges.splice(i,1);render();return;}}
 var h=nearHole(pt[0],pt[1]);if(h)drag={t:'bridge',a:h,cur:pt};return;}
+if(mode==='cut'){var ax=D.grid.stripAxis||'row',best=null;
+for(var cc=1;cc<=cols;cc++)for(var rr=1;rr<=rows;rr++){var nb=ax==='row'?[cc+1,rr]:[cc,rr+1];if(nb[0]>cols||nb[1]>rows)continue;var ma=xy(cc,rr),mb=xy(nb[0],nb[1]),mid=[(ma[0]+mb[0])/2,(ma[1]+mb[1])/2],dd=Math.hypot(pt[0]-mid[0],pt[1]-mid[1]);if(dd<PITCH*0.45&&(!best||dd<best.d))best={d:dd,a:[cc,rr],b:nb};}
+if(best){snap();D.trackCuts=D.trackCuts||[];var ix=-1;for(var ci=0;ci<D.trackCuts.length;ci++){var tc=D.trackCuts[ci],s1=tc[0][0]+','+tc[0][1]+'|'+tc[1][0]+','+tc[1][1],s2=tc[1][0]+','+tc[1][1]+'|'+tc[0][0]+','+tc[0][1],me=best.a[0]+','+best.a[1]+'|'+best.b[0]+','+best.b[1];if(s1===me||s2===me)ix=ci;}
+if(ix>=0)D.trackCuts.splice(ix,1);else D.trackCuts.push([best.a,best.b]);render();auditSoon();}return;}
 if(mode==='block'){var h2=nearHole(pt[0],pt[1]);if(h2){if(occupiedOther(h2[0],h2[1],null,null))return;snap();var bi=blockedIdx(h2[0],h2[1]);if(bi>=0)D.blockedHoles.splice(bi,1);else D.blockedHoles.push([h2[0],h2[1]]);render();}return;}
 if(mode==='end'){for(j=0;j<D.wires.length;j++){var w=D.wires[j],es=[w.a,w.b];for(var k2=0;k2<2;k2++){var e=es[k2];if(e._px&&Math.hypot(pt[0]-e._px[0],pt[1]-e._px[1])<13){drag={t:'end',e:e,w:w,prev:deep({hole:e.hole,direct:e.direct,bridgeTo:e.bridgeTo||null})};return;}}}return;}
 for(i=D.parts.length-1;i>=0;i--){var p=D.parts[i],Ls=partLeads(p);for(j=0;j<Ls.length;j++){var v=xy(Ls[j].pos[0],Ls[j].pos[1]);if(Math.hypot(pt[0]-v[0],pt[1]-v[1])<11){selPart=p;if(!p.locked&&p.kind!=='ic')drag={t:'plead',p:p,L:Ls[j],prev:deep(Ls[j].pos)};render();return;}}}
@@ -690,8 +709,8 @@ if(ok){snap();afterMove(p2);}
 drag=null;palLast=undefined;render();return;}});
 document.getElementById('canvas').addEventListener('wheel',function(e){if(!e.ctrlKey)return;e.preventDefault();
 ZOOM=Math.min(2.4,Math.max(0.5,ZOOM*(e.deltaY<0?1.1:1/1.1)));render();},{passive:false});
-function exportJSON(){return JSON.stringify({proposal:props[curI].name,grid:D.grid,blockedHoles:D.blockedHoles,leads:D.leads,parts:D.parts,padBridges:D.padBridges,wires:D.wires,netColors:D.netColors,cfg:CFG},function(k,v){return (typeof k==='string'&&k.charAt(0)==='_')?undefined:v;});}
-function importObj(d2){snap();['grid','blockedHoles','leads','parts','padBridges','wires','netColors'].forEach(function(k){if(d2[k])D[k]=d2[k];});
+function exportJSON(){return JSON.stringify({proposal:props[curI].name,grid:D.grid,blockedHoles:D.blockedHoles,leads:D.leads,parts:D.parts,padBridges:D.padBridges,wires:D.wires,netColors:D.netColors,trackCuts:D.trackCuts||[],cfg:CFG},function(k,v){return (typeof k==='string'&&k.charAt(0)==='_')?undefined:v;});}
+function importObj(d2){snap();['grid','blockedHoles','leads','parts','padBridges','wires','netColors','trackCuts'].forEach(function(k){if(d2[k])D[k]=d2[k];});
 if(d2.proposals){props=d2.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null};});curI=0;refreshSel();loadProp(0);auditNow();return;}
 if(d2.cfg&&d2.cfg.weights&&d2.cfg.physical)CFG=d2.cfg;
 cols=D.grid.cols;rows=D.grid.rows;buildSliders();buildNetClasses();refreshSel();render();auditNow();}
@@ -702,7 +721,7 @@ if(st.cfg&&st.cfg.weights&&st.cfg.physical&&st.cfg.classes&&st.cfg.partOv&&st.cf
 if(st.states)st.states.forEach(function(s,i){if(s){if(!props[i])props[i]={name:(st.names&&st.names[i])||('案'+i),orig:s,cur:null};props[i].cur=s;if(st.names&&st.names[i])props[i].name=st.names[i];}});
 if(typeof st.curI==='number'&&props[st.curI])curI=st.curI;}catch(e){}}
 function refreshSel(){var sel=document.getElementById('pw-prop');sel.innerHTML='';props.forEach(function(p,i){var o=document.createElement('option');o.value=i;o.textContent=p.name;sel.appendChild(o);});sel.value=curI;}
-function setMode(m){mode=m;['end','part','bridge','block','probe'].forEach(function(k){document.getElementById('m-'+k).className=(k===m)?'on':'';});
+function setMode(m){mode=m;['end','part','bridge','block','probe','cut'].forEach(function(k){document.getElementById('m-'+k).className=(k===m)?'on':'';});
 if(m!=='probe'){probeA=null;probeRes=null;}
 document.getElementById('modehint').textContent=tr(HINT[m]);render();}
 document.getElementById('m-end').onclick=function(){setMode('end');};
@@ -710,6 +729,7 @@ document.getElementById('m-part').onclick=function(){setMode('part');};
 document.getElementById('m-bridge').onclick=function(){setMode('bridge');};
 document.getElementById('m-block').onclick=function(){setMode('block');};
 document.getElementById('m-probe').onclick=function(){setMode('probe');};
+document.getElementById('m-cut').onclick=function(){setMode('cut');};
 document.getElementById('pw-lock').onclick=function(){if(selPart){snap();selPart.locked=!selPart.locked;render();}};
 document.getElementById('pw-reset').onclick=function(){snap();props[curI].cur=deep(props[curI].orig);loadProp(curI);auditNow();};
 document.getElementById('pw-prop').onchange=function(){loadProp(parseInt(this.value,10));auditNow();};
@@ -1026,6 +1046,9 @@ var CMDS=[
 {n:'モード: ブリッジ',k:'mode bridge 3',f:function(){setMode('bridge');}},
 {n:'モード: 穴ブロック',k:'mode block 4',f:function(){setMode('block');}},
 {n:'モード: テスター（導通プローブ）',k:'mode probe tester 5',f:function(){setMode('probe');}},
+{n:'モード: カット（ストリップ基板）',k:'mode cut strip track 6',f:function(){setMode('cut');}},
+{n:'基板種別を切替（ユニバーサル⇄ストリップ）',k:'board type strip perf veroboard toggle',f:function(){snap();D.grid.type=(D.grid.type==='strip')?'perf':'strip';if(D.grid.type==='strip'&&!D.grid.stripAxis)D.grid.stripAxis='row';render();auditSoon();}},
+{n:'ストリップ向き切替（行⇄列）',k:'strip axis row col',f:function(){if(D.grid.type!=='strip')return;snap();D.grid.stripAxis=(D.grid.stripAxis==='col')?'row':'col';render();auditSoon();}},
 {n:'導通チェックリスト生成',k:'beep continuity checklist',f:function(){document.getElementById('pw-beep').click();}},
 {n:'ズーム イン',k:'zoom in',f:function(){document.getElementById('z-in').click();}},
 {n:'ズーム アウト',k:'zoom out',f:function(){document.getElementById('z-out').click();}},
@@ -1068,7 +1091,7 @@ if(e.key==='ArrowLeft'){e.preventDefault();GUIDE.i=Math.max(0,GUIDE.i-1);guideSh
 if(e.key==='Enter'||e.key===' '){e.preventDefault();gDone();return;}
 if(e.key==='Escape'){guideEnd();return;}}
 if(e.ctrlKey&&e.key.toLowerCase()==='z'){e.preventDefault();undo();return;}
-if(e.key==='1')setMode('end');if(e.key==='2')setMode('part');if(e.key==='3')setMode('bridge');if(e.key==='4')setMode('block');if(e.key==='5')setMode('probe');});
+if(e.key==='1')setMode('end');if(e.key==='2')setMode('part');if(e.key==='3')setMode('bridge');if(e.key==='4')setMode('block');if(e.key==='5')setMode('probe');if(e.key==='6')setMode('cut');});
 function auditNow(){try{audit();}catch(e){document.getElementById('audit').textContent='監査エラー: '+e.message;}}
 function auditSoon(){clearTimeout(auditTimer);auditTimer=setTimeout(auditNow,220);}
 function footPreview(){tempFoot=true;render();clearTimeout(footTimer);footTimer=setTimeout(function(){tempFoot=false;render();},1300);}

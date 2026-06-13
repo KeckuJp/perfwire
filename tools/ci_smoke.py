@@ -41,11 +41,12 @@ def main() -> None:
             ee = res.get("ee", {})
             for key in ("openNets", "singleLeadNets", "unconnectedLeads", "duplicateIds",
                         "polarity", "powerReach", "keepAway", "decouplingCoverage",
-                        "floatingPowerPins", "multipleDrivers", "grounding", "guard", "crosstalk", "fabReady"):
+                        "floatingPowerPins", "multipleDrivers", "undrivenNets", "stripShorts",
+                        "grounding", "guard", "crosstalk", "fabReady"):
                 if key not in ee:
                     failures.append(f"{name}: ee missing ERC key '{key}'")
-            # the bundled sample must have no hard ERC errors (open / unconnected / dup id / floating pwr / out-out short)
-            for key in ("openNets", "unconnectedLeads", "duplicateIds", "floatingPowerPins", "multipleDrivers"):
+            # the bundled (perfboard) sample must have no hard ERC errors
+            for key in ("openNets", "unconnectedLeads", "duplicateIds", "floatingPowerPins", "multipleDrivers", "stripShorts"):
                 if ee.get(key):
                     failures.append(f"{name}: unexpected ERC error {key}={ee[key]}")
             if any(not p.get("ok") for p in ee.get("powerReach", [])):
