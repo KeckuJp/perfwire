@@ -177,6 +177,158 @@ class Board:
     def cdef(self, net):
         return self.cfg["net_classes"].get(self.cls(net), {})
 
+def part_lead_names(p):
+    if p["kind"] == "ic":
+        return [p["id"] + "." + k for k in p["pins"]]
+    return p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
+
+def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
+    """ネットリスト/トポロジ系の電気ルールチェック（ERC）と設計レビュー系の監査。
+    すべて状態グラフ（leads / parts / padBridges / wires / net_classes）から計算する。
+    任意設定（rail_rank / power_entry / rules.single_lead_allowlist）があれば該当チェックが有効化される。
+    """
+    out = {}
+    leads_per_net = {}
+    for lead, net in bd.net_of_lead.items():
+        if net:
+            leads_per_net.setdefault(net, []).append(lead)
+    nets = sorted(leads_per_net.keys())
+
+    # ERC: 部品の足でネット未割当のもの（フローティング端子）
+    unconnected = []
+    for p in bd.parts:
+        for nm in part_lead_names(p):
+            if not bd.net_of_lead.get(nm):
+                unconnected.append(nm)
+    out["unconnectedLeads"] = sorted(unconnected)
+
+    # ERC: 単一リードネット（接続先が無い＝結線漏れ/タイポ）。任意の許可リストで I/O 点を除外
+    allow = set(cfg.get("rules", {}).get("single_lead_allowlist", []))
+    out["singleLeadNets"] = sorted([n for n, ls in leads_per_net.items() if len(ls) == 1 and n not in allow])
+
+    # ERC: オープンネット（leads+padBridges+wires をたどっても 1 連結にならないネット）
+    par = {}
+    def f(x):
+        par.setdefault(x, x)
+        while par[x] != x:
+            par[x] = par[par[x]]
+            x = par[x]
+        return x
+    def u(a, b):
+        par[f(a)] = f(b)
+    node_net = {}
+    for lead, xyv in bd.lead_pos.items():
+        node_net[xyv] = bd.net_of_lead.get(lead)
+        f(xyv)
+    for br in pad_bridges:
+        a, b = tuple(br[0]), tuple(br[1])
+        u(a, b)
+    for w in wires:
+        pts = []
+        for e in (w["a"], w["b"]):
+            h = tuple(e["pad"]) if e.get("direct") else tuple(e["hole"])
+            node_net.setdefault(h, w["net"])
+            pts.append(h)
+            if not e.get("direct") and e.get("bridgeTo"):
+                u(h, tuple(e["bridgeTo"]))
+        u(pts[0], pts[1])
+    roots_per_net = {}
+    for node, net in node_net.items():
+        if net:
+            roots_per_net.setdefault(net, set()).add(f(node))
+    out["openNets"] = sorted([n for n, rs in roots_per_net.items() if len(rs) > 1])
+
+    # ERC: 重複 refdes（id 重複は leadNames/decoupling 参照を壊す）
+    cnt = {}
+    for p in bd.parts:
+        cnt[p["id"]] = cnt.get(p["id"], 0) + 1
+    out["duplicateIds"] = sorted([i for i, c in cnt.items() if c > 1])
+
+    # ネット衛生: クラス未割当（cdef が空＝全 EE クラスルールを素通り）
+    out["unclassifiedNets"] = sorted([n for n in nets if bd.cls(n) is None])
+
+    # 信号: keep-away 違反の事後監査（配置スコアだけでなく結果も検査）。違反ホール単位に集約
+    holes = sorted(net_of_hole.items())
+    ka_viol = []
+    for h, n in holes:
+        cd = bd.cdef(n)
+        ka, kh = cd.get("keep_away_from", []), cd.get("keep_away_holes", 0)
+        if not ka or kh <= 0:
+            continue
+        near = []
+        for h2, n2 in holes:
+            if n2 == n or bd.cls(n2) not in ka:
+                continue
+            d = max(abs(h[0] - h2[0]), abs(h[1] - h2[1]))
+            if d <= kh:
+                near.append((d, n2, h2))
+        if near:
+            near.sort()
+            d0, n0, h0 = near[0]
+            ka_viol.append({"net": n, "hole": list(h), "nearestNet": n0, "nearestHole": list(h0), "d": d0, "count": len(near)})
+    out["keepAway"] = ka_viol
+
+    # 短絡注意: 8 近傍（対角含む）の異ネット隣接（はんだブリッジ厳禁箇所）。情報レベル
+    shorts = []
+    deltas = [(1, 0), (0, 1), (1, 1), (1, -1)]
+    nh = dict(net_of_hole)
+    for h, n in sorted(nh.items()):
+        for dx, dy in deltas:
+            q = (h[0] + dx, h[1] + dy)
+            if q in nh and nh[q] != n:
+                ortho = (dx == 0 or dy == 0)
+                hiz = bd.cls(n) == "HIZ" or bd.cls(nh[q]) == "HIZ"
+                shorts.append({"a": list(h), "b": list(q), "net1": n, "net2": nh[q],
+                               "adj": "ortho" if ortho else "diag", "hiz": hiz})
+    out["shortCautions"] = shorts
+
+    # 極性: 電解の + 足がより高電位レールにあるか（任意 rail_rank。無ければ INFO）
+    rank = cfg.get("rail_rank", {})
+    pol = []
+    for p in bd.parts:
+        if p["kind"] != "elec" or "plus" not in p:
+            continue
+        names = part_lead_names(p)
+        pi = p["plus"]
+        pn, mn = bd.net_of_lead.get(names[pi]), bd.net_of_lead.get(names[1 - pi])
+        if pn in rank and mn in rank:
+            pol.append({"part": p["id"], "plusNet": pn, "minusNet": mn, "ok": rank[pn] > rank[mn]})
+        else:
+            pol.append({"part": p["id"], "plusNet": pn, "minusNet": mn, "ok": None})
+    out["polarity"] = pol
+
+    # 電源到達性: 各 PWR ネットが 1 連結かつ給電リードに根を持つか（任意 power_entry。無ければ空）
+    pe = cfg.get("power_entry", {})
+    preach = []
+    for net, entry_leads in pe.items():
+        roots = roots_per_net.get(net, set())
+        entry_pos = [bd.lead_pos[l] for l in entry_leads if l in bd.lead_pos]
+        rooted = any(f(p2) in roots for p2 in entry_pos)
+        preach.append({"net": net, "components": len(roots), "hasEntry": bool(entry_pos),
+                       "ok": len(roots) <= 1 and rooted})
+    out["powerReach"] = preach
+
+    # デカップリング充足: IC の電源ピン（PWR クラス、最低電位レール＝リターンを除く）が
+    # decoupling リストに載っているか（存在チェック。距離は ee.decoupling が担当）
+    listed = {d["pin"] for d in cfg.get("decoupling", [])}
+    pwr_nets = set(cfg.get("net_classes", {}).get("PWR", {}).get("nets", []))
+    supply_net = None
+    if rank:
+        ranked = [(rank[n], n) for n in pwr_nets if n in rank]
+        if ranked:
+            supply_net = max(ranked)[1]  # 正電源レール（最上位電位）の IC ピンのみが per-IC バイパスを要する
+    cov = []
+    for p in bd.parts:
+        if p["kind"] != "ic":
+            continue
+        for pin in p["pins"]:
+            nm = p["id"] + "." + pin
+            net = bd.net_of_lead.get(nm)
+            if (supply_net and net == supply_net) or (not supply_net and net in pwr_nets):
+                cov.append({"pin": nm, "net": net, "covered": nm in listed})
+    out["decouplingCoverage"] = cov
+    return out
+
 def solve(state, cfg, propose=False):
     bd = Board(state, cfg)
     W = cfg["weights"]
@@ -204,7 +356,9 @@ def solve(state, cfg, propose=False):
         hiz_leads = []
         for p in movable:
             names = p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
-            n1, n2 = bd.net_of_lead[names[0]], bd.net_of_lead[names[1]]
+            n1, n2 = bd.net_of_lead.get(names[0]), bd.net_of_lead.get(names[1])
+            if n1 is None or n2 is None:  # 未接続の足を持つ部品は再配置対象外（ERC で報告）
+                continue
             dec = decoup.get(p["id"])
             anchor = None
             if dec and dec.get("pin") in bd.lead_pos:
@@ -280,10 +434,13 @@ def solve(state, cfg, propose=False):
 
     net_of_hole = {}
     for lead, xyv in bd.lead_pos.items():
-        net_of_hole[xyv] = bd.net_of_lead[lead]
+        net = bd.net_of_lead.get(lead)  # ネット未割当の足（ERC unconnectedLeads が報告）はスキップして監査を継続
+        if net is None:
+            continue
+        net_of_hole[xyv] = net
         find(xyv)
     pad_bridges = []
-    for net in sorted({n for n in bd.net_of_lead.values()}):
+    for net in sorted({n for n in bd.net_of_lead.values() if n}):
         nodes = sorted([xyv for xyv, n in net_of_hole.items() if n == net])
         for a in nodes:
             for nb in neighbors(a):
@@ -375,22 +532,33 @@ def solve(state, cfg, propose=False):
         mx = bd.cdef(w["net"]).get("max_wire_holes", 99)
         ee["wireLength"].append({"net": w["net"], "holes": round(wlen, 1), "max": mx, "ok": wlen <= mx})
 
+    ee.update(erc_audit(bd, net_of_hole, pad_bridges, wires, cfg))
+
+    ee_ng = (sum(1 for x in ee["decoupling"] if not x["ok"]) + len(ee["padJoints"])
+             + sum(1 for o in bd.overlaps if o["sev"] == "ng")
+             + sum(1 for x in ee["wireLength"] if not x["ok"])
+             + len(ee["openNets"]) + len(ee["unconnectedLeads"]) + len(ee["duplicateIds"])
+             + sum(1 for x in ee["polarity"] if x["ok"] is False)
+             + sum(1 for x in ee["powerReach"] if not x["ok"]))
+    ee_warn = (sum(1 for o in bd.overlaps if o["sev"] == "warn")
+               + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"]))
+
     out = json.loads(json.dumps(state))
     out["parts"] = bd.parts
-    out["leads"] = {lead: {"net": bd.net_of_lead[lead], "at": list(xyv)} for lead, xyv in bd.lead_pos.items()}
+    out["leads"] = {lead: {"net": bd.net_of_lead.get(lead), "at": list(xyv)} for lead, xyv in bd.lead_pos.items()}
     out["padBridges"] = pad_bridges
     out["wires"] = wires
     out["warnings"] = warnings
     out["cautions"] = cautions
+    ee["fabReady"] = ee_ng == 0
     out["ee"] = ee
     out["stats"] = {"bridges": len(pad_bridges) + sum(1 for w in wires for e in (w["a"], w["b"]) if not e["direct"]),
                     "wires": len(wires),
                     "direct": sum(1 for w in wires for e in (w["a"], w["b"]) if e["direct"]),
                     "cautions": len(cautions),
-                    "eeNg": sum(1 for x in ee["decoupling"] if not x["ok"]) + len(ee["padJoints"])
-                    + sum(1 for o in bd.overlaps if o["sev"] == "ng")
-                    + sum(1 for x in ee["wireLength"] if not x["ok"]),
-                    "eeWarn": sum(1 for o in bd.overlaps if o["sev"] == "warn")}
+                    "eeNg": ee_ng,
+                    "eeWarn": ee_warn,
+                    "fabReady": ee_ng == 0}
     return out
 
 if __name__ == "__main__":
@@ -402,11 +570,24 @@ if __name__ == "__main__":
     state = json.load(io.open(src, encoding="utf-8"))
     result = solve(state, cfg, propose=propose)
     print(("PROPOSE" if propose else "ALLOCATE"), json.dumps(result["stats"], ensure_ascii=False))
-    print(" EE decoupling:", json.dumps(result["ee"]["decoupling"], ensure_ascii=False))
-    bad = [x for x in result["ee"]["wireLength"] if not x["ok"]]
+    e = result["ee"]
+    print(" fabReady:", e["fabReady"])
+    print(" EE decoupling:", json.dumps(e["decoupling"], ensure_ascii=False))
+    bad = [x for x in e["wireLength"] if not x["ok"]]
     print(" EE wire-length NG:", json.dumps(bad, ensure_ascii=False))
-    print(" EE hiZ cautions:", len(result["ee"]["hizCautions"]), " padJoints NG:", len(result["ee"]["padJoints"]),
-          " bodyOverlaps:", len(result["ee"]["bodyOverlaps"]))
+    print(" EE hiZ cautions:", len(e["hizCautions"]), " padJoints NG:", len(e["padJoints"]),
+          " bodyOverlaps:", len(e["bodyOverlaps"]))
+    print(" ERC openNets:", json.dumps(e["openNets"], ensure_ascii=False),
+          " unconnected:", json.dumps(e["unconnectedLeads"], ensure_ascii=False),
+          " duplicateIds:", json.dumps(e["duplicateIds"], ensure_ascii=False))
+    print(" ERC singleLeadNets:", json.dumps(e["singleLeadNets"], ensure_ascii=False),
+          " unclassified:", json.dumps(e["unclassifiedNets"], ensure_ascii=False))
+    polbad = [x for x in e["polarity"] if x["ok"] is False]
+    preachbad = [x["net"] for x in e["powerReach"] if not x["ok"]]
+    print(" EE polarity NG:", json.dumps(polbad, ensure_ascii=False),
+          " powerReach NG:", json.dumps(preachbad, ensure_ascii=False),
+          " keepAway viol:", len(e["keepAway"]),
+          " decoupCoverage:", sum(1 for x in e["decouplingCoverage"] if x["covered"]), "/", len(e["decouplingCoverage"]))
     for w in result["warnings"]:
         print("  *", w)
     if dst:

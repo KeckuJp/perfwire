@@ -164,7 +164,8 @@ var DEFCFG={pitch:2.54,allowStanding:true,
  disc:{pitchMin:1,pitchMax:3,diag:true,tall:true,bodyLen:5,bodyWid:2.5},
  elec:{pitchMin:1,pitchMax:3,diag:true,tall:true,dia:6.5}},
  partOv:{C4:{dia:5.0},C6:{dia:6.5}},
- rules:{maxJoints:3},
+ rules:{maxJoints:3,singleLeadAllow:['IF_MIC','MIC_IN','SPK_N','SPK_P']},
+ railRank:{V3V3:2,VMID:1,GND:0},
  classes:{HIZ:{nets:['INA_P'],maxWire:6,adjPen:8,keepAway:['OUT','PWR'],keepHoles:2},
  SIG:{nets:['INA_N','SPKP_AC','SPKN_AC','INA2_P','INA2_N','SUM','MIC_IN','SPK_P','SPK_N','VREF'],maxWire:14,adjPen:3,keepAway:[],keepHoles:0},
  OUT:{nets:['OUTA1','SPK_OUT','OUTB2','IF_MIC'],maxWire:99,adjPen:2,keepAway:['HIZ'],keepHoles:2},
@@ -361,6 +362,39 @@ setTimeout(function(){setProg(0);},500);
 if(done)done();return;}
 placePart(ctx,ctx.movable[i]);i++;setProg(0.04+0.9*i/n);
 setTimeout(step,0);})();}
+function ercAudit(){
+var leadsPerNet={};
+Object.keys(D.leads).forEach(function(k){var n=D.leads[k].net;if(n)(leadsPerNet[n]=leadsPerNet[n]||[]).push(k);});
+var unconnected=[];
+D.parts.forEach(function(p){partLeads(p).forEach(function(L){if(!(D.leads[L.name]&&D.leads[L.name].net))unconnected.push(L.name);});});
+var allow=(CFG.rules&&CFG.rules.singleLeadAllow)||(DEFCFG.rules.singleLeadAllow)||[];
+var single=Object.keys(leadsPerNet).filter(function(n){return leadsPerNet[n].length===1&&allow.indexOf(n)<0;}).sort();
+var par={};
+function f(x){if(par[x]===undefined)par[x]=x;while(par[x]!==x){par[x]=par[par[x]];x=par[x];}return x;}
+function u(a,b){par[f(a)]=f(b);}
+var nodeNet={};
+Object.keys(D.leads).forEach(function(k){var kk=key(D.leads[k].at);nodeNet[kk]=D.leads[k].net;f(kk);});
+D.parts.forEach(function(p){partLeads(p).forEach(function(L){var kk=key(L.pos);if(nodeNet[kk]===undefined){var net=D.leads[L.name]?D.leads[L.name].net:null;if(net)nodeNet[kk]=net;}f(kk);});});
+D.padBridges.forEach(function(b){u(key(b[0]),key(b[1]));});
+D.wires.forEach(function(w){var pts=[];[w.a,w.b].forEach(function(e){var hp=e.direct?e.pad:e.hole,kk=key(hp);if(nodeNet[kk]===undefined)nodeNet[kk]=w.net;f(kk);pts.push(kk);if(!e.direct&&e.bridgeTo)u(kk,key(e.bridgeTo));});u(pts[0],pts[1]);});
+var roots={};Object.keys(nodeNet).forEach(function(kk){var n=nodeNet[kk];if(n){roots[n]=roots[n]||{};roots[n][f(kk)]=1;}});
+var open=Object.keys(roots).filter(function(n){return Object.keys(roots[n]).length>1;}).sort();
+var cnt={};D.parts.forEach(function(p){cnt[p.id]=(cnt[p.id]||0)+1;});
+var dup=Object.keys(cnt).filter(function(i){return cnt[i]>1;}).sort();
+var unclassified=Object.keys(leadsPerNet).filter(function(n){return clsOf(n)===null;}).sort();
+var hn={};Object.keys(D.leads).forEach(function(k){hn[key(D.leads[k].at)]=D.leads[k].net;});
+D.parts.forEach(function(p){partLeads(p).forEach(function(L){var net=D.leads[L.name]?D.leads[L.name].net:null;if(net)hn[key(L.pos)]=net;});});
+D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});
+var holes=Object.keys(hn).map(function(k){return [k.split(',').map(Number),hn[k]];});
+var ka=[];
+holes.forEach(function(it){var hh=it[0],n=it[1],cd=cdef(n),kaList=cd.keepAway||[],kh=cd.keepHoles||0;if(!kaList.length||kh<=0)return;
+var near=null;holes.forEach(function(it2){var h2=it2[0],n2=it2[1];if(n2===n||kaList.indexOf(clsOf(n2))<0)return;var d=cheb(hh,h2);if(d<=kh&&(near===null||d<near.d))near={d:d,net:n2};});
+if(near)ka.push({net:n,hole:hh,d:near.d,nearestNet:near.net});});
+var rank=CFG.railRank||DEFCFG.railRank||{};var pol=[];
+D.parts.forEach(function(p){if(p.kind!=='elec'||p.plus===undefined)return;var names=p.leadNames||[p.id+'.a',p.id+'.b'];
+var pn=D.leads[names[p.plus]]?D.leads[names[p.plus]].net:null,mn=D.leads[names[1-p.plus]]?D.leads[names[1-p.plus]].net:null;
+if(rank[pn]!==undefined&&rank[mn]!==undefined)pol.push({part:p.id,ok:rank[pn]>rank[mn]});});
+return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol};}
 function audit(){var g=geom(),h='',ngs=0;
 if(calcNote)h+='<span class="note">'+calcNote+'</span>';
 var rows2=[];
@@ -381,7 +415,20 @@ h+='本体重なり: '+(ovNg?'<span class="ng">NG '+ovNg+'</span>':'<span class=
 var joints=jointMap();
 var jNg=0;Object.keys(joints).forEach(function(k){if(joints[k]>CFG.rules.maxJoints)jNg++;});ngs+=jNg;
 h+='パッド接合数: '+(jNg?'<span class="ng">NG '+jNg+'</span>':'<span class="ok">'+CFG.rules.maxJoints+'以下 ✓</span>');
-h+='<br>総合: '+(ngs?'<span class="ng">NG '+ngs+'件</span>':'<span class="ok">PASS</span>');
+var erc=ercAudit();
+var polbad=erc.polarity.filter(function(x){return x.ok===false;}).map(function(x){return x.part;});
+var ercNg=erc.openNets.length+erc.unconnectedLeads.length+erc.duplicateIds.length+polbad.length;
+ngs+=ercNg;
+var eb=[];
+if(erc.openNets.length)eb.push('<span class="ng">オープンネット '+erc.openNets.join(',')+'</span>');
+if(erc.unconnectedLeads.length)eb.push('<span class="ng">未接続 '+erc.unconnectedLeads.join(',')+'</span>');
+if(erc.duplicateIds.length)eb.push('<span class="ng">重複ID '+erc.duplicateIds.join(',')+'</span>');
+if(polbad.length)eb.push('<span class="ng">極性逆 '+polbad.join(',')+'</span>');
+if(erc.singleLeadNets.length)eb.push('<span class="wr">単一リード '+erc.singleLeadNets.join(',')+'</span>');
+if(erc.unclassifiedNets.length)eb.push('<span class="wr">未分類 '+erc.unclassifiedNets.join(',')+'</span>');
+if(erc.keepAway.length)eb.push('<span class="wr">離隔違反 '+erc.keepAway.length+'</span>');
+h+='<br>ERC: '+(eb.length?eb.join(' '):'<span class="ok">クリーン ✓</span>');
+h+='<br>総合: '+(ngs?'<span class="ng">NG '+ngs+'件</span>':'<span class="ok">PASS ✓ 製作可</span>');
 var el=document.getElementById('audit');el.innerHTML=h;
 el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');
 setTimeout(function(){el.classList.remove('flash');},700);}

@@ -7,7 +7,7 @@
       "name": "perfwire",
       "source": "./",
       "description": "AI-assisted wiring planner for hand-soldered perfboards (universal board / protoboard).",
-      "version": "0.1.0"
+      "version": "0.2.0"
     }
   ]
 }
