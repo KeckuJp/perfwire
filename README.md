@@ -51,7 +51,7 @@ The plugin bundles the same skill (namespaced `perfwire:perfwire`; `plugin.json`
 - **Hole-accurate model** — one hole holds one lead or one wire end; jumper endpoints are auto-allocated to free holes adjacent to their target net, bridged with solder; falls back to direct-soldering a lead only when no hole is free.
 - **Physical footprints** — resistor capsules, electrolytic circles (per-part diameter override), film-cap boxes; bodies block holes; tall×tall overlaps are errors, tall×flat are warnings; lead span min/max derived from body length + bend margin; vertical (standing) resistor mounting.
 - **EE constraints** — net classes (high-Z / signal / output / power) with per-class wire-length limits and adjacency penalties, decoupling-cap proximity constraints, input/output separation, max solder joints per pad.
-- **Electrical rule check (ERC) + fab-ready gate** — runs on the board graph before you solder: open nets (a net the wiring doesn't fully connect), single-lead/floating nets (with an allowlist for intentional I/O points), unconnected part leads, duplicate refdes, unclassified nets, electrolytic-polarity sanity (optional `rail_rank`), power-net reachability to a declared supply entry (optional `power_entry`), decoupling-cap presence per supply pin, keep-away violations for high-Z nodes, and 8-neighbour (incl. diagonal) different-net adjacency cautions. The audit emits a single `fabReady` flag plus a per-finding breakdown, mirrored live in the editor's audit panel and in `solver.py`.
+- **Electrical rule check (ERC) + fab-ready gate** — runs on the board graph before you solder: open nets (a net the wiring doesn't fully connect), single-lead/floating nets (with an allowlist for intentional I/O points), unconnected part leads, duplicate refdes, unclassified nets, electrolytic-polarity sanity (optional `rail_rank`), power-net reachability to a declared supply entry (optional `power_entry`), decoupling-cap presence per supply pin, keep-away violations for high-Z nodes, 8-neighbour (incl. diagonal) different-net adjacency cautions, and **output-output shorts / driver contention** (≥2 driver terminals on one net). Drivers and loads are identified by an optional electrical **`role`** per terminal — IC pins via a `pinTypes` map, and crucially *off-board* sources/loads (an external MCU output, the power supply, a speaker) via a `role` on their `W.*` boundary lead — so contention is caught even when one driver lives off the board and arrives over a wire. The audit emits a single `fabReady` flag plus a per-finding breakdown, mirrored live in the editor's audit panel and in `solver.py`.
 - **Grounding / signal-integrity review** — star-vs-daisy-chain topology scoring (BFS depth from the declared power entry; flags a daisy-chained return net = common-impedance coupling risk), high-Z guard advisories, and a parallel-run crosstalk heuristic for sensitive nets (endpoint-segment proximity + near-parallel angle — jumper routes aren't modelled, so this is advisory). Python and the in-browser editor produce identical results.
 - **In-browser solver** — greedy placement + net connection + live audit, all client-side JS. Tune thresholds with sliders, recalculate instantly. The same solver ships as `solver.py` for CLI / CI use.
 - **Photo underlay** — drop a photo of the real board under the grid (opacity / scale / fine rotation / mirror for backside shots, drag to align) and trace reality by dragging parts onto it. AI guessing hole positions from photos fails; a human tracing over a photo doesn't.
@@ -70,9 +70,11 @@ The plugin bundles the same skill (namespaced `perfwire:perfwire`; `plugin.json`
 {
   "grid": { "cols": 17, "rows": 14 },
   "netColors": { "VCC": "#d62839" },
-  "leads":  { "U1.8": { "net": "VCC", "at": [6, 2] } },     // every occupied hole
+  "leads":  { "U1.8": { "net": "VCC", "at": [6, 2] },         // every occupied hole
+              "W.MCU_TX": { "net": "TX", "at": [1, 4], "role": "out" } },  // off-board driver via a wire (optional role)
   "parts": [
-    { "id": "U1", "kind": "ic", "label": "U1", "pins": { "1": [6,5] }, "locked": true },
+    { "id": "U1", "kind": "ic", "label": "U1", "pins": { "1": [6,5] }, "locked": true,
+      "pinTypes": { "1": "out", "2": "in", "8": "pwr_in" } },  // optional: enables out-out short / power-pin ERC
     { "id": "R1", "kind": "r", "label": "R1 1M", "leads": [[13,2],[16,2]],
       "leadNames": ["R1.a","R1.b"], "locked": false, "standing": false }
   ],

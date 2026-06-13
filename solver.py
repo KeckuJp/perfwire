@@ -342,6 +342,30 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
             if net in pwr_nets and len(leads_per_net.get(net, [])) < 2:
                 floating.append(nm)
     out["floatingPowerPins"] = sorted(floating)
+
+    # 端子の電気的役割を解決（ICは part.pinTypes、任意で leads[name].role が上書き。R/C はパッシブ）。
+    # ドライバ/負荷の所在を問わない＝外部MCU/電源が線で入る端子も leads[name].role で表現できる。
+    role = {}
+    for p in bd.parts:
+        if p["kind"] == "ic":
+            pt = p.get("pinTypes", {})
+            for pin in p["pins"]:
+                r = pt.get(pin)
+                if r:
+                    role[p["id"] + "." + pin] = r
+        else:
+            for nm in part_lead_names(p):
+                role[nm] = "passive"
+    for nm, L in bd.state["leads"].items():
+        if L.get("role"):
+            role[nm] = L["role"]
+    # 出力-出力ショート（ドライバ衝突）: 同一ネットに role=out の端子が 2 本以上＝確実な競合。
+    # oc/od/tri/bidir はワイヤードOR/バス共有が成立するため数えない。外部出力端子(W.*)も同列に数える。
+    drivers = {}
+    for nm, net in bd.net_of_lead.items():
+        if net and role.get(nm) == "out":
+            drivers.setdefault(net, []).append(nm)
+    out["multipleDrivers"] = [{"net": n, "pins": sorted(ps)} for n, ps in sorted(drivers.items()) if len(ps) >= 2]
     return out
 
 def _seg_gap(a, b, c, d):
@@ -665,7 +689,8 @@ def solve(state, cfg, propose=False):
              + sum(1 for x in ee["wireLength"] if not x["ok"])
              + len(ee["openNets"]) + len(ee["unconnectedLeads"]) + len(ee["duplicateIds"])
              + sum(1 for x in ee["polarity"] if x["ok"] is False)
-             + sum(1 for x in ee["powerReach"] if not x["ok"]) + len(ee["floatingPowerPins"]))
+             + sum(1 for x in ee["powerReach"] if not x["ok"]) + len(ee["floatingPowerPins"])
+             + len(ee["multipleDrivers"]))
     ee_warn = (sum(1 for o in bd.overlaps if o["sev"] == "warn")
                + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"])
                + sum(1 for g in ee["grounding"] if g["daisyReturn"]))
@@ -718,6 +743,7 @@ if __name__ == "__main__":
           " decoupCoverage:", sum(1 for x in e["decouplingCoverage"] if x["covered"]), "/", len(e["decouplingCoverage"]))
     print(" GND topology:", json.dumps(e["grounding"], ensure_ascii=False),
           " guard(HIZ):", len(e["guard"]), " crosstalk pairs:", len(e["crosstalk"]))
+    print(" multipleDrivers(out-out short):", json.dumps(e["multipleDrivers"], ensure_ascii=False))
     for w in result["warnings"]:
         print("  *", w)
     if dst:
