@@ -59,7 +59,7 @@ details{border:1px solid var(--bd);border-radius:10px;padding:7px 11px;margin:7p
 summary{cursor:pointer;font-size:13px;font-weight:600}
 #audit{font-size:12.5px;line-height:1.85;background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:9px 11px;transition:box-shadow .5s,border-color .5s}
 #audit.flash{border-color:var(--acc2);box-shadow:0 0 0 3px rgba(17,168,224,.22)}
-.ok{color:var(--ok)}.ng{color:var(--ng);font-weight:700}.wr{color:var(--wr)}
+.ok{color:var(--ok)}.ng{color:var(--ng);font-weight:700}.wr{color:var(--wr)}.mut2{color:var(--mut)}
 .note{color:var(--acc);border-bottom:1px dashed rgba(94,220,255,.3);display:block;margin-bottom:3px;padding-bottom:3px}
 textarea{width:100%;height:62px;background:rgba(0,0,0,.35);color:var(--tx);border:1px solid var(--bd);border-radius:8px;font:11px Consolas,monospace;padding:6px}
 aside input[type=text]{background:#171c22;color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:5px 8px;font-size:12.5px;width:100%;margin:2px 0}
@@ -166,6 +166,7 @@ var DEFCFG={pitch:2.54,allowStanding:true,
  partOv:{C4:{dia:5.0},C6:{dia:6.5}},
  rules:{maxJoints:3,singleLeadAllow:['IF_MIC','MIC_IN','SPK_N','SPK_P']},
  railRank:{V3V3:2,VMID:1,GND:0},
+ powerEntry:{V3V3:['W.RED'],GND:['W.BLK1','W.BLK2']},
  classes:{HIZ:{nets:['INA_P'],maxWire:6,adjPen:8,keepAway:['OUT','PWR'],keepHoles:2},
  SIG:{nets:['INA_N','SPKP_AC','SPKN_AC','INA2_P','INA2_N','SUM','MIC_IN','SPK_P','SPK_N','VREF'],maxWire:14,adjPen:3,keepAway:[],keepHoles:0},
  OUT:{nets:['OUTA1','SPK_OUT','OUTB2','IF_MIC'],maxWire:99,adjPen:2,keepAway:['HIZ'],keepHoles:2},
@@ -173,7 +174,7 @@ var DEFCFG={pitch:2.54,allowStanding:true,
  decoupling:[{cap:'C3',pin:'U1.8',max:2},{cap:'C9',pin:'U2.8',max:2},{cap:'C5',pin:'C6.p',max:3},{cap:'C4',pin:'W.RED',max:4}],
  weights:{bridgeBonus:20,wireLen:1.0,cautionBase:1.5,hizMult:3.0,keepAwayPen:6.0},
  order:['C6','C4','C3','C9','C5','R5','R4','R1','R2','R3','R10','R9','R7','R8','R12','R11','R13']};
-var CFG=deep(DEFCFG),LSKEY='perfwire_v1';
+var CFG=deep(DEFCFG),LSKEY='perfwire_v1',APPVER='0.2.0';
 var LANG=(function(){try{return localStorage.getItem('perfwire_lang')||((navigator.language||'').indexOf('ja')===0?'ja':'en');}catch(e){return 'ja';}})();
 var JE={
 '配線を再計算':'Rewire','配置を再提案':'Re-place & route','案として保存':'Save as proposal','作業ガイド':'Work guide','元に戻す':'Undo','開く…':'Open…','書き出し':'Export','URL共有':'Share URL',
@@ -395,6 +396,38 @@ D.parts.forEach(function(p){if(p.kind!=='elec'||p.plus===undefined)return;var na
 var pn=D.leads[names[p.plus]]?D.leads[names[p.plus]].net:null,mn=D.leads[names[1-p.plus]]?D.leads[names[1-p.plus]].net:null;
 if(rank[pn]!==undefined&&rank[mn]!==undefined)pol.push({part:p.id,ok:rank[pn]>rank[mn]});});
 return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol};}
+function holeNetMap(){var hn={};Object.keys(D.leads).forEach(function(k){if(D.leads[k].net)hn[key(D.leads[k].at)]=D.leads[k].net;});
+D.parts.forEach(function(p){partLeads(p).forEach(function(L){var net=D.leads[L.name]?D.leads[L.name].net:null;if(net)hn[key(L.pos)]=net;});});
+D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});return hn;}
+function topoAudit(){
+var pe=CFG.powerEntry||DEFCFG.powerEntry||{},rank=CFG.railRank||DEFCFG.railRank||{};
+var hn=holeNetMap();
+var adj={};function link(a,b){var ka=key(a),kb=key(b);(adj[ka]=adj[ka]||{})[kb]=1;(adj[kb]=adj[kb]||{})[ka]=1;}
+D.padBridges.forEach(function(b){link(b[0],b[1]);});
+D.wires.forEach(function(w){var ea=w.a.direct?w.a.pad:w.a.hole,eb=w.b.direct?w.b.pad:w.b.hole;link(ea,eb);[w.a,w.b].forEach(function(e){if(!e.direct&&e.bridgeTo)link(e.hole,e.bridgeTo);});});
+var lm={};Object.keys(D.leads).forEach(function(k){lm[k]=D.leads[k].at;});
+D.parts.forEach(function(p){partLeads(p).forEach(function(L){lm[L.name]=L.pos;});});
+var pwr=(CFG.classes.PWR&&CFG.classes.PWR.nets)||[];var ret=null,best=1e9;pwr.forEach(function(n){if(rank[n]!==undefined&&rank[n]<best){best=rank[n];ret=n;}});
+var grounding=[];
+Object.keys(pe).forEach(function(net){var roots=pe[net].map(function(l){return lm[l];}).filter(Boolean).map(key);
+var nodes=Object.keys(hn).filter(function(kk){return hn[kk]===net;});if(!roots.length||nodes.length<3)return;
+var depth={},seen={},fr=roots.slice(),d=0;roots.forEach(function(r){seen[r]=1;depth[r]=0;});
+while(fr.length){var nx=[];d++;fr.forEach(function(uu){Object.keys(adj[uu]||{}).forEach(function(vv){if(hn[vv]===net&&!seen[vv]){seen[vv]=1;depth[vv]=d;nx.push(vv);}});});fr=nx;}
+var reached=Object.keys(seen).length,maxD=0;Object.keys(depth).forEach(function(kk){if(depth[kk]>maxD)maxD=depth[kk];});
+var rootDeg=0;roots.forEach(function(r){Object.keys(adj[r]||{}).forEach(function(vv){if(hn[vv]===net)rootDeg++;});});
+var topo=maxD<=2?'star':(maxD>=Math.max(4,reached*0.6)?'daisy-chain':'mixed');
+grounding.push({net:net,reached:reached,maxDepth:maxD,topology:topo,daisyReturn:(topo==='daisy-chain'&&net===ret)});});
+var guard=[];Object.keys(hn).reduce(function(acc,kk){return acc;},0);
+var hizNets={};Object.keys(hn).forEach(function(kk){if(clsOf(hn[kk])==='HIZ')hizNets[hn[kk]]=1;});
+Object.keys(hizNets).forEach(function(net){guard.push(net);});
+var sens={HIZ:1,SIG:1},segs=[];
+D.wires.forEach(function(w){var a=w.a.direct?w.a.pad:w.a.hole,b=w.b.direct?w.b.pad:w.b.hole;if(dist(a,b)>=1.5)segs.push([w.net,a,b]);});
+var cross=0;for(var i=0;i<segs.length;i++)for(var j=i+1;j<segs.length;j++){var n1=segs[i][0],n2=segs[j][0];if(n1===n2)continue;if(!(sens[clsOf(n1)]||sens[clsOf(n2)]))continue;
+var a1=segs[i][1],b1=segs[i][2],a2=segs[j][1],b2=segs[j][2];var v1=[b1[0]-a1[0],b1[1]-a1[1]],v2=[b2[0]-a2[0],b2[1]-a2[1]];
+var crs=Math.abs(v1[0]*v2[1]-v1[1]*v2[0]),mag=Math.hypot(v1[0],v1[1])*Math.hypot(v2[0],v2[1]);if(!mag)continue;
+if(crs/mag<0.35&&segGap(a1,b1,a2,b2)<2.0)cross++;}
+return {grounding:grounding,guard:guard,crosstalk:cross};}
+function segGap(a,b,c,d){function ps(p,s,e){var dx=e[0]-s[0],dy=e[1]-s[1],L=dx*dx+dy*dy,t=L?Math.max(0,Math.min(1,((p[0]-s[0])*dx+(p[1]-s[1])*dy)/L)):0;return Math.hypot(p[0]-(s[0]+dx*t),p[1]-(s[1]+dy*t));}return Math.min(ps(a,c,d),ps(b,c,d),ps(c,a,b),ps(d,a,b));}
 function audit(){var g=geom(),h='',ngs=0;
 if(calcNote)h+='<span class="note">'+calcNote+'</span>';
 var rows2=[];
@@ -428,6 +461,12 @@ if(erc.singleLeadNets.length)eb.push('<span class="wr">単一リード '+erc.sin
 if(erc.unclassifiedNets.length)eb.push('<span class="wr">未分類 '+erc.unclassifiedNets.join(',')+'</span>');
 if(erc.keepAway.length)eb.push('<span class="wr">離隔違反 '+erc.keepAway.length+'</span>');
 h+='<br>ERC: '+(eb.length?eb.join(' '):'<span class="ok">クリーン ✓</span>');
+var topo=topoAudit();
+var tb=[];
+topo.grounding.forEach(function(gr){tb.push((gr.daisyReturn?'<span class="wr">':'<span class="mut2">')+gr.net+' '+gr.topology+'(深'+gr.maxDepth+')</span>');});
+if(topo.guard.length)tb.push('<span class="mut2">高Zガード推奨 '+topo.guard.join(',')+'</span>');
+if(topo.crosstalk)tb.push('<span class="mut2">平行近接 '+topo.crosstalk+'対</span>');
+h+='<br>トポロジ: '+(tb.length?tb.join(' '):'<span class="ok">—</span>');
 h+='<br>総合: '+(ngs?'<span class="ng">NG '+ngs+'件</span>':'<span class="ok">PASS ✓ 製作可</span>');
 var el=document.getElementById('audit');el.innerHTML=h;
 el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');
@@ -550,7 +589,7 @@ var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.dire
 document.getElementById('st-stats').innerHTML='被覆線 <b>'+D.wires.length+'</b>（直付 '+direct+'）/ 警告 <b>'+warn+'</b> / ズーム '+Math.round(ZOOM*100)+'%'+(selPart?(' / 選択 <b>'+selPart.id+'</b>'+(selPart.locked?'(ロック)':'')):'')+(ds?(' / 比較[<b>'+DIFF.name+'</b>] 移動'+ds.mv+' 部品+'+ds.pAdd+'−'+ds.pDel+' 線+'+ds.wAdd+'−'+ds.wDel+' 橋+'+ds.bAdd+'−'+ds.bDel):'');
 if(selPart!==palLast){palLast=selPart;buildPalEdit();}
 saveLS();}
-function loadProp(i){if(GUIDE.on)guideEnd();if(DIFF.on){DIFF.on=false;DIFF.base=null;var db=document.getElementById('pw-diff');if(db)db.textContent=tr('比較');}curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];cols=D.grid.cols;rows=D.grid.rows;selPart=null;drag=null;hoverNet=null;buildNetClasses();render();}
+function loadProp(i){if(GUIDE.on)guideEnd();if(DIFF.on){DIFF.on=false;DIFF.base=null;var db=document.getElementById('pw-diff');if(db)db.textContent=tr('比較');}curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];cols=D.grid.cols;rows=D.grid.rows;selPart=null;drag=null;hoverNet=null;calcNote='';if(!D.wires||!D.wires.length){try{connect();}catch(e){}}buildNetClasses();render();}
 function getPt(e){var r=svg.getBoundingClientRect(),sx=(svg.width.baseVal.value||r.width)/r.width;return[(e.clientX-r.left)*sx,(e.clientY-r.top)*sx];}
 function nearHole(x,y){var ci=Math.round((x-OX)/PITCH),c=MIRROR?cols-ci:ci+1,r=Math.round((y-OY)/PITCH)+1;if(!inb(c,r))return null;var p=xy(c,r);return Math.hypot(x-p[0],y-p[1])<PITCH*0.5?[c,r]:null;}
 function segd(px,py,ax,ay,bx,by){var dx=bx-ax,dy=by-ay,L=dx*dx+dy*dy,t=L?((px-ax)*dx+(py-ay)*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+dx*t),py-(ay+dy*t));}
@@ -634,8 +673,9 @@ function importObj(d2){snap();['grid','blockedHoles','leads','parts','padBridges
 if(d2.proposals){props=d2.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null};});curI=0;refreshSel();loadProp(0);auditNow();return;}
 if(d2.cfg&&d2.cfg.weights&&d2.cfg.physical)CFG=d2.cfg;
 cols=D.grid.cols;rows=D.grid.rows;buildSliders();buildNetClasses();refreshSel();render();auditNow();}
-function saveLS(){try{var st={curI:curI,cfg:CFG,names:props.map(function(p){return p.name;}),states:props.map(function(p){return p.cur;})};localStorage.setItem(LSKEY,JSON.stringify(st,function(k,v){return (typeof k==='string'&&k.charAt(0)==='_')?undefined:v;}));}catch(e){}}
+function saveLS(){try{var st={v:APPVER,curI:curI,cfg:CFG,names:props.map(function(p){return p.name;}),states:props.map(function(p){return p.cur;})};localStorage.setItem(LSKEY,JSON.stringify(st,function(k,v){return (typeof k==='string'&&k.charAt(0)==='_')?undefined:v;}));}catch(e){}}
 function loadLS(){try{var st=JSON.parse(localStorage.getItem(LSKEY));if(!st)return;
+if(st.v!==APPVER){try{localStorage.removeItem(LSKEY);}catch(e){}return;}
 if(st.cfg&&st.cfg.weights&&st.cfg.physical&&st.cfg.classes&&st.cfg.partOv&&st.cfg.rules)CFG=st.cfg;
 if(st.states)st.states.forEach(function(s,i){if(s){if(!props[i])props[i]={name:(st.names&&st.names[i])||('案'+i),orig:s,cur:null};props[i].cur=s;if(st.names&&st.names[i])props[i].name=st.names[i];}});
 if(typeof st.curI==='number'&&props[st.curI])curI=st.curI;}catch(e){}}

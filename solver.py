@@ -329,6 +329,116 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
     out["decouplingCoverage"] = cov
     return out
 
+def _seg_gap(a, b, c, d):
+    """2 線分 ab, cd の最短距離（端点ベース近似）。被覆線の実経路は不問＝端点直線で評価"""
+    def pt_seg(p, s, e):
+        sx, sy, ex, ey = s[0], s[1], e[0], e[1]
+        dx, dy = ex - sx, ey - sy
+        L = dx * dx + dy * dy
+        t = 0.0 if L == 0 else max(0.0, min(1.0, ((p[0] - sx) * dx + (p[1] - sy) * dy) / L))
+        return math.hypot(p[0] - (sx + dx * t), p[1] - (sy + dy * t))
+    return min(pt_seg(a, c, d), pt_seg(b, c, d), pt_seg(c, a, b), pt_seg(d, a, b))
+
+def topology_audit(bd, net_of_hole, pad_bridges, wires, cfg):
+    """ロードマップ EE: スター/デイジーGND トポロジ評価・高Zガード助言・平行配線クロストーク（端点近似）。"""
+    out = {"grounding": [], "guard": [], "crosstalk": []}
+    # ネットごとの隣接グラフ（padBridges + wires + bridgeTo）
+    adj = {}
+    def link(a, b):
+        a, b = tuple(a), tuple(b)
+        adj.setdefault(a, set()).add(b)
+        adj.setdefault(b, set()).add(a)
+    for br in pad_bridges:
+        link(br[0], br[1])
+    for w in wires:
+        ea = tuple(w["a"]["pad"] if w["a"].get("direct") else w["a"]["hole"])
+        eb = tuple(w["b"]["pad"] if w["b"].get("direct") else w["b"]["hole"])
+        link(ea, eb)
+        for e in (w["a"], w["b"]):
+            if not e.get("direct") and e.get("bridgeTo"):
+                link(tuple(e["hole"]), tuple(e["bridgeTo"]))
+
+    # スターGND / デイジーチェーン評価（power_entry を根に BFS）
+    pe = cfg.get("power_entry", {})
+    return_net = None
+    rank = cfg.get("rail_rank", {})
+    pwr_nets = set(cfg.get("net_classes", {}).get("PWR", {}).get("nets", []))
+    if rank:
+        ranked = [(rank[n], n) for n in pwr_nets if n in rank]
+        if ranked:
+            return_net = min(ranked)[1]  # 最低電位＝リターン（GND）
+    for net, entry_leads in pe.items():
+        roots = [bd.lead_pos[l] for l in entry_leads if l in bd.lead_pos]
+        nodes = [h for h, n in net_of_hole.items() if n == net]
+        if not roots or len(nodes) < 3:
+            continue
+        depth, seen, frontier, d = {}, set(), [tuple(r) for r in roots], 0
+        for r in frontier:
+            seen.add(r)
+            depth[r] = 0
+        while frontier:
+            nxt = []
+            d += 1
+            for u in frontier:
+                for v in adj.get(u, ()):
+                    if net_of_hole.get(v) == net and v not in seen:
+                        seen.add(v)
+                        depth[v] = d
+                        nxt.append(v)
+            frontier = nxt
+        reached = len(seen)
+        max_depth = max(depth.values()) if depth else 0
+        root_deg = sum(1 for r in roots for v in adj.get(tuple(r), ()) if net_of_hole.get(v) == net)
+        # デイジーチェーン指標: 経路長が長く分岐が少ない＝共通インピーダンス結合リスク
+        topo = "star" if max_depth <= 2 else ("daisy-chain" if max_depth >= max(4, reached * 0.6) else "mixed")
+        daisy = topo == "daisy-chain" and net == return_net
+        out["grounding"].append({"net": net, "rootDegree": root_deg, "reached": reached,
+                                 "maxDepth": max_depth, "topology": topo, "daisyReturn": daisy})
+
+    # 高Zガード助言（HIZ ノードの露出辺。実際のガード電位はバッファ出力＝設計判断）
+    for net in sorted({n for n in bd.net_of_lead.values() if n}):
+        if bd.cls(net) != "HIZ":
+            continue
+        hs = sorted([h for h, n in net_of_hole.items() if n == net])
+        exposed = 0
+        for h in hs:
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    q = (h[0] + dx, h[1] + dy)
+                    if net_of_hole.get(q) != net and bd.inb(q):
+                        exposed += 1
+        out["guard"].append({"net": net, "holes": [list(h) for h in hs], "exposedSides": exposed,
+                             "note": "高Zノード。隣接の空き/異ネット辺をガード電位（通常はバッファ出力など低Z同電位）で囲うとリーク/結合を低減"})
+
+    # クロストーク（端点近似）: 異ネットの被覆線が平行かつ近接、片方が HIZ/SIG
+    sens = {"HIZ", "SIG"}
+    segs = []
+    for w in wires:
+        a = tuple(w["a"]["pad"] if w["a"].get("direct") else w["a"]["hole"])
+        b = tuple(w["b"]["pad"] if w["b"].get("direct") else w["b"]["hole"])
+        if dist(a, b) >= 1.5:
+            segs.append((w["net"], a, b))
+    for i in range(len(segs)):
+        for j in range(i + 1, len(segs)):
+            n1, a1, b1 = segs[i]
+            n2, a2, b2 = segs[j]
+            if n1 == n2 or not ({bd.cls(n1), bd.cls(n2)} & sens):
+                continue
+            v1 = (b1[0] - a1[0], b1[1] - a1[1])
+            v2 = (b2[0] - a2[0], b2[1] - a2[1])
+            cross = abs(v1[0] * v2[1] - v1[1] * v2[0])
+            mag = math.hypot(*v1) * math.hypot(*v2)
+            if mag == 0:
+                continue
+            sin_ang = cross / mag  # 0=平行
+            gap = _seg_gap(a1, b1, a2, b2)
+            if sin_ang < 0.35 and gap < 2.0:
+                out["crosstalk"].append({"netA": n1, "netB": n2, "gap": round(gap, 1),
+                                         "hiz": bd.cls(n1) == "HIZ" or bd.cls(n2) == "HIZ"})
+    return out
+
 def solve(state, cfg, propose=False):
     bd = Board(state, cfg)
     W = cfg["weights"]
@@ -533,6 +643,7 @@ def solve(state, cfg, propose=False):
         ee["wireLength"].append({"net": w["net"], "holes": round(wlen, 1), "max": mx, "ok": wlen <= mx})
 
     ee.update(erc_audit(bd, net_of_hole, pad_bridges, wires, cfg))
+    ee.update(topology_audit(bd, net_of_hole, pad_bridges, wires, cfg))
 
     ee_ng = (sum(1 for x in ee["decoupling"] if not x["ok"]) + len(ee["padJoints"])
              + sum(1 for o in bd.overlaps if o["sev"] == "ng")
@@ -541,7 +652,8 @@ def solve(state, cfg, propose=False):
              + sum(1 for x in ee["polarity"] if x["ok"] is False)
              + sum(1 for x in ee["powerReach"] if not x["ok"]))
     ee_warn = (sum(1 for o in bd.overlaps if o["sev"] == "warn")
-               + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"]))
+               + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"])
+               + sum(1 for g in ee["grounding"] if g["daisyReturn"]))
 
     out = json.loads(json.dumps(state))
     out["parts"] = bd.parts
@@ -588,6 +700,8 @@ if __name__ == "__main__":
           " powerReach NG:", json.dumps(preachbad, ensure_ascii=False),
           " keepAway viol:", len(e["keepAway"]),
           " decoupCoverage:", sum(1 for x in e["decouplingCoverage"] if x["covered"]), "/", len(e["decouplingCoverage"]))
+    print(" GND topology:", json.dumps(e["grounding"], ensure_ascii=False),
+          " guard(HIZ):", len(e["guard"]), " crosstalk pairs:", len(e["crosstalk"]))
     for w in result["warnings"]:
         print("  *", w)
     if dst:

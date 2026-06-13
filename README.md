@@ -52,6 +52,7 @@ The plugin bundles the same skill (namespaced `perfwire:perfwire`; `plugin.json`
 - **Physical footprints** — resistor capsules, electrolytic circles (per-part diameter override), film-cap boxes; bodies block holes; tall×tall overlaps are errors, tall×flat are warnings; lead span min/max derived from body length + bend margin; vertical (standing) resistor mounting.
 - **EE constraints** — net classes (high-Z / signal / output / power) with per-class wire-length limits and adjacency penalties, decoupling-cap proximity constraints, input/output separation, max solder joints per pad.
 - **Electrical rule check (ERC) + fab-ready gate** — runs on the board graph before you solder: open nets (a net the wiring doesn't fully connect), single-lead/floating nets (with an allowlist for intentional I/O points), unconnected part leads, duplicate refdes, unclassified nets, electrolytic-polarity sanity (optional `rail_rank`), power-net reachability to a declared supply entry (optional `power_entry`), decoupling-cap presence per supply pin, keep-away violations for high-Z nodes, and 8-neighbour (incl. diagonal) different-net adjacency cautions. The audit emits a single `fabReady` flag plus a per-finding breakdown, mirrored live in the editor's audit panel and in `solver.py`.
+- **Grounding / signal-integrity review** — star-vs-daisy-chain topology scoring (BFS depth from the declared power entry; flags a daisy-chained return net = common-impedance coupling risk), high-Z guard advisories, and a parallel-run crosstalk heuristic for sensitive nets (endpoint-segment proximity + near-parallel angle — jumper routes aren't modelled, so this is advisory). Python and the in-browser editor produce identical results.
 - **In-browser solver** — greedy placement + net connection + live audit, all client-side JS. Tune thresholds with sliders, recalculate instantly. The same solver ships as `solver.py` for CLI / CI use.
 - **Photo underlay** — drop a photo of the real board under the grid (opacity / scale / fine rotation / mirror for backside shots, drag to align) and trace reality by dragging parts onto it. AI guessing hole positions from photos fails; a human tracing over a photo doesn't.
 - **Guided soldering mode** — walk the build one joint at a time (parts → bridges → wires) on a dimmed board with the current step highlighted and named (e.g. `6B`). Arrow keys to navigate, Enter to check off (progress persists), mirror view for soldering from the back side.
@@ -101,10 +102,10 @@ Extracted from a real project: a 2× opamp-ic active buffer for a telephone-clie
 
 ## Roadmap
 
+- Guard-ring *synthesis* (auto-placing guard holes/traces — today only an advisory is emitted) and a routed crosstalk model (today: an endpoint-segment heuristic, since jumper routes aren't modelled). Star/daisy ground-topology scoring, high-Z guard advisories, keep-away re-audit and power-reachability ERC already ship.
 - Stripboard (Veroboard) support — copper strips + track cuts instead of solder bridges
 - JS↔Python solver parity (golden tests) — requires factoring the in-browser solver into an importable module first
-- Deeper power/signal integrity: full star-ground topology depth/branching scoring, guard-ring synthesis, and a crosstalk model for parallel wire runs (basic keep-away re-audit + power-reachability ERC already ship; routes themselves aren't modelled, only endpoints)
-- i18n: UI chrome (buttons, sliders, hints, commands) ships in English/Japanese — auto-detected from the browser, toggle in the header. Generated reports (audit panel, guide steps, continuity checklist) are still Japanese-only.
+- i18n: UI chrome (buttons, sliders, hints, commands) ships in English/Japanese (auto-detected, toggle in the header). Generated reports (audit panel, guide steps, continuity checklist) are still Japanese-only.
 
 ## License
 
