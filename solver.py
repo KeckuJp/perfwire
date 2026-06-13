@@ -115,11 +115,13 @@ class Board:
         self.cols = state["grid"]["cols"]
         self.rows = state["grid"]["rows"]
         self.blocked = {tuple(h) for h in state.get("blockedHoles", [])}
-        self.net_of_lead = {k: v["net"] for k, v in state["leads"].items()}
-        # 不正形状の部品（pins 欠落/空の IC、leads が2本未満の素子）は取り込み時に除外し、
-        # 監査全体が例外で落ちないようにする（電気的実体が無いので報告対象も無い）。
+        self.net_of_lead = {k: v.get("net") for k, v in state["leads"].items()}
+        # 不正形状の部品（pins 欠落/空/非dict の IC、leads が list でない/2本未満の素子）は取り込み時に
+        # 除外し、監査全体が例外で落ちないようにする（電気的実体が無いので報告対象も無い）。
         def _valid(p):
-            return bool(p.get("pins")) if p.get("kind") == "ic" else (bool(p.get("leads")) and len(p["leads"]) >= 2)
+            if p.get("kind") == "ic":
+                return isinstance(p.get("pins"), dict) and len(p["pins"]) > 0
+            return isinstance(p.get("leads"), list) and len(p["leads"]) >= 2
         self.parts = [p for p in json.loads(json.dumps(state["parts"])) if _valid(p)]
         self.state = state
         self.cls_of_net = {}
@@ -399,7 +401,8 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
     role = {}
     for p in bd.parts:
         if p["kind"] == "ic":
-            pt = p.get("pinTypes", {})
+            pt = p.get("pinTypes")
+            pt = pt if isinstance(pt, dict) else {}
             for pin in p["pins"]:
                 r = pt.get(pin)
                 if r:

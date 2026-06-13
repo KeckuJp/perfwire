@@ -235,6 +235,8 @@ var JE={
 '手順':'Step','完了':'done','この手順は済':'this step done','部品':'Part','立て実装':'standing','を挿入:':' — insert at:','はんだブリッジ:':'Solder bridge:','被覆線':'Jumper','の足へ直付け':' direct-solder to lead','に挿し':' insert at',' へブリッジ':' bridge to','※ブリッジ先なし（要修正）':'(no bridge target — fix)','ネット':'net','カット':'Cut',
 '配線再計算: 被覆線':'Rewire: jumpers','本':'','提案:':'Proposed:','部品を再配置 / 被覆線':'parts re-placed / jumpers',
 '許容ゾーン':'allowed zone','高Z分離ゾーン':'high-Z keep-out','(縦)':'(vert)',
+'直付':'direct','ズーム':'zoom','選択':'sel','ロック':'lock','移動':'moved','線':'wires','橋':'bridges',
+'モード: カット（ストリップ基板）':'Mode: cut (stripboard)','基板種別を切替（ユニバーサル⇄ストリップ）':'Toggle board type (perfboard / stripboard)','ストリップ向き切替（行⇄列）':'Toggle strip axis (row / column)',
 'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。':'Ring = jumper insertion hole. Drag to a free adjacent hole (the bridge follows). Drop onto a lead to direct-solder.',
 '本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。':'Drag bodies or leads; valid holes glow green while dragging a lead. Click to select, then toggle lock.',
 '隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。':'Drag across two adjacent holes to add a solder bridge; click an existing one to delete.',
@@ -421,7 +423,7 @@ powerReach.push({net:net,components:rk.length,ok:rk.length<=1&&rooted});});
 var pwrNets=(CFG.classes.PWR&&CFG.classes.PWR.nets)||[],floating=[];
 D.parts.forEach(function(p){if(p.kind!=='ic')return;partLeads(p).forEach(function(L){var net=D.leads[L.name]?D.leads[L.name].net:null;if(pwrNets.indexOf(net)>=0&&(leadsPerNet[net]||[]).length<2)floating.push(L.name);});});
 var role={};
-D.parts.forEach(function(p){if(p.kind==='ic'){var pt=p.pinTypes||{};Object.keys(p.pins).forEach(function(k){if(pt[k])role[p.id+'.'+k]=pt[k];});}else{partLeads(p).forEach(function(L){role[L.name]='passive';});}});
+D.parts.forEach(function(p){if(p.kind==='ic'){var pt=(p.pinTypes&&typeof p.pinTypes==='object')?p.pinTypes:{};Object.keys(p.pins).forEach(function(k){if(pt[k])role[p.id+'.'+k]=pt[k];});}else{partLeads(p).forEach(function(L){role[L.name]='passive';});}});
 Object.keys(D.leads).forEach(function(k){if(D.leads[k].role)role[k]=D.leads[k].role;});
 var drv={};Object.keys(D.leads).forEach(function(k){var net=D.leads[k].net;if(net&&role[k]==='out')(drv[net]=drv[net]||[]).push(k);});
 var multi=Object.keys(drv).filter(function(n){return drv[n].length>=2;}).sort().map(function(n){return {net:n,pins:drv[n].sort()};});
@@ -635,11 +637,11 @@ if(GUIDE.on&&GUIDE.steps[GUIDE.i]){
 E('rect',{x:0,y:0,width:W2,height:H2,fill:'rgba(5,8,12,0.76)','pointer-events':'none'});
 try{drawStep(GUIDE.steps[GUIDE.i]);}catch(e){}}
 var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)direct++;});});
-document.getElementById('st-stats').innerHTML='被覆線 <b>'+D.wires.length+'</b>（直付 '+direct+'）/ 警告 <b>'+warn+'</b> / ズーム '+Math.round(ZOOM*100)+'%'+(selPart?(' / 選択 <b>'+selPart.id+'</b>'+(selPart.locked?'(ロック)':'')):'')+(ds?(' / 比較[<b>'+DIFF.name+'</b>] 移動'+ds.mv+' 部品+'+ds.pAdd+'−'+ds.pDel+' 線+'+ds.wAdd+'−'+ds.wDel+' 橋+'+ds.bAdd+'−'+ds.bDel):'');
+document.getElementById('st-stats').innerHTML=tr('被覆線')+' <b>'+D.wires.length+'</b> ('+tr('直付')+' '+direct+') / '+tr('警告')+' <b>'+warn+'</b> / '+tr('ズーム')+' '+Math.round(ZOOM*100)+'%'+(selPart?(' / '+tr('選択')+' <b>'+selPart.id+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'')+(ds?(' / '+tr('比較')+'[<b>'+DIFF.name+'</b>] '+tr('移動')+ds.mv+' '+tr('部品')+'+'+ds.pAdd+'−'+ds.pDel+' '+tr('線')+'+'+ds.wAdd+'−'+ds.wDel+' '+tr('橋')+'+'+ds.bAdd+'−'+ds.bDel):'');
 if(selPart!==palLast){palLast=selPart;buildPalEdit();}
 saveLS();}
 function loadProp(i){if(GUIDE.on)guideEnd();if(DIFF.on){DIFF.on=false;DIFF.base=null;var db=document.getElementById('pw-diff');if(db)db.textContent=tr('比較');}curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];
-if(D.parts)D.parts=D.parts.filter(function(p){return p.kind==='ic'?(p.pins&&Object.keys(p.pins).length):(p.leads&&p.leads.length>=2);});
+if(D.parts)D.parts=D.parts.filter(function(p){return p.kind==='ic'?(p.pins&&typeof p.pins==='object'&&Object.keys(p.pins).length):(Array.isArray(p.leads)&&p.leads.length>=2);});
 cols=D.grid.cols;rows=D.grid.rows;selPart=null;drag=null;hoverNet=null;calcNote='';if(!D.wires||!D.wires.length){try{connect();calcNote=tr('自動結線: 空の配線を補完（被覆線')+' '+D.wires.length+tr('本）');}catch(e){}}buildNetClasses();render();}
 function getPt(e){var r=svg.getBoundingClientRect(),sx=(svg.width.baseVal.value||r.width)/r.width;return[(e.clientX-r.left)*sx,(e.clientY-r.top)*sx];}
 function nearHole(x,y){var ci=Math.round((x-OX)/PITCH),c=MIRROR?cols-ci:ci+1,r=Math.round((y-OY)/PITCH)+1;if(!inb(c,r))return null;var p=xy(c,r);return Math.hypot(x-p[0],y-p[1])<PITCH*0.5?[c,r]:null;}
