@@ -199,7 +199,7 @@ var DEFCFG={pitch:2.54,allowStanding:true,
  OUT:{nets:['OUTA1','SPK_OUT','OUTB2','IF_MIC'],maxWire:99,adjPen:2,keepAway:['HIZ'],keepHoles:2},
  PWR:{nets:['V3V3','GND','VMID'],maxWire:99,adjPen:1,keepAway:[],keepHoles:0}},
  decoupling:[{cap:'C3',pin:'U1.8',max:2},{cap:'C9',pin:'U2.8',max:2},{cap:'C5',pin:'C6.p',max:3},{cap:'C4',pin:'W.RED',max:4}],
- weights:{bridgeBonus:20,wireLen:1.0,cautionBase:1.5,hizMult:3.0,keepAwayPen:6.0},
+ weights:{bridgeBonus:20,wireLen:1.0,cautionBase:1.5,hizMult:3.0,keepAwayPen:6.0,diagPen:4.0,spanPen:1.5,standPen:1.0},
  order:['C6','C4','C3','C9','C5','R5','R4','R1','R2','R3','R10','R9','R7','R8','R12','R11','R13']};
 var CFG=deep(DEFCFG),LSKEY='perfwire_v1',APPVER='0.3.0';
 var LANG=(function(){try{return localStorage.getItem('perfwire_lang')||((navigator.language||'').indexOf('ja')===0?'ja':'en');}catch(e){return 'ja';}})();
@@ -257,6 +257,10 @@ var JE={
 '写真を読み込み（下絵）':'Load photo (underlay)','写真を消去':'Clear photo','裏面ビュー 切替':'Toggle mirror view','作業ガイドを開始':'Start work guide','作業ガイドの進捗をリセット':'Reset guide progress','導通チェックリスト生成':'Generate continuity checklist',
 '比較':'Diff','比較を終了':'Close diff','編集前':'unedited original','比較: 編集前と比較':'Diff vs unedited original','比較を終了する':'Close the diff overlay',
 'デカップリング':'Decoupling','配線長':'Wire length','全クラス上限内':'all within class limits','本体重なり':'Body overlap','警告':'warn','パッド接合数':'Pad joints','以下':' max','ERC':'ERC','クリーン':'clean','トポロジ':'Topology','総合':'Overall','件':'','PASS ✓ 製作可':'PASS ✓ fab-ready',
+'レイアウト品質':'Layout quality','ジャンパ 中央{0}/最長{1}穴':'jumpers: median {0} / max {1} holes','長い線{0}':'{0} long','斜め抵抗{0}':'{0} diagonal R','過伸長{0}':'{0} stretched',
+'直交ペナルティ（斜め抑制）':'Orthogonality penalty (suppress diagonals)','抵抗などを斜めに置く配置への罰則。大きいほど縦横（直交）に寝かせた整然配置を優先。「配置を再提案」で反映。':'Penalty for placing parts diagonally. Higher = prefers tidy horizontal/vertical (orthogonal) placement. Applied on Re-place.','斜めも可':'diagonals ok','直交優先':'prefer orthogonal',
+'スパンペナルティ（伸長抑制）':'Span penalty (suppress stretching)','部品本体より大きく足を広げた配置への罰則。大きいほど足を伸ばさず最小スパンで置く。「配置を再提案」で反映。':'Penalty for spreading leads wider than the body. Higher = minimal span, leads not stretched. Applied on Re-place.','伸ばしてよい':'may stretch','詰めて置く':'keep tight',
+'立て実装ペナルティ':'Standing penalty','抵抗を縦に立てて置く配置への罰則。大きいほど寝かせ実装を優先（はんだ付け・検査が容易）。「配置を再提案」で反映。':'Penalty for mounting resistors standing/vertical. Higher = prefers lying-flat (easier to solder/inspect). Applied on Re-place.','立ててよい':'standing ok','寝かせ優先':'prefer lying',
 'ストリップ短絡':'Strip short','出力競合':'Output contention','オープンネット':'Open net','未接続':'Unconnected','電源ピン浮き':'Floating power pin','電源未到達':'Power unreachable','重複ID':'Duplicate id','極性逆':'Reversed polarity','単一リード':'Single-lead net','未駆動入力':'Undriven input','未分類':'Unclassified','離隔違反':'Keep-away viol','高Zガード推奨':'High-Z guard','平行近接':'Parallel-near','対':' pairs','深':'depth ','穴':'holes ',
 '自動結線: 空の配線を補完（被覆線':'Auto-wired empty board (wires','本）':')',
 '手順':'Step','完了':'done','この手順は済':'this step done','立て実装':'standing','を挿入:':' — insert at:','はんだブリッジ:':'Solder bridge:','の足へ直付け':' direct-solder to lead','に挿し':' insert at',' へブリッジ':' bridge to','※ブリッジ先なし（要修正）':'(no bridge target — fix)','ネット':'net','カット':'Cut','ビルドパケット':'Build packet',
@@ -427,7 +431,8 @@ var f=footCells(p,p1,p2,standing),okf=true;
 for(var fi=0;fi<f.cells.length;fi++){var fk=key(f.cells[fi]);if(ctx.occ[fk]||ctx.bodySet[fk]||ctx.icSet[fk]||blockedIdx(f.cells[fi][0],f.cells[fi][1])>=0||!inb(f.cells[fi][0],f.cells[fi][1])){okf=false;break;}}
 if(!okf)continue;
 if(anchor){var dl=(D.leads[nm[0]].net===anchorNet)?p1:p2;if(cheb(dl,anchor)>dec.max)continue;}
-var s=standing?0.5:0;
+var s=standing?(W.standPen||0.5):0;
+if(!standing){var _dx=Math.abs(p2[0]-p1[0]),_dy=Math.abs(p2[1]-p1[1]);if(_dx&&_dy)s+=(W.diagPen||0);var _mh=((CFG.physical[p.kind]&&CFG.physical[p.kind].bodyLen)||6.5)/CFG.pitch,_sh=Math.hypot(_dx,_dy);if(_sh>_mh)s+=(W.spanPen||0)*(_sh-_mh);}/* craft: prefer clean orthogonal, minimally-spanned placement (mirrors solver.py) */
 [[p1,n1],[p2,n2]].forEach(function(t2){var q=t2[0],nn=t2[1],nodes=ctx.placed[nn];
 if(nodes&&nodes.length){var adjHit=false,mind=99;nodes.forEach(function(m){var dd=dist(q,m);if(dd<mind)mind=dd;if(adj(q,m))adjHit=true;});
 s+=adjHit?-W.bridgeBonus:W.wireLen*mind;}
@@ -552,6 +557,15 @@ var crs=Math.abs(v1[0]*v2[1]-v1[1]*v2[0]),mag=Math.hypot(v1[0],v1[1])*Math.hypot
 if(crs/mag<0.35&&segGap(a1,b1,a2,b2)<2.0)cross++;}
 return {grounding:grounding,guard:guard,crosstalk:cross};}
 function segGap(a,b,c,d){function ps(p,s,e){var dx=e[0]-s[0],dy=e[1]-s[1],L=dx*dx+dy*dy,t=L?Math.max(0,Math.min(1,((p[0]-s[0])*dx+(p[1]-s[1])*dy)/L)):0;return Math.hypot(p[0]-(s[0]+dx*t),p[1]-(s[1]+dy*t));}return Math.min(ps(a,c,d),ps(b,c,d),ps(c,a,b),ps(d,a,b));}
+function craftMetrics(){/* placement-craft quality (display only; NOT in ee/fabReady) — surfaces what an expert would wince at */
+var jl=[];D.wires.forEach(function(w){var a=w.a.direct?w.a.pad:w.a.hole,b=w.b.direct?w.b.pad:w.b.hole;jl.push(dist(a,b));});
+jl.sort(function(x,y){return x-y;});var n=jl.length,med=n?jl[Math.floor(n/2)]:0,mx=n?jl[n-1]:0;
+var q1=n?jl[Math.floor(n*0.25)]:0,q3=n?jl[Math.floor(n*0.75)]:0,fence=q3+1.5*(q3-q1);
+var jlong=jl.filter(function(x){return x>Math.max(fence,med*1.6);}).length;/* data-derived outlier: own IQR / relative-to-own-median, no fixed hole cutoff */
+var rs=D.parts.filter(function(p){return p.kind==='r'&&p.leads&&p.leads.length===2;});
+var rp=CFG.physical.r||{},minH=((rp.bodyLen||6.5)+2*(rp.bend||0.3))/CFG.pitch;/* footprint-derived natural minimum span */
+var diag=0,stretch=0;rs.forEach(function(p){var a=p.leads[0],b=p.leads[1],dx=Math.abs(a[0]-b[0]),dy=Math.abs(a[1]-b[1]),span=Math.hypot(dx,dy);if(p.standing||span<2.05)return;if(dx&&dy)diag++;if(span>minH+1)stretch++;});
+return {jmed:Math.round(med*10)/10,jmax:Math.round(mx*10)/10,jlong:jlong,diag:diag,stretch:stretch};}
 function audit(){var g=geom(),h='',ngs=0;var GEE={wireLength:[],decoupling:[],padJoints:[],bodyOverlaps:{ng:0,wr:0}};
 if(calcNote)h+='<span class="note">'+calcNote+'</span>';
 var rows2=[];
@@ -604,6 +618,8 @@ if(topo.guard.length)tb.push('<span class="mut2">'+tr('高Zガード推奨')+' '
 if(topo.crosstalk)tb.push('<span class="mut2">'+tr('平行近接')+' '+topo.crosstalk+tr('対')+'</span>');
 h+='<br>'+tr('トポロジ')+': '+(tb.length?tb.join(' '):'<span class="ok">—</span>');
 h+='<br>'+tr('総合')+': '+(ngs?'<span class="ng">NG '+ngs+tr('件')+'</span>':'<span class="ok">'+tr('PASS ✓ 製作可')+'</span>');
+var cm=craftMetrics(),_ci=cm.diag||cm.stretch||cm.jlong;
+h+='<br>'+tr('レイアウト品質')+': '+trf('ジャンパ 中央{0}/最長{1}穴',cm.jmed,cm.jmax)+(cm.jlong?' <span class="wr">'+trf('長い線{0}',cm.jlong)+'</span>':'')+(cm.diag?' <span class="wr">'+trf('斜め抵抗{0}',cm.diag)+'</span>':'')+(cm.stretch?' <span class="wr">'+trf('過伸長{0}',cm.stretch)+'</span>':'')+(_ci?'':' <span class="ok">✓</span>');
 var fixes=[];
 erc.openNets.forEach(function(n){fixes.push(tr('オープンネット')+' '+n+': '+tr('ジャンパーで接続'));});
 erc.stripShorts.forEach(function(s){fixes.push(tr('ストリップ短絡')+' '+s.nets.join('/')+': '+tr('track cutで分離'));});
@@ -1365,6 +1381,9 @@ function buildSliders(){var w=document.getElementById('s-weights'),ph=document.g
 w.innerHTML='';ph.innerHTML='';ee.innerHTML='';
 slider(w,{label:'ブリッジ優先（銅線削減）',desc:'再配置のとき、部品の足を同じネットの隣に寄せて「はんだブリッジだけで繋ぐ」ことをどれだけ優先するか。大きいほど銅線が減るが、部品が密集しやすい。「配置を再提案」で反映。',ends:['銅線を許容','ブリッジに寄せる'],get:function(){return CFG.weights.bridgeBonus;},set:function(v){CFG.weights.bridgeBonus=v;},min:0,max:40,step:1});
 slider(w,{label:'配線長の重み',desc:'残った銅線の長さをどれだけ嫌うか。大きいほど短い配線を優先した配置になる。「配置を再提案」で反映。',ends:['長さ気にしない','短さ重視'],get:function(){return CFG.weights.wireLen;},set:function(v){CFG.weights.wireLen=v;},min:0,max:3,step:0.1});
+slider(w,{label:'直交ペナルティ（斜め抑制）',desc:'抵抗などを斜めに置く配置への罰則。大きいほど縦横（直交）に寝かせた整然配置を優先。「配置を再提案」で反映。',ends:['斜めも可','直交優先'],get:function(){return CFG.weights.diagPen;},set:function(v){CFG.weights.diagPen=v;},min:0,max:8,step:0.5});
+slider(w,{label:'スパンペナルティ（伸長抑制）',desc:'部品本体より大きく足を広げた配置への罰則。大きいほど足を伸ばさず最小スパンで置く。「配置を再提案」で反映。',ends:['伸ばしてよい','詰めて置く'],get:function(){return CFG.weights.spanPen;},set:function(v){CFG.weights.spanPen=v;},min:0,max:4,step:0.5});
+slider(w,{label:'立て実装ペナルティ',desc:'抵抗を縦に立てて置く配置への罰則。大きいほど寝かせ実装を優先（はんだ付け・検査が容易）。「配置を再提案」で反映。',ends:['立ててよい','寝かせ優先'],get:function(){return CFG.weights.standPen;},set:function(v){CFG.weights.standPen=v;},min:0,max:4,step:0.5});
 slider(w,{label:'隣接ペナルティ基準',desc:'別ネット同士が隣の穴に来る配置への罰則。短絡やフラックス残渣のリーク防止。大きいほど互いに離れる。「配置を再提案」で反映。',ends:['密でもよい','離して置く'],get:function(){return CFG.weights.cautionBase;},set:function(v){CFG.weights.cautionBase=v;},min:0,max:5,step:0.1});
 slider(w,{label:'高Zペナルティ倍率',desc:'高インピーダンス（1MΩ）ネットが他ネットと隣接したときの罰則の倍率。高Zはリークに弱いので通常は強めにする。',ends:['標準扱い','厳格に隔離'],get:function(){return CFG.weights.hizMult;},set:function(v){CFG.weights.hizMult=v;},min:1,max:6,step:0.5});
 slider(w,{label:'入出力分離ペナルティ',desc:'入力系（高Z）と出力系を物理的に近づけた配置への罰則。発振・クロストーク予防。「配置を再提案」で反映。',ends:['近くてもよい','強く分離'],get:function(){return CFG.weights.keepAwayPen;},set:function(v){CFG.weights.keepAwayPen=v;},min:0,max:15,step:1});

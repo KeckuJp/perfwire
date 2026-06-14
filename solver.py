@@ -25,7 +25,8 @@ DEF_CFG = {
     "rules": {"body_overlap": False, "max_joints_per_pad": 3, "edge_margin_holes": 0},
     "net_classes": {},
     "decoupling": [],
-    "weights": {"bridge_bonus": 8, "wire_len": 1.0, "caution_base": 1.5, "hiz_mult": 3.0, "keep_away_penalty": 6.0},
+    "weights": {"bridge_bonus": 8, "wire_len": 1.0, "caution_base": 1.5, "hiz_mult": 3.0, "keep_away_penalty": 6.0,
+                "diag_penalty": 4.0, "span_penalty": 1.5, "standing_penalty": 1.0},
     "propose_order": [],
 }
 
@@ -835,7 +836,18 @@ def solve(state, cfg, propose=False):
                                     if ocl in ka and md <= kh and on != nn:
                                         s += W["keep_away_penalty"]
                         if standing:
-                            s += 0.5
+                            s += W.get("standing_penalty", 0.5)
+                        else:
+                            # craft penalties: prefer clean orthogonal, minimally-spanned placements
+                            # (a diagonal/over-stretched part is what forces jumpers to go diagonal)
+                            ddx, ddy = abs(p2[0] - p1[0]), abs(p2[1] - p1[1])
+                            if ddx and ddy:
+                                s += W.get("diag_penalty", 0.0)
+                            Pp = cfg["physical"].get(p["kind"], {})
+                            min_h = Pp.get("body_len_mm", 6.5) / cfg.get("grid_pitch_mm", 2.54)
+                            span_h = (ddx * ddx + ddy * ddy) ** 0.5
+                            if span_h > min_h:
+                                s += W.get("span_penalty", 0.0) * (span_h - min_h)
                         if best is None or s < best[0]:
                             best = (s, p1, p2, standing)
             if best is None:
