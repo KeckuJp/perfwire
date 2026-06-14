@@ -629,9 +629,14 @@ def bom_rows(state):
     """部品を kind+label でまとめた BOM。"""
     groups = {}
     for p in state.get("parts", []):
-        key = (p.get("kind", "?"), p.get("label") or p.get("id", "?"))
+        # family (e.g. "Raspberry Pi Pico", "relay", "inductor") is the human-facing part type;
+        # kind is the geometric primitive used to draw/place it (ic = any named-pin part,
+        # r/disc/elec/film = 2-lead). A new component is added by choosing the right primitive
+        # and naming it via family — no new kind needed.
+        key = (p.get("family") or "", p.get("kind", "?"), p.get("label") or p.get("id", "?"))
         groups.setdefault(key, []).append(p.get("id", "?"))
-    return [{"kind": k[0], "label": k[1], "qty": len(ids), "refs": sorted(ids)} for k, ids in sorted(groups.items())]
+    return [{"family": k[0], "kind": k[1], "label": k[2], "qty": len(ids), "refs": sorted(ids)}
+            for k, ids in sorted(groups.items())]
 
 def build_packet_md(state, cfg):
     """ベンチ用ビルドパケット（BOM + 切断長表 + ブリッジ一覧）を markdown で。"""
@@ -639,9 +644,9 @@ def build_packet_md(state, cfg):
     cuts = cut_sheet(state, cfg)
     out = ["# perfwire build packet — " + str(state.get("proposal", "")), "",
            "## BOM (" + str(sum(b["qty"] for b in bom)) + " parts)", "",
-           "| kind | label | qty | refs |", "|---|---|---|---|"]
+           "| type | label | qty | refs |", "|---|---|---|---|"]
     for b in bom:
-        out.append("| " + b["kind"] + " | " + b["label"] + " | " + str(b["qty"]) + " | " + ", ".join(b["refs"]) + " |")
+        out.append("| " + (b.get("family") or b["kind"]) + " | " + b["label"] + " | " + str(b["qty"]) + " | " + ", ".join(b["refs"]) + " |")
     out += ["", "## Jumper cut sheet (" + str(len(cuts)) + " wires; lead margin " + str(cfg.get("rules", {}).get("lead_margin_mm", 5.0)) + "mm each end)", "",
             "| net | from | to | straight mm | manhattan mm |", "|---|---|---|---|---|"]
     for c in cuts:
