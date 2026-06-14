@@ -33,8 +33,10 @@ Accept the workspace-trust prompt once; the bundled skill (`.claude/skills/perfw
 ```
 you:    "この回路をユニバーサル基板に組みたい"（ネットリスト/回路図を渡す）
 agent:  state JSON を生成 → solver.py で配置+配線+監査 → index.html#z= リンクで盤面を渡す
-you:    実物に合わせてドラッグ修正 → 書き出し JSON を渡す
-agent:  監査（短絡・デカップリング距離・配線長・本体重なり）→ 確定図/チェックリスト生成
+you:    リンクを開く → 実物に合わせてドラッグ → 「URL共有」を押す（リンクがクリップボードに入る）
+agent:  貼られたリンクを read_link.py で盤面に復元 → 再監査 → 次の1手を平易に指示
+        （初心者はこの「押す→戻す」の小さな往復を何度も繰り返す。書き出しは Downloads にも保存され、
+         エージェントがそのファイルを直接読んでもよい）
 ```
 
 **Alternative — install as a plugin** (the repo doubles as its own single-plugin marketplace). Needs git auth for this private repo (`gh auth login`, or an SSH key in your agent):
@@ -97,7 +99,7 @@ The plugin bundles the same skill (namespaced `perfwire:perfwire`; `plugin.json`
 
 A wire endpoint is a `hole` (where the copper wire is inserted) plus a `bridgeTo` (the adjacent same-net hole it is solder-bridged to). `hole == pad` with `direct: true` means the wire is soldered straight onto the lead.
 
-Files: `examples/client-hardware_tap_buffer.json` (sample project, 2 proposals), `config.example.json` (the single threshold file for the Python solver — its dimensions/EE-limits are kept in lockstep with the editor's embedded `DEFCFG` by `tools/parity_check.mjs`, and it is the default the solver loads when `--config` is omitted), `tools/make_link.py` (state JSON → `#z=` editor deep link).
+Files: `examples/client-hardware_tap_buffer.json` (sample project, 2 proposals), `config.example.json` (the single threshold file for the Python solver — its dimensions/EE-limits are kept in lockstep with the editor's embedded `DEFCFG` by `tools/parity_check.mjs`, and it is the default the solver loads when `--config` is omitted), `tools/make_link.py` (state JSON → `#z=` editor deep link) and `tools/read_link.py` (the inverse: a pasted `#z=` link → state JSON, so the human can hand a board back by clicking **URL共有 / Share URL** and pasting the link).
 
 ## CI
 

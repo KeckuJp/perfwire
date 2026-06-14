@@ -116,8 +116,8 @@ svg{display:block;margin:16px auto}
 <button id="pw-cmd" title="Ctrl+K">⌘K</button>
 <button id="pw-undo" title="Ctrl+Z">元に戻す</button>
 <button id="pw-open">開く…</button>
-<button id="pw-export">書き出し</button>
-<button id="pw-share">URL共有</button>
+<button id="pw-export" title="盤面JSONを書き出し（クリップボード＋Downloads）。Claude Code に渡して監査してもらえます">書き出し</button>
+<button id="pw-share" title="盤面をディープリンク化してコピー。Claude Code に貼れば read_link.py で復元できます">URL共有</button>
 </header>
 <div id="prog"><div></div></div>
 <div class="layout">
@@ -324,7 +324,10 @@ var JE={
 'JSONが不正です: {0}':'Invalid JSON: {0}','KiCADインポート失敗: {0}':'KiCAD import failed: {0}','このブラウザは圧縮API（CompressionStream）に未対応です':'This browser does not support the compression API (CompressionStream).',
 '導通チェックリストを生成しました（テキスト欄・クリップボード・.md ダウンロード）。':'Continuity checklist generated (text box, clipboard, and .md download).',
 'KiCAD: 部品 {0} 点を仮配置しました。{1}「配置を再提案」→ 必要ならドラッグ調整、で計画を作れます。':'KiCAD: tentatively placed {0} part(s). {1}Use Re-place & route, then drag to adjust, to build the plan.','未対応スキップ: {0}。':'Skipped (unsupported): {0}. ',
-'共有URLをコピーしました（約{0}KB）。このHTMLを開ける相手ならどこでも、貼るだけで同じ盤面が再現されます。':'Share URL copied (~{0} KB). Anyone who can open this HTML reproduces the same board just by pasting it.',
+'共有URLをコピーしました（約{0}KB）。Claude Code に貼り付ければ盤面を渡せます（read_link.py で復元）。このHTMLを開ける相手なら貼るだけで同じ盤面が再現されます。':'Share URL copied (~{0} KB). Paste it into Claude Code to hand the board back (it decodes via read_link.py). Anyone who can open this HTML reproduces the same board by pasting it.',
+'盤面を書き出しました — クリップボードにコピー＋Downloads に perfwire_export.json を保存。Claude Code に貼り付けるか、このファイルを読んでもらえば監査できます。':'Board exported — copied to the clipboard and saved to Downloads/perfwire_export.json. Paste it into Claude Code, or ask it to read that file, to get an audit.',
+'盤面JSONを書き出し（クリップボード＋Downloads）。Claude Code に渡して監査してもらえます':'Export board JSON (clipboard + Downloads). Hand it to Claude Code for an audit.',
+'盤面をディープリンク化してコピー。Claude Code に貼れば read_link.py で復元できます':'Copy the board as a deep link. Paste into Claude Code to recover it via read_link.py.',
 'URLの盤面を新しい案として追加しました（既存の編集は保持されています）。':'Added the URL board as a new proposal (your existing edits are preserved).','共有: {0}':'Shared: {0}','盤面':'board',
 '空きスペースが見つかりません。穴ブロックや部品を整理してください。':'No free space found. Clear some blocked holes or rearrange parts.',
 '{0} を削除しますか？（参照する被覆線も消えます）':'Delete {0}? (jumper wires referencing it will be removed too)',
@@ -940,7 +943,7 @@ document.getElementById('pw-defcfg').onclick=function(){CFG=deep(DEFCFG);buildSl
 document.getElementById('pw-copy').onclick=function(){var b=this;document.getElementById('pw-out').value=exportJSON();if(navigator.clipboard)navigator.clipboard.writeText(exportJSON()).then(function(){b.textContent=tr('コピー済み');setTimeout(function(){b.textContent=tr('コピー');},1400);});};
 document.getElementById('pw-share').onclick=shareURL;
 document.getElementById('pw-print').onclick=printView;
-document.getElementById('pw-export').onclick=function(){var j=exportJSON();document.getElementById('pw-out').value=j;if(navigator.clipboard)navigator.clipboard.writeText(j);var bl=new Blob([j],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='perfwire_export.json';a.click();};
+document.getElementById('pw-export').onclick=function(){var j=exportJSON();document.getElementById('pw-out').value=j;if(navigator.clipboard)navigator.clipboard.writeText(j);var bl=new Blob([j],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='perfwire_export.json';a.click();showHelp(tr('盤面を書き出しました — クリップボードにコピー＋Downloads に perfwire_export.json を保存。Claude Code に貼り付けるか、このファイルを読んでもらえば監査できます。'));};
 document.getElementById('pw-import').onclick=function(){try{importObj(JSON.parse(document.getElementById('pw-out').value));}catch(e2){alert(trf('JSONが不正です: {0}',e2.message));}};
 document.getElementById('pw-beep').onclick=function(){var t=beepList();document.getElementById('pw-out').value=t;
 if(navigator.clipboard)navigator.clipboard.writeText(t);
@@ -1027,7 +1030,7 @@ new Response(new Blob([j]).stream().pipeThrough(new CompressionStream('deflate-r
 var url=location.href.split('#')[0]+'#z='+b64enc(buf);
 document.getElementById('pw-out').value=url;
 if(navigator.clipboard)navigator.clipboard.writeText(url);
-showHelp(trf('共有URLをコピーしました（約{0}KB）。このHTMLを開ける相手ならどこでも、貼るだけで同じ盤面が再現されます。',Math.round(url.length/102.4)/10));});}
+showHelp(trf('共有URLをコピーしました（約{0}KB）。Claude Code に貼り付ければ盤面を渡せます（read_link.py で復元）。このHTMLを開ける相手なら貼るだけで同じ盤面が再現されます。',Math.round(url.length/102.4)/10));});}
 function loadHash(){var m=location.hash.match(/^#z=(.+)$/);if(!m||!window.DecompressionStream)return;
 new Response(new Blob([b64dec(m[1])]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text().then(function(t){
 var d2=JSON.parse(t);
