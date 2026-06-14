@@ -123,6 +123,14 @@ svg{display:block;margin:16px auto}
 <div id="cc-bar" style="display:none"></div>
 <div class="layout">
 <aside>
+<h4>監査 <span style="color:var(--mut);text-transform:none;letter-spacing:0">— ライブ更新</span></h4>
+<div class="hint">押した結果（OK/NG）はまずここに出ます。NGはこの下に直し方が並びます。</div>
+<div id="audit">まだ計算していません</div>
+<div id="pw-profile-box" style="margin:8px 0"></div>
+<details open><summary>凡例（部品の見分け方）</summary><div id="pw-legend"></div></details>
+<h4>部品</h4>
+<div class="hint" id="pal-hint">盤面の部品をクリックで選択 → ここでラベル・ネット編集・削除。</div>
+<div id="pal-edit" style="display:none"></div>
 <details id="editortools"><summary>編集ツール（上級者向け）</summary>
 <div class="hint">初めての方は「作業ガイド」だけでOK。ここは手動で図を編集する人向けです。</div>
 <h4>モード <span style="color:var(--mut);text-transform:none;letter-spacing:0">(1-6キー)</span></h4>
@@ -132,35 +140,29 @@ svg{display:block;margin:16px auto}
 <div class="hint" id="modehint"></div>
 <div style="margin:7px 0;display:flex;gap:6px;flex-wrap:wrap"><button id="pw-lock">ロック切替</button><button id="pw-reset">案をリセット</button></div>
 </details>
-<h4>部品</h4>
-<div class="hint" id="pal-hint">盤面の部品をクリックで選択 → ここでラベル・ネット編集・削除。</div>
-<div id="pal-edit" style="display:none"></div>
 <details><summary>部品を追加</summary><div id="pal-add"></div></details>
-<details open><summary>凡例（部品の見分け方）</summary><div id="pw-legend"></div></details>
 <h4>レイヤー</h4>
 <div id="layers"></div>
-<h4>写真下絵</h4>
+<details><summary>写真下絵（実機トレース）</summary>
 <div class="hint">実機写真を下に敷いてトレース。拡大・回転・反転で穴を合わせ、部品をドラッグで実機どおりに。</div>
 <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0"><button id="ph-load">写真を読み込み…</button><button id="ph-clear" style="display:none">消去</button></div>
 <div id="ph-ctl" style="display:none"></div>
 <input type="file" id="ph-file" accept="image/*" hidden>
+</details>
 <h4>しきい値</h4>
-<div id="pw-profile-box" style="margin:6px 0 8px"></div>
 <div id="sliderhelp">スライダーに触れると、ここに「何が起きるか」の説明が出ます。物理寸法・EE制約は動かした瞬間、基板上にも効果がプレビューされます。</div>
-<div style="margin:4px 0"><button id="pw-defcfg-top">設定を既定値に戻す</button></div>
 <details><summary>最適化の重み（上級者向け）</summary><div id="s-weights"></div></details>
 <details open><summary>部品の物理寸法（実寸プレビュー）</summary><div id="s-phys"></div><div id="physpreview" style="margin-top:6px"></div></details>
 <details><summary>EE 制約（基板にゾーン表示）</summary><div id="s-ee"></div></details>
 <details><summary>ネットクラス割当</summary><div class="hint">ネットごとの扱い（高Z=最厳格／信号／出力／電源）。監査と再配置の基準になります。</div><div id="s-nets"></div></details>
 <div style="margin:5px 0"><button id="pw-defcfg">設定を既定値に戻す</button></div>
-<h4>監査 <span style="color:var(--mut);text-transform:none;letter-spacing:0">— ライブ更新</span></h4>
-<div id="audit">まだ計算していません</div>
-<h4>データ</h4>
+<details><summary>データ（JSON入出力・パケット・印刷）</summary>
 <div class="hint">JSON貼り付け→インポート、またはファイルをドロップ。編集・設定は自動保存。</div>
 <textarea id="pw-out" placeholder="エクスポート/インポート用JSON"></textarea>
 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">
 <button id="pw-copy">コピー</button><button id="pw-import">インポート</button><button id="pw-beep">導通リスト</button><button id="pw-packet">ビルドパケット</button><button id="pw-print">印刷 1:1</button><button id="pw-sample">サンプル復元</button><button id="pw-clearls">保存データ消去</button>
 </div>
+</details>
 </aside>
 <main>
 <div id="pw-flow"></div>
@@ -212,6 +214,9 @@ var DEFCFG={pitch:2.54,allowStanding:true,
 var CFG=deep(DEFCFG),LSKEY='perfwire_v1',APPVER='0.3.0';
 var LANG=(function(){try{return localStorage.getItem('perfwire_lang')||((navigator.language||'').indexOf('ja')===0?'ja':'en');}catch(e){return 'ja';}})();
 var JE={
+'押した結果（OK/NG）はまずここに出ます。NGはこの下に直し方が並びます。':'Results (OK/NG) of what you pressed appear here first; fixes for any NG are listed below.',
+'写真下絵（実機トレース）':'Photo underlay (trace a real board)',
+'データ（JSON入出力・パケット・印刷）':'Data (JSON I/O, build packet, print)',
 'Claude からの指示':'Instruction from Claude',
 '①Claude が盤面を送信 → ②あなたが修正 → ③「Claude Code に戻す」で戻す':'(1) Claude sends the board -> (2) you edit it -> (3) hand it back with "Return to Claude Code"',
 'Claude Code に戻す':'Return to Claude Code',
