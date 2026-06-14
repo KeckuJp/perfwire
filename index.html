@@ -177,6 +177,7 @@ svg{display:block;margin:16px auto}
 <footer id="status"><span class="chip" id="st-pos">—</span><span class="chip" id="st-net" style="display:none"></span><span class="chip" id="st-stats"></span></footer>
 </main>
 </div>
+<div id="toast" aria-live="polite"></div>
 <div id="cpov" role="dialog" aria-modal="true" aria-label="Command palette"><div id="cp"><input id="cp-in" placeholder="コマンドを検索…（例: 再計算 / モード / ズーム）"><ul id="cp-ls"></ul></div></div>
 <div id="welcome" role="dialog" aria-modal="true" aria-label="Welcome"><div id="welcard"><div id="wc-title"></div><div id="wc-body"></div><div id="wc-row"><button id="wc-start" class="primary"></button><button id="wc-skip"></button></div></div></div>
 <input type="file" id="pw-file" accept=".json,.net" hidden>
@@ -1422,7 +1423,15 @@ d.appendChild(i);d.appendChild(document.createTextNode(label));box.appendChild(d
 (function(){var b=document.getElementById('layers');
 [['部品','parts'],['ラベル','labels'],['被覆線','wires'],['ブリッジ','bridges'],['端子','ends'],['注意×','caut'],['ブロック穴','blocked'],['実寸法（本体）','foot']].forEach(function(x){tgl(b,x[0],x[1]);});})();
 var helpEl=null;
-function showHelp(t){if(!helpEl)helpEl=document.getElementById('sliderhelp');helpEl.textContent=t;}
+/* 2つの役割を分離: sliderHelp = スライダー説明を所定の #sliderhelp 欄に（その場で見る）。
+   showHelp = 操作の確認メッセージを画面上部の浮遊トースト #toast に出す（押した場所の近くで必ず見える）。
+   旧実装は両方を #sliderhelp に出していたため、「Claude Code に戻す」等の確認が左パネル中段に埋もれて見えなかった。 */
+function sliderHelp(t){if(!helpEl)helpEl=document.getElementById('sliderhelp');if(helpEl)helpEl.textContent=t;}
+var _toastT=null;
+function toast(t){var el=document.getElementById('toast');if(!el){sliderHelp(t);return;}el.textContent=t;
+el.style.cssText='position:fixed;left:50%;top:56px;transform:translateX(-50%);z-index:9000;max-width:560px;padding:10px 16px;background:#0d2447;color:#eaf2ff;border:1px solid rgba(56,132,255,.65);border-radius:9px;box-shadow:0 8px 26px rgba(0,0,0,.5);font-size:12.5px;line-height:1.55;pointer-events:none;opacity:1;transition:opacity .35s';
+if(_toastT)clearTimeout(_toastT);_toastT=setTimeout(function(){el.style.opacity='0';},4400);}
+function showHelp(t){toast(t);}
 function slider(box,o){o.label=tr(o.label);o.desc=tr(o.desc);if(o.ends)o.ends=[tr(o.ends[0]),tr(o.ends[1])];
 var lab=document.createElement('div');lab.className='sld';
 var l=document.createElement('span');l.className='lab';l.textContent=o.label;
@@ -1433,10 +1442,10 @@ v.classList.add('pop');setTimeout(function(){v.classList.remove('pop');},160);
 if(o.phys){footPreview();drawPhysPreview(o.previewKind||'r');}if(o.viz)vizPreview(o.viz);
 if(box&&box.id==='s-weights')syncProfileSel();/* a manual weight tweak flips the goal selector to カスタム */
 auditSoon();saveLS();}
-i.addEventListener('focus',function(){showHelp(o.desc);if(o.phys)drawPhysPreview(o.previewKind||'r');});
-i.addEventListener('pointerdown',function(){showHelp(o.desc);});
-i.oninput=function(){showHelp(o.desc);applyVal(parseFloat(i.value),false);};
-v.addEventListener('focus',function(){showHelp(o.desc);});
+i.addEventListener('focus',function(){sliderHelp(o.desc);if(o.phys)drawPhysPreview(o.previewKind||'r');});
+i.addEventListener('pointerdown',function(){sliderHelp(o.desc);});
+i.oninput=function(){sliderHelp(o.desc);applyVal(parseFloat(i.value),false);};
+v.addEventListener('focus',function(){sliderHelp(o.desc);});
 v.oninput=function(){applyVal(parseFloat(v.value),true);};/* type a measured value directly (e.g. calipers) */
 v.addEventListener('blur',function(){var nv=parseFloat(v.value);v.value=isNaN(nv)?o.get():Math.max(o.min,Math.min(o.max,nv));});
 lab.appendChild(l);lab.appendChild(i);lab.appendChild(v);box.appendChild(lab);
