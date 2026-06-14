@@ -907,6 +907,7 @@ function saveLS(){try{var st={v:APPVER,curI:curI,cfg:CFG,names:props.map(functio
 function loadLS(){try{var st=JSON.parse(localStorage.getItem(LSKEY));if(!st)return;
 if(st.v!==APPVER){try{[LSKEY,LSKEY+'_photo',LSKEY+'_photoT',LSKEY+'_guide'].forEach(function(k){localStorage.removeItem(k);});}catch(e){}return;}
 if(st.cfg&&st.cfg.weights&&st.cfg.physical&&st.cfg.classes&&st.cfg.partOv&&st.cfg.rules)CFG=st.cfg;
+if(CFG.partOv)Object.keys(CFG.partOv).forEach(function(id){['bodyLen','bend','maxSpan'].forEach(function(k){if(CFG.partOv[id])delete CFG.partOv[id][k];});if(CFG.partOv[id]&&!Object.keys(CFG.partOv[id]).length)delete CFG.partOv[id];});/* 移行: 旧版が書けた抵抗の per-instance 寸法(本体長/曲げ代/最大スパンは現在kind固定＝無意味)を除去し、盤面描画と solver の食い違い窓を消す。elec の dia 等の正当な個別値は温存 */
 if(st.states)st.states.forEach(function(s,i){if(s){if(!props[i])props[i]={name:(st.names&&st.names[i])||(tr('案')+i),orig:s,cur:null};props[i].cur=s;if(st.names&&st.names[i])props[i].name=st.names[i];}});
 if(typeof st.curI==='number'&&props[st.curI])curI=st.curI;}catch(e){}}
 function refreshSel(){var sel=document.getElementById('pw-prop');sel.innerHTML='';props.forEach(function(p,i){var o=document.createElement('option');o.value=i;o.textContent=p.name;sel.appendChild(o);});sel.value=curI;}
