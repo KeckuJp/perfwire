@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""perfwire solver v3 — 物理寸法・EE制約・しきい値設定（perfwire_config.json）対応
+"""perfwire solver v3 — 物理寸法・EE制約・しきい値設定（config.example.json）対応
 処理: 1) ロックされていない部品を制約つき貪欲再配置（本体フットプリント・スパン・デカップリング近接・
         ネットクラス分離を考慮し、足が同ネットに隣接=ブリッジ化を最大化）
       2) ネットごとの連結成分を被覆線で接続（隣の空き穴＋ブリッジ、空き無し→直付け）
@@ -41,6 +41,17 @@ def load_cfg(path):
                 else:
                     a[k] = v
         merge(cfg, user)
+    else:
+        # No config file -> fall back to the bare DEF_CFG, whose net_classes/decoupling
+        # are empty. That silently turns OFF the core EE checks (decoupling distance,
+        # class wire-length, keep-away, polarity, power-reach). Never let that pass
+        # unannounced — the skill's whole value depends on a populated config.
+        why = ("%r not found" % path) if path else "no --config given"
+        sys.stderr.write(
+            "perfwire: WARNING no config loaded (%s) — EE audit DEGRADED: built-in "
+            "DEF_CFG has empty net_classes/decoupling, so decoupling-distance, "
+            "wire-length, keep-away, polarity and power-reach checks run empty. "
+            "Pass --config config.example.json.\n" % why)
     return cfg
 
 def neighbors(p):
@@ -647,7 +658,7 @@ def _is_pwr(n):
     return u in _PWR_NAMES or bool(re.match(r"^[+\-]?\d+V\d*$", u)) or bool(re.match(r"^V\d+$", u))
 
 def emit_config(state):
-    """盤面状態から perfwire_config.json の叩き台を導出（ヒューリスティック）。人がレビュー前提。
+    """盤面状態から config（しきい値JSON）の叩き台を導出（ヒューリスティック）。人がレビュー前提。
     既存の DEF_CFG をベースに、推定できる net_classes / rail_rank / power_entry /
     single_lead_allowlist / decoupling を埋め、不確実な箇所は _TODO で印を付ける。"""
     leads = state.get("leads", {})
@@ -1241,7 +1252,7 @@ if __name__ == "__main__":
 
     src = sys.argv[1]
     propose = "--propose" in sys.argv
-    cfgp = _arg_after("--config") if "--config" in sys.argv else os.path.join(os.path.dirname(os.path.abspath(__file__)), "perfwire_config.json")
+    cfgp = _arg_after("--config") if "--config" in sys.argv else os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.example.json")
     dst = _arg_after("-o") if "-o" in sys.argv else None
     try:
         cfg = load_cfg(cfgp)
