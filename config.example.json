@@ -170,6 +170,59 @@
     "span_penalty": 1.5,
     "standing_penalty": 1.0
   },
+  "_placement_profiles": "配置の目的（手法）プリセット。初心者は平易な目的名で選ぶ→ weights に展開。エージェントは回路種別で既定を選ぶ。HTML側 DEFCFG.profiles と weights 一致を parity_check が検証。default_profile はガイダンス無しの新規盤の既定。weights を直接編集すると UI は『カスタム』表示。",
+  "default_profile": "analog",
+  "placement_profiles": {
+    "easy": {
+      "ja": "組みやすさ優先",
+      "en": "Easy to build",
+      "beginner": true,
+      "desc_ja": "直交・寝かせ・最小スパン・ゆとりある間隔。手はんだと目視確認のしやすさを最優先（初心者おすすめ）",
+      "desc_en": "Orthogonal, lying-flat, minimal span, roomy spacing. Optimised for easy hand-soldering and visual inspection (recommended for beginners)",
+      "weights": {
+        "bridge_bonus": 14,
+        "wire_len": 1.0,
+        "caution_base": 2.5,
+        "hiz_mult": 3.0,
+        "keep_away_penalty": 4.0,
+        "diag_penalty": 6.0,
+        "span_penalty": 2.5,
+        "standing_penalty": 3.5
+      }
+    },
+    "analog": {
+      "ja": "アナログ・高感度優先",
+      "en": "Analog / sensitive",
+      "desc_ja": "高Z入力を短く、入出力を強く分離、デカップリング近接。オペアンプ/オーディオ/センサなど発振・ノイズに弱い回路向け",
+      "desc_en": "Short high-Z inputs, strong input/output separation, tight decoupling. For op-amp / audio / sensor circuits prone to oscillation and noise",
+      "weights": {
+        "bridge_bonus": 20,
+        "wire_len": 1.0,
+        "caution_base": 1.5,
+        "hiz_mult": 3.0,
+        "keep_away_penalty": 6.0,
+        "diag_penalty": 4.0,
+        "span_penalty": 1.5,
+        "standing_penalty": 1.0
+      }
+    },
+    "compact": {
+      "ja": "省スペース優先",
+      "en": "Compact",
+      "desc_ja": "ブリッジ多用で銅線最少、立て実装可、密でも可。小さい基板に詰めたい上級者向け",
+      "desc_en": "Bridge-heavy for fewest jumpers, standing mounts allowed, density accepted. For experienced builders fitting a small board",
+      "weights": {
+        "bridge_bonus": 30,
+        "wire_len": 1.5,
+        "caution_base": 1.0,
+        "hiz_mult": 2.0,
+        "keep_away_penalty": 3.0,
+        "diag_penalty": 1.5,
+        "span_penalty": 0.5,
+        "standing_penalty": 0.3
+      }
+    }
+  },
   "_rail_rank": "ERC極性: 電位の高い順に大きい値。電解の + 足がより高電位レールにあるか検査（無ければ INFO のみ）",
   "rail_rank": {
     "V3V3": 2,

@@ -1237,9 +1237,29 @@ if __name__ == "__main__":
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
+    # --list-profiles は入力 state を要さない（usage チェックより前に処理）。
+    if "--list-profiles" in sys.argv:
+        _ci = sys.argv.index("--config") if "--config" in sys.argv else -1
+        _cp = (sys.argv[_ci + 1] if 0 <= _ci and _ci + 1 < len(sys.argv) else
+               os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.example.json"))
+        try:
+            _cfg = load_cfg(_cp)
+        except (OSError, ValueError) as e:
+            sys.stderr.write("perfwire: cannot read config %r: %s\n" % (_cp, e)); sys.exit(2)
+        _profs, _dft = _cfg.get("placement_profiles") or {}, _cfg.get("default_profile")
+        if not _profs:
+            sys.stderr.write("perfwire: no placement_profiles in %r\n" % _cp); sys.exit(2)
+        print("placement profiles (pass with --profile <key>):")
+        for _k, _v in _profs.items():
+            _mk = "  [default]" if _k == _dft else ("  [beginner]" if _v.get("beginner") else "")
+            print("  %-9s %s%s" % (_k, _v.get("ja") or _v.get("en") or "", _mk))
+            if _v.get("desc_ja"):
+                print("            %s" % _v["desc_ja"])
+        sys.exit(0)
     # CLI ブートストラップも human-readable に: 引数なし/ファイル無し/JSON 不正で traceback を出さない。
     if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
         sys.stderr.write("perfwire: usage: solver.py <state.json> [--lint | --propose | --propose-n | "
+                         "--profile <key> | --list-profiles | "
                          "--emit-config | --emit-packet | --guard <net> [--guard-net <net>]] "
                          "[--config <file>] [-o <out>]\n")
         sys.exit(2)
@@ -1259,6 +1279,17 @@ if __name__ == "__main__":
     except (OSError, ValueError) as e:
         sys.stderr.write("perfwire: cannot read config %r: %s\n" % (cfgp, e))
         sys.exit(2)
+    # --profile <key>: 配置目的プリセットの weights を cfg.weights に上書き（placePart/solve が読む）。
+    # 監査(ee)・EE上限は不変＝profile は「どう置くか」だけを変える。未知キーは候補を挙げて停止。
+    if "--profile" in sys.argv:
+        pk = _arg_after("--profile")
+        profs = cfg.get("placement_profiles") or {}
+        if pk not in profs:
+            sys.stderr.write("perfwire: unknown --profile %r (have: %s; see --list-profiles)\n"
+                             % (pk, ", ".join(profs) or "none"))
+            sys.exit(2)
+        cfg.setdefault("weights", {}).update(profs[pk].get("weights") or {})
+        sys.stderr.write("perfwire: profile %r applied — %s\n" % (pk, profs[pk].get("ja") or profs[pk].get("en") or ""))
     try:
         state = json.load(io.open(src, encoding="utf-8"))
     except FileNotFoundError:
