@@ -111,6 +111,17 @@ if (JSON.stringify(DEFCFG.powerEntry) !== JSON.stringify(PYCFG.power_entry)) cfg
 const jdec = (DEFCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max).sort();
 const pdec = (PYCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max_holes).sort();
 if (JSON.stringify(jdec) !== JSON.stringify(pdec)) cfgFails.push('decoupling list differ');
+// Physical footprints + cited source: the editor reads dims/source from DEFCFG.physical
+// (legend span-range + provenance), the solver from config.example.json.physical. If they
+// drift, the legend/spans and the solver disagree on the same part — and the dimension
+// citation shown to the user no longer matches what the solver used. Lock both (there is
+// no separate PHYSREF table any more; source lives next to the dims it cites).
+const PHYS_DIM = [['bodyLen', 'body_len_mm'], ['bodyWid', 'body_wid_mm'], ['maxSpan', 'max_span_mm'], ['dia', 'dia_mm'], ['bend', 'bend_margin_mm']];
+for (const k of ['r', 'film', 'disc', 'elec', 'ic']) {
+  const j = DEFCFG.physical[k] || {}, p = (PYCFG.physical || {})[k] || {};
+  if (j.source !== p.source) cfgFails.push(`physical.${k}.source(${JSON.stringify(j.source)}) != config(${JSON.stringify(p.source)})`);
+  for (const [jk, pk] of PHYS_DIM) if (j[jk] !== undefined && j[jk] !== p[pk]) cfgFails.push(`physical.${k}.${jk}(${j[jk]}) != config.${pk}(${p[pk]})`);
+}
 
 const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'client-hardware_tap_buffer.json'), 'utf8'));
 // openNets/powerReach depend on the solver's auto-routing (Python adds jumpers, the editor

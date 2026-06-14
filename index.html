@@ -185,10 +185,11 @@ var INIT={"proposals":[{"name":"As-built (real board) - 19 wires","state":{"vers
 (function(){
 function deep(o){return JSON.parse(JSON.stringify(o));}
 var DEFCFG={pitch:2.54,allowStanding:true,
- physical:{r:{bodyLen:6.3,bodyWid:2.4,bend:0.3,maxSpan:13.0,diag:true,standing:true,standMin:1,standMax:2,tall:false},
- film:{pitchMin:2,pitchMax:2,diag:false,tall:true,bodyLen:10,bodyWid:4.5},
- disc:{pitchMin:1,pitchMax:3,diag:true,tall:true,bodyLen:5,bodyWid:2.5},
- elec:{pitchMin:1,pitchMax:3,diag:true,tall:true,dia:6.5}},
+ physical:{r:{bodyLen:6.3,bodyWid:2.4,bend:0.3,maxSpan:13.0,diag:true,standing:true,standMin:1,standMax:2,tall:false,source:'Yageo CFR-25 1/4W datasheet (FCR 2024-04)'},
+ film:{pitchMin:2,pitchMax:2,diag:false,tall:true,bodyLen:10,bodyWid:4.5,source:'Vishay MKT/BC (verify exact part)'},
+ disc:{pitchMin:1,pitchMax:3,diag:true,tall:true,bodyLen:5,bodyWid:2.5,source:'Vishay/Meritek (verify exact part)'},
+ elec:{pitchMin:1,pitchMax:3,diag:true,tall:true,dia:6.5,source:'Panasonic FC / JustRadios size chart'},
+ ic:{source:'JEDEC MS-001 (DIP)'}},
  partOv:{C4:{dia:5.0},C6:{dia:6.5}},
  rules:{maxJoints:3,leadMargin:5.0,singleLeadAllow:['IF_MIC','MIC_IN','SPK_N','SPK_P']},
  railRank:{V3V3:2,VMID:1,GND:0},
@@ -1069,13 +1070,15 @@ else if(kind==='elec')s+='<circle cx="18" cy="10" r="8" fill="#101418" stroke="#
 else if(kind==='ic')s+='<rect x="4" y="3" width="28" height="14" rx="2" fill="#16181c" stroke="#888"/><circle cx="8" cy="7" r="2.4" fill="#ff5d5d"/>';
 return s+'</svg>';}
 function valOf(label){var m=(label||'').split(/\s+/);return m.length>1?m.slice(1).join(' '):'';}
-var PHYSREF={r:{src:'Yageo CFR-25 datasheet (6.3×2.4mm, 1/4W)'},film:{src:'Vishay MKT / BC'},disc:{src:'Vishay / Meritek'},elec:{src:'Panasonic FC / JustRadios'},ic:{src:'JEDEC MS-001'}};/* one-time-researched, cited package refs (offline; not a live fetch). agent updates this + DEFCFG + perfwire_config.json physical_sources in sync */
+/* 部品寸法の出典は CFG.physical[kind].source（DEFCFG 内）が唯一の正。
+   オフライン単一ファイルなので実行時に取得せず、エージェントが datasheet/代理店で調べて
+   DEFCFG と config.example.json の両方を更新する。両者の一致は tools/parity_check.mjs が CI で検証。 */
 function dimsLine(kind){var P=CFG.physical[kind]||{},pitch=CFG.pitch||2.54;
 var dim=P.bodyLen?('~'+P.bodyLen+'×'+(P.bodyWid||'')+'mm'):(P.dia?('~φ'+P.dia+'mm'):'');
 var rng='';
 if(P.bodyLen&&P.maxSpan){var mn=((P.bodyLen+2*(P.bend||0.3))/pitch).toFixed(1),mx=(P.maxSpan/pitch).toFixed(1);rng=tr('寝')+' '+mn+'–'+mx+(P.standing?' / '+tr('立')+' 1–2':'');}
 else if(P.pitchMin!==undefined){rng=P.pitchMin+(P.pitchMax!==P.pitchMin?'–'+P.pitchMax:'');}
-return {dim:dim,rng:rng,src:(PHYSREF[kind]||{}).src||''};}
+return {dim:dim,rng:rng,src:P.source||''};}
 function buildLegend(){var box=document.getElementById('pw-legend');if(!box||!D)return;box.innerHTML='';
 var order=['ic','film','disc','elec','r'],groups={},any=false;
 D.parts.forEach(function(p){(groups[p.kind]=groups[p.kind]||[]).push(p);});

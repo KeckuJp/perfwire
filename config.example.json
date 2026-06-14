@@ -1,9 +1,10 @@
 {
   "_comment": "perfwire しきい値設定。寸法は実部品に合わせて調整→ solver.py --config で再計算",
   "grid_pitch_mm": 2.54,
+  "_physical": "source = 出典(凡例に表示＋parity_check.mjs が HTML DEFCFG と一致を検証)。寸法はエージェントが datasheet/代理店で調べて両ファイルを更新する。",
   "physical": {
     "r": {
-      "_": "1/4W炭素皮膜 軸リード（実寸: 下記 physical_sources 参照）",
+      "_": "1/4W炭素皮膜 軸リード。寸法は電力定格(W)+系列で決まり、抵抗値(Ω)では不変",
       "body_len_mm": 6.3,
       "body_wid_mm": 2.4,
       "bend_margin_mm": 0.3,
@@ -15,7 +16,8 @@
         2
       ],
       "tall": false,
-      "lead_dia_mm": 0.55
+      "lead_dia_mm": 0.55,
+      "source": "Yageo CFR-25 1/4W datasheet (FCR 2024-04)"
     },
     "film": {
       "_": "1uF100Vフィルム箱(立て)",
@@ -26,7 +28,8 @@
         2
       ],
       "diag": false,
-      "tall": true
+      "tall": true,
+      "source": "Vishay MKT/BC (verify exact part)"
     },
     "disc": {
       "_": "0.1uF円板セラ",
@@ -37,7 +40,8 @@
         3
       ],
       "diag": true,
-      "tall": true
+      "tall": true,
+      "source": "Vishay/Meritek (verify exact part)"
     },
     "elec": {
       "_": "電解(径は実物で調整: 10uF=5mm/100uF=6.5mm)",
@@ -47,7 +51,12 @@
         3
       ],
       "diag": true,
-      "tall": true
+      "tall": true,
+      "source": "Panasonic FC / JustRadios size chart"
+    },
+    "ic": {
+      "_": "DIP本体寸法はピン配置から導出。出典のみ保持",
+      "source": "JEDEC MS-001 (DIP)"
     }
   },
   "rules": {
@@ -202,33 +211,5 @@
     "R11",
     "R13"
   ],
-  "_weights_craft": "diag_penalty: 斜め配置の罰則 / span_penalty: 本体長を超える伸長の罰則(穴) / standing_penalty: 立て実装の罰則。大きいほど整然・直交・寝かせ優先（配置を再提案で反映）",
-  "physical_sources": {
-    "_comment": "部品寸法の出典（エージェントが datasheet/代理店で調べて更新。HTML側 DEFCFG/PHYSREF と値を一致させること）",
-    "r": {
-      "class": "1/4W carbon film",
-      "body_len_mm": "6.3 ±0.5",
-      "body_dia_mm": "2.4 ±0.2",
-      "lead_dia_mm": "0.55 ±0.05",
-      "note": "size keyed to power rating + series, NOT resistance value",
-      "source": "Yageo CFR datasheet (YAGEO-FCR_DATASHEET.pdf, 2024-04-03 V.3): CFR-25 1/4W L=6.3±0.5 D=2.4±0.2 lead=0.55±0.05 mm"
-    },
-    "film": {
-      "class": "film box ~1uF",
-      "source": "Vishay MKT / BC — verify exact part"
-    },
-    "disc": {
-      "class": "ceramic disc 0.1uF",
-      "source": "Vishay / Meritek — verify exact part"
-    },
-    "elec": {
-      "class": "radial electrolytic",
-      "note": "diameter scales with C*V; per-part dia in part_overrides",
-      "source": "Panasonic FC / JustRadios size chart"
-    },
-    "ic": {
-      "class": "DIP-8",
-      "source": "JEDEC MS-001"
-    }
-  }
+  "_weights_craft": "diag_penalty: 斜め配置の罰則 / span_penalty: 本体長を超える伸長の罰則(穴) / standing_penalty: 立て実装の罰則。大きいほど整然・直交・寝かせ優先（配置を再提案で反映）"
 }
