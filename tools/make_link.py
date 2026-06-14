@@ -37,6 +37,9 @@ def main():
     ap = argparse.ArgumentParser(description="Make a perfwire #z= deep-link from a flat state JSON.")
     ap.add_argument("state", help="flat exportJSON / solver out.json")
     ap.add_argument("--base", default="index.html", help="base URL (default: index.html)")
+    ap.add_argument("--task", help="one-line instruction shown to the human in the editor's Claude Code bar "
+                                   "(e.g. \"R5 を赤くハイライトした穴へドラッグして『配線を再計算』\"). Pairs the link "
+                                   "with what you want them to do, so the loop is self-explanatory on arrival.")
     args = ap.parse_args()
 
     with open(args.state, encoding="utf-8") as f:
@@ -46,6 +49,8 @@ def main():
             "error: input is the proposals[] wrapper (e.g. examples/client-hardware_tap_buffer.json). "
             "Pass a FLAT state — solver.py -o out.json output, or one proposal's .state."
         )
+    if args.task:
+        state["task"] = args.task  # one-way agent->human instruction; the editor shows it, never echoes it back
     print(perfwire_deeplink(state, args.base))
 
 

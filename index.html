@@ -120,6 +120,7 @@ svg{display:block;margin:16px auto}
 <button id="pw-share" title="盤面をディープリンク化してコピー。Claude Code に貼れば read_link.py で復元できます">URL共有</button>
 </header>
 <div id="prog"><div></div></div>
+<div id="cc-bar" style="display:none"></div>
 <div class="layout">
 <aside>
 <details id="editortools"><summary>編集ツール（上級者向け）</summary>
@@ -210,6 +211,9 @@ var DEFCFG={pitch:2.54,allowStanding:true,
 var CFG=deep(DEFCFG),LSKEY='perfwire_v1',APPVER='0.3.0';
 var LANG=(function(){try{return localStorage.getItem('perfwire_lang')||((navigator.language||'').indexOf('ja')===0?'ja':'en');}catch(e){return 'ja';}})();
 var JE={
+'Claude からの指示':'Instruction from Claude',
+'①Claude が盤面を送信 → ②あなたが修正 → ③「Claude Code に戻す」で戻す':'(1) Claude sends the board -> (2) you edit it -> (3) hand it back with "Return to Claude Code"',
+'Claude Code に戻す':'Return to Claude Code',
 '配置の目的':'Placement goal','（おすすめ）':' (recommended)','カスタム（手動調整）':'Custom (manual)',
 'スライダーを手で調整した状態です。目的を選び直すとプリセットに戻ります。':'Sliders are manually adjusted. Pick a goal to snap back to a preset.',
 '組みやすさ優先':'Easy to build','アナログ・高感度優先':'Analog / sensitive','省スペース優先':'Compact',
@@ -1031,6 +1035,17 @@ var url=location.href.split('#')[0]+'#z='+b64enc(buf);
 document.getElementById('pw-out').value=url;
 if(navigator.clipboard)navigator.clipboard.writeText(url);
 showHelp(trf('共有URLをコピーしました（約{0}KB）。Claude Code に貼り付ければ盤面を渡せます（read_link.py で復元）。このHTMLを開ける相手なら貼るだけで同じ盤面が再現されます。',Math.round(url.length/102.4)/10));});}
+/* Claude Code 連携バー: 盤面がエージェントのディープリンク（#z=）で届いたときだけ出す。
+   初回 welcome は #z= 着信ではスキップされる設計なので（盤面を乗っ取らない）、CC 経由の初心者は
+   何の案内も無く全エディタに放り込まれていた。ここで「Claude からの指示／往復の3手順／戻すボタン」を出して
+   往復ループを画面上で完結させる。普通にファイルを開いた上級者には出ない＝邪魔しない。 */
+function showCCBar(task){var bar=document.getElementById('cc-bar');if(!bar)return;window.__fromCC=true;bar.innerHTML='';
+bar.style.cssText='display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:7px 12px;background:rgba(56,132,255,.12);border-bottom:1px solid rgba(56,132,255,.35)';
+var left=document.createElement('div');left.style.cssText='flex:1 1 280px;min-width:200px';
+if(task){var t=document.createElement('div');t.style.cssText='font-weight:600;color:#bcd6ff;font-size:12.5px';t.textContent=tr('Claude からの指示')+': '+task;left.appendChild(t);}
+var hint=document.createElement('div');hint.style.cssText='color:var(--mut);font-size:11px;margin-top:2px';hint.textContent=tr('①Claude が盤面を送信 → ②あなたが修正 → ③「Claude Code に戻す」で戻す');left.appendChild(hint);
+var btn=document.createElement('button');btn.className='primary';btn.style.flex='none';btn.textContent=tr('Claude Code に戻す');btn.onclick=function(){shareURL();};
+bar.appendChild(left);bar.appendChild(btn);}
 function loadHash(){var m=location.hash.match(/^#z=(.+)$/);if(!m||!window.DecompressionStream)return;
 new Response(new Blob([b64dec(m[1])]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text().then(function(t){
 var d2=JSON.parse(t);
@@ -1038,6 +1053,7 @@ var st={version:1,grid:d2.grid,netColors:d2.netColors||{},leads:d2.leads||{},par
 props.push({name:trf('共有: {0}',(d2.proposal||tr('盤面'))),orig:st,cur:null});
 if(d2.cfg&&d2.cfg.weights&&d2.cfg.physical){CFG=d2.cfg;buildSliders();}
 curI=props.length-1;refreshSel();loadProp(curI);auditNow();
+showCCBar(typeof d2.task==='string'?d2.task:'');
 try{history.replaceState(null,'',location.pathname+location.search);}catch(e){location.hash='';}
 showHelp(tr('URLの盤面を新しい案として追加しました（既存の編集は保持されています）。'));}).catch(function(){});}
 function printView(){var oldOp=PHOTO.op;PHOTO.op=0;render();
