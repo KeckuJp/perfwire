@@ -217,6 +217,9 @@ var JE={
 '押した結果（OK/NG）はまずここに出ます。NGはこの下に直し方が並びます。':'Results (OK/NG) of what you pressed appear here first; fixes for any NG are listed below.',
 '写真下絵（実機トレース）':'Photo underlay (trace a real board)',
 '部品オプション（共通設定）':'Part options (shared)','物理寸法':'Dimensions','缶 直径 mm':'Can diameter mm',
+'同種すべてに共通（この寸法は部品ごとには変えられません）':'Shared across all of this kind (not per-part)',
+'この部品は個別指定（{0}）が優先され、同種既定は反映されません。':'This part has an individual value ({0}) that overrides the shared default.',
+'この部品の個別指定を解除':'Clear the override for this part',
 '電解コンデンサの缶の直径。円の中の穴は使用不可になる。動かすと基板に実寸の円が表示される。':'Electrolytic can diameter. Holes under the can become unusable. Drag to preview the true-size circle on the board.',
 '部品ごとの寸法は、盤面で部品をクリックして上の「部品」欄で編集します。':'Per-part dimensions are edited in the 部品 (Part) section above — click a part on the board to select it.',
 '同種すべてを変更中（クリックでこの部品だけ）':'Editing ALL of this kind (click to scope to this part only)',
@@ -1172,23 +1175,31 @@ var palLast;
    family で部品が無限に増えると破綻する。ここでは kind→寸法ディスクリプタ表(PHYS_DIMS)を1つの汎用ループで描き、
    画面上の寸法ウィジェットは常に選択中の1部品ぶん(O(1))。新しい kind/family は PHYS_DIMS に1行足すだけ（描画・プレビュー不変）。
    書き込み先は既存の physFor が読む CFG.physical[kind]（同種の既定）か CFG.partOv[id]（この部品だけ）のみ＝EE監査は不変(parity安全)。 */
+/* pinned:true = ソルバー/監査が per-instance を読まない寸法（抵抗の本体長/曲げ代/最大スパンは spanList/監査が
+   CFG.physical[kind] のみ参照）＝常に kind(同種共通) で、part スコープのトグルを出さない（出すと書いても無視される
+   silent no-op になる）。elec の dia は footCells が physFor(p) を読む＝per-instance が効くのでトグル可。 */
 var PHYS_DIMS={
- r:[{key:'bodyLen',label:'抵抗 本体長 mm',desc:'抵抗本体の実寸。最小スパン＝本体長＋曲げ代×2 が変わる。動かすと基板に実寸の外形（破線）が表示される。',ends:['小型部品','大型部品'],min:5,max:9,step:0.1,scope:'kind',preview:'r'},
-    {key:'bend',label:'抵抗 曲げ代 mm',desc:'リードを曲げるのに必要な本体からの余白。きつく曲げられるなら小さく。最小スパンに影響。',ends:['きつく曲げ可','余裕が必要'],min:0,max:2,step:0.1,scope:'kind',preview:'r'},
-    {key:'maxSpan',label:'抵抗 最大スパン mm',desc:'リードを伸ばして届く最大距離。大きくすると配置の自由度が上がるがリードが長くなる。',ends:['詰めて配置','広く許容'],min:8,max:18,step:0.5,scope:'kind',preview:'r'}],
- elec:[{key:'dia',label:'缶 直径 mm',desc:'電解コンデンサの缶の直径。円の中の穴は使用不可になる。動かすと基板に実寸の円が表示される。',ends:['細い缶','太い缶'],min:3,max:12,step:0.5,scope:'part',preview:'elec'}],
+ r:[{key:'bodyLen',label:'抵抗 本体長 mm',desc:'抵抗本体の実寸。最小スパン＝本体長＋曲げ代×2 が変わる。動かすと基板に実寸の外形（破線）が表示される。',ends:['小型部品','大型部品'],min:5,max:9,step:0.1,scope:'kind',pinned:true},
+    {key:'bend',label:'抵抗 曲げ代 mm',desc:'リードを曲げるのに必要な本体からの余白。きつく曲げられるなら小さく。最小スパンに影響。',ends:['きつく曲げ可','余裕が必要'],min:0,max:2,step:0.1,scope:'kind',pinned:true},
+    {key:'maxSpan',label:'抵抗 最大スパン mm',desc:'リードを伸ばして届く最大距離。大きくすると配置の自由度が上がるがリードが長くなる。',ends:['詰めて配置','広く許容'],min:8,max:18,step:0.5,scope:'kind',pinned:true}],
+ elec:[{key:'dia',label:'缶 直径 mm',desc:'電解コンデンサの缶の直径。円の中の穴は使用不可になる。動かすと基板に実寸の円が表示される。',ends:['細い缶','太い缶'],min:3,max:12,step:0.5,scope:'part'}],
  film:[],disc:[],ic:[]};
 var dimScope={};
+/* scope解決と値解決を1か所に（slider get・write・drawPhysPreview が同じ規則を使う＝プレビューと数値が食い違わない）。 */
+function dimScopeOf(p,d){if(d.pinned)return 'kind';var sk=p.id+'|'+d.key;if(dimScope[sk]===undefined)dimScope[sk]=d.scope||'kind';return dimScope[sk];}
+function dimVal(p,d){if(dimScopeOf(p,d)==='part'){var ov=CFG.partOv[p.id];return (ov&&ov[d.key]!==undefined)?ov[d.key]:(CFG.physical[p.kind]||{})[d.key];}return (CFG.physical[p.kind]||{})[d.key];}
 function buildPartDims(box,p){var dims=PHYS_DIMS[p.kind]||[];if(!dims.length)return;
 var hdr=document.createElement('div');hdr.style.cssText='font-weight:600;font-size:12px;margin:9px 0 2px';hdr.textContent=tr('物理寸法');box.appendChild(hdr);
-dims.forEach(function(d){var sk=p.id+'|'+d.key;if(dimScope[sk]===undefined)dimScope[sk]=d.scope||'kind';
-function classVal(){return (CFG.physical[p.kind]||{})[d.key];}
-function read(){if(dimScope[sk]==='part'){var ov=CFG.partOv[p.id];return (ov&&ov[d.key]!==undefined)?ov[d.key]:classVal();}return classVal();}
-function write(v){if(dimScope[sk]==='part'){(CFG.partOv[p.id]=CFG.partOv[p.id]||{})[d.key]=v;}else{(CFG.physical[p.kind]=CFG.physical[p.kind]||{})[d.key]=v;}drawPhysPreview(p);}
-slider(box,{label:d.label,desc:d.desc,ends:d.ends,get:read,set:write,min:d.min,max:d.max,step:d.step,phys:1,previewKind:d.preview,part:p});
-var tg=document.createElement('button');tg.style.cssText='font-size:10px;padding:1px 7px;margin:-4px 0 7px;background:rgba(255,255,255,.05);border:1px solid #2a3038;border-radius:5px;color:var(--mut);cursor:pointer';
-tg.textContent=(dimScope[sk]==='part')?tr('この部品だけ変更中（クリックで同種すべて）'):tr('同種すべてを変更中（クリックでこの部品だけ）');
-tg.onclick=function(){dimScope[sk]=(dimScope[sk]==='part'?'kind':'part');buildPalEdit();};box.appendChild(tg);});
+dims.forEach(function(d){var sk=p.id+'|'+d.key;
+function write(v){if(dimScopeOf(p,d)==='part'){(CFG.partOv[p.id]=CFG.partOv[p.id]||{})[d.key]=v;}else{(CFG.physical[p.kind]=CFG.physical[p.kind]||{})[d.key]=v;}drawPhysPreview(p);}
+slider(box,{label:d.label,desc:d.desc,ends:d.ends,get:function(){return dimVal(p,d);},set:write,min:d.min,max:d.max,step:d.step,phys:1,part:p});
+if(d.pinned){var pn=document.createElement('div');pn.style.cssText='font-size:10px;color:var(--mut);margin:-4px 0 7px';pn.textContent=tr('同種すべてに共通（この寸法は部品ごとには変えられません）');box.appendChild(pn);}
+else{var tg=document.createElement('button');tg.style.cssText='font-size:10px;padding:1px 7px;margin:-4px 0 7px;background:rgba(255,255,255,.05);border:1px solid #2a3038;border-radius:5px;color:var(--mut);cursor:pointer';
+tg.textContent=(dimScopeOf(p,d)==='part')?tr('この部品だけ変更中（クリックで同種すべて）'):tr('同種すべてを変更中（クリックでこの部品だけ）');
+tg.onclick=function(){dimScope[sk]=(dimScopeOf(p,d)==='part'?'kind':'part');buildPalEdit();};box.appendChild(tg);}
+if(dimScopeOf(p,d)==='kind'){var ov=CFG.partOv[p.id];if(ov&&ov[d.key]!==undefined){var warn=document.createElement('div');warn.style.cssText='font-size:10px;color:#ffb454;margin:-3px 0 7px;line-height:1.45';warn.textContent=trf('この部品は個別指定（{0}）が優先され、同種既定は反映されません。',ov[d.key]);
+var clr=document.createElement('button');clr.textContent=tr('この部品の個別指定を解除');clr.style.cssText='font-size:10px;padding:1px 7px;margin-left:6px;background:rgba(255,180,84,.12);border:1px solid #5a4a2a;border-radius:5px;color:#ffb454;cursor:pointer';
+clr.onclick=function(){snap();delete CFG.partOv[p.id][d.key];if(CFG.partOv[p.id]&&!Object.keys(CFG.partOv[p.id]).length)delete CFG.partOv[p.id];saveLS();buildPalEdit();render();auditNow();};warn.appendChild(clr);box.appendChild(warn);}}});
 var pv=document.createElement('div');pv.id='physpreview';pv.style.marginTop='4px';box.appendChild(pv);drawPhysPreview(p);}
 function buildPalEdit(){var box=document.getElementById('pal-edit'),hint=document.getElementById('pal-hint');
 if(!selPart){box.style.display='none';hint.style.display='';return;}
@@ -1429,6 +1440,7 @@ function auditNow(){try{audit();}catch(e){document.getElementById('audit').textC
 function auditSoon(){clearTimeout(auditTimer);auditTimer=setTimeout(auditNow,220);}
 function footPreview(){tempFoot=true;render();clearTimeout(footTimer);footTimer=setTimeout(function(){tempFoot=false;render();},1300);}
 function drawPhysPreview(part){var el=document.getElementById('physpreview');if(!el||!CFG.physical)return;var kind=(part&&part.kind)||'r',PF=part?physFor(part):(CFG.physical.r||{});
+if(part){PF=Object.assign({},PF);(PHYS_DIMS[kind]||[]).forEach(function(d){PF[d.key]=dimVal(part,d);});}/* プレビューは編集中スコープの値を写す（kind時は同種既定＝数値と一致） */
 var pitch=CFG.pitch||2.54,PX=24,W=288,H=112,baseY=80,x0=24;
 function holes(n){var s='';for(var i=0;i<n;i++){var x=x0+i*PX;s+='<ellipse cx="'+x+'" cy="'+baseY+'" rx="6.5" ry="2.8" fill="#16241a" stroke="#3a5a3a" stroke-width="1.2"/>';}return s;}
 var s='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block"><defs><linearGradient id="ppcyl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ecd2a8"/><stop offset="0.45" stop-color="#d9b38c"/><stop offset="1" stop-color="#9c7642"/></linearGradient><linearGradient id="ppcan" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3a4452"/><stop offset="0.4" stop-color="#1a2230"/><stop offset="1" stop-color="#0a0e14"/></linearGradient></defs>';
