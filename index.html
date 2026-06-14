@@ -1230,7 +1230,7 @@ try{GUIDE.done=JSON.parse(localStorage.getItem(LSKEY+'_guide_'+curI)||'{}');}cat
 GUIDE.on=true;GUIDE.i=0;
 while(GUIDE.i<GUIDE.steps.length-1&&GUIDE.done[GUIDE.steps[GUIDE.i].sig])GUIDE.i++;
 if(auditState().hard)showHelp(tr('監査にNG（極性・接続・短絡）があります。はんだ付け前に左の監査パネルで直してください。'));
-document.getElementById('guide').style.display='';guideShow();}
+document.getElementById('guide').style.display='block';guideShow();}
 function setMirror(v){MIRROR=v;document.getElementById('z-mirror').className=v?'on':'';
 var gm=document.getElementById('g-mirror');if(gm)gm.checked=v;
 if(v)showHelp(tr('裏面ビュー: はんだ面から見た左右反転表示。テスターモードは使用可、編集はロックされます。'));
