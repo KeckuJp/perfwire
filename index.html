@@ -185,7 +185,7 @@ var INIT={"proposals":[{"name":"As-built (real board) - 19 wires","state":{"vers
 (function(){
 function deep(o){return JSON.parse(JSON.stringify(o));}
 var DEFCFG={pitch:2.54,allowStanding:true,
- physical:{r:{bodyLen:6.5,bodyWid:2.5,bend:0.3,maxSpan:13.0,diag:true,standing:true,standMin:1,standMax:2,tall:false},
+ physical:{r:{bodyLen:6.3,bodyWid:2.4,bend:0.3,maxSpan:13.0,diag:true,standing:true,standMin:1,standMax:2,tall:false},
  film:{pitchMin:2,pitchMax:2,diag:false,tall:true,bodyLen:10,bodyWid:4.5},
  disc:{pitchMin:1,pitchMax:3,diag:true,tall:true,bodyLen:5,bodyWid:2.5},
  elec:{pitchMin:1,pitchMax:3,diag:true,tall:true,dia:6.5}},
@@ -1069,7 +1069,7 @@ else if(kind==='elec')s+='<circle cx="18" cy="10" r="8" fill="#101418" stroke="#
 else if(kind==='ic')s+='<rect x="4" y="3" width="28" height="14" rx="2" fill="#16181c" stroke="#888"/><circle cx="8" cy="7" r="2.4" fill="#ff5d5d"/>';
 return s+'</svg>';}
 function valOf(label){var m=(label||'').split(/\s+/);return m.length>1?m.slice(1).join(' '):'';}
-var PHYSREF={r:{src:'Yageo CFR-25 / Vishay MRS25'},film:{src:'Vishay MKT / BC'},disc:{src:'Vishay / Meritek'},elec:{src:'Panasonic FC / JustRadios'},ic:{src:'JEDEC MS-001'}};/* one-time-researched, cited package refs (offline; not a live fetch) — see PR analysis */
+var PHYSREF={r:{src:'Yageo CFR-25 datasheet (6.3×2.4mm, 1/4W)'},film:{src:'Vishay MKT / BC'},disc:{src:'Vishay / Meritek'},elec:{src:'Panasonic FC / JustRadios'},ic:{src:'JEDEC MS-001'}};/* one-time-researched, cited package refs (offline; not a live fetch). agent updates this + DEFCFG + perfwire_config.json physical_sources in sync */
 function dimsLine(kind){var P=CFG.physical[kind]||{},pitch=CFG.pitch||2.54;
 var dim=P.bodyLen?('~'+P.bodyLen+'×'+(P.bodyWid||'')+'mm'):(P.dia?('~φ'+P.dia+'mm'):'');
 var rng='';

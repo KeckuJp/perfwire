@@ -3,9 +3,9 @@
   "grid_pitch_mm": 2.54,
   "physical": {
     "r": {
-      "_": "1/4Wカーボン軸リード",
-      "body_len_mm": 6.5,
-      "body_wid_mm": 2.5,
+      "_": "1/4W炭素皮膜 軸リード（実寸: 下記 physical_sources 参照）",
+      "body_len_mm": 6.3,
+      "body_wid_mm": 2.4,
       "bend_margin_mm": 0.3,
       "max_span_mm": 13.0,
       "diag": true,
@@ -14,7 +14,8 @@
         1,
         2
       ],
-      "tall": false
+      "tall": false,
+      "lead_dia_mm": 0.55
     },
     "film": {
       "_": "1uF100Vフィルム箱(立て)",
@@ -201,5 +202,33 @@
     "R11",
     "R13"
   ],
-  "_weights_craft": "diag_penalty: 斜め配置の罰則 / span_penalty: 本体長を超える伸長の罰則(穴) / standing_penalty: 立て実装の罰則。大きいほど整然・直交・寝かせ優先（配置を再提案で反映）"
+  "_weights_craft": "diag_penalty: 斜め配置の罰則 / span_penalty: 本体長を超える伸長の罰則(穴) / standing_penalty: 立て実装の罰則。大きいほど整然・直交・寝かせ優先（配置を再提案で反映）",
+  "physical_sources": {
+    "_comment": "部品寸法の出典（エージェントが datasheet/代理店で調べて更新。HTML側 DEFCFG/PHYSREF と値を一致させること）",
+    "r": {
+      "class": "1/4W carbon film",
+      "body_len_mm": "6.3 ±0.5",
+      "body_dia_mm": "2.4 ±0.2",
+      "lead_dia_mm": "0.55 ±0.05",
+      "note": "size keyed to power rating + series, NOT resistance value",
+      "source": "Yageo CFR datasheet (YAGEO-FCR_DATASHEET.pdf, 2024-04-03 V.3): CFR-25 1/4W L=6.3±0.5 D=2.4±0.2 lead=0.55±0.05 mm"
+    },
+    "film": {
+      "class": "film box ~1uF",
+      "source": "Vishay MKT / BC — verify exact part"
+    },
+    "disc": {
+      "class": "ceramic disc 0.1uF",
+      "source": "Vishay / Meritek — verify exact part"
+    },
+    "elec": {
+      "class": "radial electrolytic",
+      "note": "diameter scales with C*V; per-part dia in part_overrides",
+      "source": "Panasonic FC / JustRadios size chart"
+    },
+    "ic": {
+      "class": "DIP-8",
+      "source": "JEDEC MS-001"
+    }
+  }
 }

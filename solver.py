@@ -16,7 +16,7 @@ import re
 DEF_CFG = {
     "grid_pitch_mm": 2.54,
     "physical": {
-        "r": {"body_len_mm": 6.5, "body_wid_mm": 2.5, "bend_margin_mm": 0.3, "max_span_mm": 13.0,
+        "r": {"body_len_mm": 6.3, "body_wid_mm": 2.4, "bend_margin_mm": 0.3, "max_span_mm": 13.0,
               "diag": True, "standing": True, "standing_span_holes": [1, 2], "tall": False},
         "film": {"body_len_mm": 10.0, "body_wid_mm": 4.5, "pitch_holes": [2, 2], "diag": False, "tall": True},
         "disc": {"body_len_mm": 5.0, "body_wid_mm": 2.5, "pitch_holes": [1, 3], "diag": True, "tall": True},
