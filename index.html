@@ -274,6 +274,7 @@ var JE={
 '左の監査パネルでNGを直してから（特に極性・接続）はんだ付けしてください。':'Fix the NG items in the audit panel (especially polarity / connections) before soldering.',
 '監査NGがあります。はんだ付け前に左の監査パネルで直してください（特に極性・接続）。':'The audit has NG. Fix it in the audit panel before soldering (especially polarity / connections).',
 '凡例（部品の見分け方）':'Legend (tell parts apart)','（＋向きに注意）':'(mind the + lead)','部品がありません':'No parts',
+'寝':'lie','立':'stand','スパン':'span','出典':'src','抵抗の寸法は電力定格(W)で決まり、抵抗値(Ω)では変わりません':'A resistor body size is set by its power rating (W), not its resistance (Ω)',
 '最適化の重み（上級者向け）':'Optimization weights (advanced)',
 '進め方:':'Flow:','案を選ぶ':'Pick a board','配線/配置を計算':'Compute wiring / placement','作業ガイドで組む':'Build with the guide','印刷1:1で検品':'Print 1:1 & verify',
 'perfwire へようこそ':'Welcome to perfwire',
@@ -716,13 +717,16 @@ Object.keys(p.pins).forEach(function(k){var q=p.pins[k],v=xy(q[0],q[1]);T(v[0]+(
 }else{var a=xy(p.leads[0][0],p.leads[0][1]),b=xy(p.leads[1][0],p.leads[1][1]),mx2=(a[0]+b[0])/2,my2=(a[1]+b[1])/2;
 p._seg=[a,b];p._body=null;
 var standing=!!p.standing||(p.kind==='r'&&dist(p.leads[0],p.leads[1])<2.05);
-E('line',{x1:a[0],y1:a[1],x2:mx2,y2:my2,stroke:'#30363c','stroke-width':2.2});
-E('line',{x1:b[0],y1:b[1],x2:mx2,y2:my2,stroke:'#30363c','stroke-width':2.2});
+if(!(p.kind==='r'&&standing)){E('line',{x1:a[0],y1:a[1],x2:mx2,y2:my2,stroke:'#30363c','stroke-width':2.2});
+E('line',{x1:b[0],y1:b[1],x2:mx2,y2:my2,stroke:'#30363c','stroke-width':2.2});}
 var ang=Math.atan2(b[1]-a[1],b[0]-a[0])*180/Math.PI;
 var PB=physFor(p),GLY=0.28,gpx=function(v){return Math.max(9,mm(v)*GLY);};/* glyph px = compressed true mm (CFG.physical) so family size ratios (film 10mm >> disc 5mm) show on-board; scales with zoom (mm()) and the physical sliders */
 if(p.kind==='film'){var fw=gpx(PB.bodyLen||10),fh=gpx(PB.bodyWid||4.5);E('rect',{x:mx2-fw/2,y:my2-fh/2,width:fw,height:fh,rx:3,fill:'#f2d22e',stroke:'#a88d0e',transform:'rotate('+ang.toFixed(1)+' '+mx2+' '+my2+')',opacity:0.97});T(mx2-3,my2+4,'F',{'font-size':10,'font-weight':'700'});}
-if(p.kind==='r'){if(standing)E('circle',{cx:mx2,cy:my2,r:Math.max(6,gpx(PB.bodyWid||2.5)/2),fill:'#d9b38c',stroke:'#9a7748'});
-else{var rw=gpx(PB.bodyLen||6.5),rh=gpx(PB.bodyWid||2.5);E('rect',{x:mx2-rw/2,y:my2-rh/2,width:rw,height:rh,rx:Math.min(5,rh/2),fill:'#d9b38c',stroke:'#9a7748',transform:'rotate('+ang.toFixed(1)+' '+mx2+' '+my2+')'});}T(mx2-3,my2+4,'R',{'font-size':9,'font-weight':'700'});}
+if(p.kind==='r'){if(standing){var _br=Math.max(7,gpx(PB.bodyWid||2.5)/2+2);
+E('path',{d:'M'+a[0]+','+a[1]+' C'+a[0]+','+(a[1]-_br*2.3)+' '+b[0]+','+(b[1]-_br*2.3)+' '+b[0]+','+b[1],fill:'none',stroke:'#9a7748','stroke-width':2.4});/* bent-over return lead = the visual giveaway of a vertical (standing) mount */
+E('circle',{cx:a[0],cy:a[1],r:_br,fill:'#d9b38c',stroke:'#9a7748','stroke-width':1.6});E('circle',{cx:a[0],cy:a[1],r:_br*0.45,fill:'none',stroke:'#9a7748','stroke-width':1});/* upright body seen end-on (inner ring = cylinder) */
+T(a[0]-3,a[1]+3.5,'R',{'font-size':8,'font-weight':'700'});}
+else{var rw=gpx(PB.bodyLen||6.5),rh=gpx(PB.bodyWid||2.5);E('rect',{x:mx2-rw/2,y:my2-rh/2,width:rw,height:rh,rx:Math.min(5,rh/2),fill:'#d9b38c',stroke:'#9a7748',transform:'rotate('+ang.toFixed(1)+' '+mx2+' '+my2+')'});T(mx2-3,my2+4,'R',{'font-size':9,'font-weight':'700'});}}
 if(p.kind==='disc'){var dr=gpx(PB.bodyLen||5)/2;E('ellipse',{cx:mx2,cy:my2,rx:dr,ry:Math.max(gpx(PB.bodyWid||2.5)/2,dr*0.62),fill:'#b5651d',stroke:'#7e4612',opacity:0.97});T(mx2-3,my2+4,'C',{'font-size':9,'font-weight':'700'});}
 if(p.kind==='elec'){var er=Math.max(8,gpx(PB.dia||6.5)/2);E('circle',{cx:mx2,cy:my2,r:er,fill:'#101418',stroke:'#000',opacity:0.97});T(mx2-3,my2+4,'E',{'font-size':9,'font-weight':'700'});var pls=(p.plus===1?b:a);T(pls[0]-4,pls[1]-8,'+',{fill:'#ff7b7b','font-size':12});}
 if(selPart===p)E('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'#5edcff','stroke-width':2,'stroke-dasharray':'4 3'});
@@ -1065,6 +1069,13 @@ else if(kind==='elec')s+='<circle cx="18" cy="10" r="8" fill="#101418" stroke="#
 else if(kind==='ic')s+='<rect x="4" y="3" width="28" height="14" rx="2" fill="#16181c" stroke="#888"/><circle cx="8" cy="7" r="2.4" fill="#ff5d5d"/>';
 return s+'</svg>';}
 function valOf(label){var m=(label||'').split(/\s+/);return m.length>1?m.slice(1).join(' '):'';}
+var PHYSREF={r:{src:'Yageo CFR-25 / Vishay MRS25'},film:{src:'Vishay MKT / BC'},disc:{src:'Vishay / Meritek'},elec:{src:'Panasonic FC / JustRadios'},ic:{src:'JEDEC MS-001'}};/* one-time-researched, cited package refs (offline; not a live fetch) — see PR analysis */
+function dimsLine(kind){var P=CFG.physical[kind]||{},pitch=CFG.pitch||2.54;
+var dim=P.bodyLen?('~'+P.bodyLen+'×'+(P.bodyWid||'')+'mm'):(P.dia?('~φ'+P.dia+'mm'):'');
+var rng='';
+if(P.bodyLen&&P.maxSpan){var mn=((P.bodyLen+2*(P.bend||0.3))/pitch).toFixed(1),mx=(P.maxSpan/pitch).toFixed(1);rng=tr('寝')+' '+mn+'–'+mx+(P.standing?' / '+tr('立')+' 1–2':'');}
+else if(P.pitchMin!==undefined){rng=P.pitchMin+(P.pitchMax!==P.pitchMin?'–'+P.pitchMax:'');}
+return {dim:dim,rng:rng,src:(PHYSREF[kind]||{}).src||''};}
 function buildLegend(){var box=document.getElementById('pw-legend');if(!box||!D)return;box.innerHTML='';
 var order=['ic','film','disc','elec','r'],groups={},any=false;
 D.parts.forEach(function(p){(groups[p.kind]=groups[p.kind]||[]).push(p);});
@@ -1074,9 +1085,12 @@ row.onmouseenter=function(){row.style.background='rgba(255,255,255,.06)';};row.o
 var sw=document.createElement('span');sw.style.flex='none';sw.innerHTML=legendSwatch(kind);
 var info=document.createElement('div');
 var nm=document.createElement('div');nm.style.fontWeight='600';nm.textContent=tr(KINDJ[kind]||kind)+(kind==='elec'?'  '+tr('（＋向きに注意）'):'');
+if(kind==='r')nm.title=tr('抵抗の寸法は電力定格(W)で決まり、抵抗値(Ω)では変わりません');
 var rf=document.createElement('div');rf.style.color='var(--mut)';rf.style.fontSize='10.5px';
 rf.textContent=ps.map(function(p){var v=valOf(p.label);return p.id+(v?' '+v:'');}).join(' / ');
-info.appendChild(nm);info.appendChild(rf);row.appendChild(sw);row.appendChild(info);
+var dl=dimsLine(kind),dd=document.createElement('div');dd.style.cssText='color:var(--mut);font-size:10px';
+dd.textContent=(dl.dim?dl.dim+' ':'')+(dl.rng?'· '+tr('スパン')+' '+dl.rng+' '+tr('穴')+' ':'')+(dl.src?'· '+tr('出典')+' '+dl.src:'');
+info.appendChild(nm);info.appendChild(rf);info.appendChild(dd);row.appendChild(sw);row.appendChild(info);
 row.onclick=function(){selPart=ps[0];render();};
 box.appendChild(row);});
 if(!any)box.innerHTML='<div class="hint">'+tr('部品がありません')+'</div>';}
