@@ -217,6 +217,10 @@ var JE={
 '押した結果（OK/NG）はまずここに出ます。NGはこの下に直し方が並びます。':'Results (OK/NG) of what you pressed appear here first; fixes for any NG are listed below.',
 '写真下絵（実機トレース）':'Photo underlay (trace a real board)',
 '部品オプション（共通設定）':'Part options (shared)','物理寸法':'Dimensions','缶 直径 mm':'Can diameter mm',
+'円板 直径 mm':'Disc diameter mm','円板セラミックコンデンサの直径。本体の下の穴は使用不可。':'Ceramic disc diameter. Holes under the body are unusable.',
+'フィルム 本体長 mm':'Film body length mm','フィルム箱コンデンサの長辺。本体の下の穴は使用不可。':'Film box long side. Holes under the body are unusable.',
+'フィルム 本体幅 mm':'Film body width mm','フィルム箱コンデンサの短辺（厚み方向）。':'Film box short side (thickness).',
+'薄い':'thin','厚い':'thick','本体の下の穴は使用不可':'Holes under the body are unusable','ピン':' pins','ピン配置から自動描画':'Auto-drawn from pin layout',
 '同種すべてに共通（この寸法は部品ごとには変えられません）':'Shared across all of this kind (not per-part)',
 'この部品は個別指定（{0}）が優先され、同種既定は反映されません。':'This part has an individual value ({0}) that overrides the shared default.',
 'この部品の個別指定を解除':'Clear the override for this part',
@@ -1184,13 +1188,16 @@ var PHYS_DIMS={
     {key:'bend',label:'抵抗 曲げ代 mm',desc:'リードを曲げるのに必要な本体からの余白。きつく曲げられるなら小さく。最小スパンに影響。',ends:['きつく曲げ可','余裕が必要'],min:0,max:2,step:0.1,scope:'kind',pinned:true},
     {key:'maxSpan',label:'抵抗 最大スパン mm',desc:'リードを伸ばして届く最大距離。大きくすると配置の自由度が上がるがリードが長くなる。',ends:['詰めて配置','広く許容'],min:8,max:18,step:0.5,scope:'kind',pinned:true}],
  elec:[{key:'dia',label:'缶 直径 mm',desc:'電解コンデンサの缶の直径。円の中の穴は使用不可になる。動かすと基板に実寸の円が表示される。',ends:['細い缶','太い缶'],min:3,max:12,step:0.5,scope:'part'}],
- film:[],disc:[],ic:[]};
+ disc:[{key:'bodyLen',label:'円板 直径 mm',desc:'円板セラミックコンデンサの直径。本体の下の穴は使用不可。',ends:['小型部品','大型部品'],min:3,max:12,step:0.5,scope:'kind',pinned:true}],
+ film:[{key:'bodyLen',label:'フィルム 本体長 mm',desc:'フィルム箱コンデンサの長辺。本体の下の穴は使用不可。',ends:['小型部品','大型部品'],min:5,max:16,step:0.5,scope:'kind',pinned:true},
+       {key:'bodyWid',label:'フィルム 本体幅 mm',desc:'フィルム箱コンデンサの短辺（厚み方向）。',ends:['薄い','厚い'],min:2,max:8,step:0.5,scope:'kind',pinned:true}],
+ ic:[]};
 var dimScope={};
 /* scope解決と値解決を1か所に（slider get・write・drawPhysPreview が同じ規則を使う＝プレビューと数値が食い違わない）。 */
 function dimScopeOf(p,d){if(d.pinned)return 'kind';var sk=p.id+'|'+d.key;if(dimScope[sk]===undefined)dimScope[sk]=d.scope||'kind';return dimScope[sk];}
 function dimVal(p,d){if(dimScopeOf(p,d)==='part'){var ov=CFG.partOv[p.id];return (ov&&ov[d.key]!==undefined)?ov[d.key]:(CFG.physical[p.kind]||{})[d.key];}return (CFG.physical[p.kind]||{})[d.key];}
-function buildPartDims(box,p){var dims=PHYS_DIMS[p.kind]||[];if(!dims.length)return;
-var hdr=document.createElement('div');hdr.style.cssText='font-weight:600;font-size:12px;margin:9px 0 2px';hdr.textContent=tr('物理寸法');box.appendChild(hdr);
+function buildPartDims(box,p){var dims=PHYS_DIMS[p.kind]||[];if(!dims.length&&!PHYS_PREVIEW[p.kind])return;
+if(dims.length){var hdr=document.createElement('div');hdr.style.cssText='font-weight:600;font-size:12px;margin:9px 0 2px';hdr.textContent=tr('物理寸法');box.appendChild(hdr);}
 dims.forEach(function(d){var sk=p.id+'|'+d.key;
 function write(v){if(dimScopeOf(p,d)==='part'){(CFG.partOv[p.id]=CFG.partOv[p.id]||{})[d.key]=v;}else{(CFG.physical[p.kind]=CFG.physical[p.kind]||{})[d.key]=v;}drawPhysPreview(p);}
 slider(box,{label:d.label,desc:d.desc,ends:d.ends,get:function(){return dimVal(p,d);},set:write,min:d.min,max:d.max,step:d.step,phys:1,part:p});
@@ -1201,7 +1208,7 @@ tg.onclick=function(){dimScope[sk]=(dimScopeOf(p,d)==='part'?'kind':'part');buil
 if(dimScopeOf(p,d)==='kind'){var ov=CFG.partOv[p.id];if(ov&&ov[d.key]!==undefined){var warn=document.createElement('div');warn.style.cssText='font-size:10px;color:#ffb454;margin:-3px 0 7px;line-height:1.45';warn.textContent=trf('この部品は個別指定（{0}）が優先され、同種既定は反映されません。',ov[d.key]);
 var clr=document.createElement('button');clr.textContent=tr('この部品の個別指定を解除');clr.style.cssText='font-size:10px;padding:1px 7px;margin-left:6px;background:rgba(255,180,84,.12);border:1px solid #5a4a2a;border-radius:5px;color:#ffb454;cursor:pointer';
 clr.onclick=function(){snap();delete CFG.partOv[p.id][d.key];if(CFG.partOv[p.id]&&!Object.keys(CFG.partOv[p.id]).length)delete CFG.partOv[p.id];saveLS();buildPalEdit();render();auditNow();};warn.appendChild(clr);box.appendChild(warn);}}});
-var pv=document.createElement('div');pv.id='physpreview';pv.style.marginTop='4px';box.appendChild(pv);drawPhysPreview(p);}
+if(PHYS_PREVIEW[p.kind]){var pv=document.createElement('div');pv.id='physpreview';pv.style.marginTop='4px';box.appendChild(pv);drawPhysPreview(p);}}
 function buildPalEdit(){var box=document.getElementById('pal-edit'),hint=document.getElementById('pal-hint');
 if(!selPart){box.style.display='none';hint.style.display='';return;}
 box.style.display='';hint.style.display='none';box.innerHTML='';
@@ -1440,29 +1447,61 @@ if(e.key==='1')setMode('end');if(e.key==='2')setMode('part');if(e.key==='3')setM
 function auditNow(){try{audit();}catch(e){document.getElementById('audit').textContent=trf('監査エラー: {0}',e.message);}}
 function auditSoon(){clearTimeout(auditTimer);auditTimer=setTimeout(auditNow,220);}
 function footPreview(){tempFoot=true;render();clearTimeout(footTimer);footTimer=setTimeout(function(){tempFoot=false;render();},1300);}
-function drawPhysPreview(part){var el=document.getElementById('physpreview');if(!el||!CFG.physical)return;var kind=(part&&part.kind)||'r',PF=part?physFor(part):(CFG.physical.r||{});
-if(part){PF=Object.assign({},PF);(PHYS_DIMS[kind]||[]).forEach(function(d){PF[d.key]=dimVal(part,d);});}/* プレビューは編集中スコープの値を写す（kind時は同種既定＝数値と一致） */
+/* プレビューは kind→描画関数の表（PHYS_PREVIEW）で分岐＝ハードコードなし。新しい部品種を足すなら
+   ここに1関数足すだけで「同じように見えて動く」。各関数は選択部品の scope 解決済み寸法(PF)を読む。 */
+var PHYS_PREVIEW={
+ elec:function(part,PF,c){var dia=PF.dia||(CFG.physical.elec&&CFG.physical.elec.dia)||6.5;
+ var dh=Math.round(dia/c.pitch),n=Math.max(4,dh+2),diaPx=dia/c.pitch*c.PX,cx=c.x0+(dh*c.PX)/2+c.PX,canTop=c.baseY-Math.max(36,diaPx*1.15);
+ var s=c.ground+c.holes(n+1);
+ s+='<rect x="'+(cx-diaPx/2)+'" y="'+canTop+'" width="'+diaPx+'" height="'+(c.baseY-2-canTop)+'" rx="'+Math.min(7,diaPx/2)+'" fill="url(#ppcan)" stroke="#444" stroke-width="1.2"/>';
+ s+='<ellipse cx="'+cx+'" cy="'+canTop+'" rx="'+(diaPx/2)+'" ry="'+(diaPx*0.16)+'" fill="#2a3340" stroke="#555"/>';
+ s+='<text x="'+cx+'" y="'+(canTop-6)+'" font-size="11" fill="#dce3ea" text-anchor="middle">φ'+dia.toFixed(1)+'mm</text>';
+ s+='<text x="'+cx+'" y="'+(c.H-5)+'" font-size="10.5" fill="#ffb454" text-anchor="middle">'+tr('缶の下の穴は使用不可')+'</text>';return s;},
+ disc:function(part,PF,c){var dia=PF.bodyLen||5;
+ var dh=Math.max(1,Math.round(dia/c.pitch)),n=Math.max(3,dh+2),diaPx=dia/c.pitch*c.PX,cx=c.x0+c.PX+diaPx/2,cy=c.baseY-2-Math.max(26,diaPx*0.6);
+ var s=c.ground+c.holes(n+1);
+ s+='<path d="M'+(cx-diaPx*0.2)+','+cy+' V'+(c.baseY-2)+'" stroke="#cfd8df" stroke-width="2"/><path d="M'+(cx+diaPx*0.2)+','+cy+' V'+(c.baseY-2)+'" stroke="#cfd8df" stroke-width="2"/>';
+ s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+(diaPx/2)+'" fill="#b5651d" stroke="#7e4612" stroke-width="1.3"/>';
+ s+='<text x="'+cx+'" y="'+(cy+4)+'" font-size="10" font-weight="700" fill="#fff" text-anchor="middle">C</text>';
+ s+='<text x="'+cx+'" y="'+(cy-diaPx/2-6)+'" font-size="11" fill="#dce3ea" text-anchor="middle">φ'+dia.toFixed(1)+'mm</text>';
+ s+='<text x="'+cx+'" y="'+(c.H-5)+'" font-size="10.5" fill="#ffb454" text-anchor="middle">'+tr('本体の下の穴は使用不可')+'</text>';return s;},
+ film:function(part,PF,c){var bl=PF.bodyLen||10,bw=PF.bodyWid||4.5;
+ var lh=Math.max(1,Math.round(bl/c.pitch)),n=Math.max(3,lh+2),wPx=bl/c.pitch*c.PX,hPx=Math.max(26,bw/c.pitch*c.PX*1.8),cx=c.x0+c.PX+wPx/2,top=c.baseY-2-hPx;
+ var s=c.ground+c.holes(n+1);
+ s+='<path d="M'+(cx-wPx*0.28)+','+(c.baseY-2)+' V'+(top+hPx)+'" stroke="#cfd8df" stroke-width="2"/><path d="M'+(cx+wPx*0.28)+','+(c.baseY-2)+' V'+(top+hPx)+'" stroke="#cfd8df" stroke-width="2"/>';
+ s+='<rect x="'+(cx-wPx/2)+'" y="'+top+'" width="'+wPx+'" height="'+hPx+'" rx="3" fill="#f2d22e" stroke="#a88d0e" stroke-width="1.2"/>';
+ s+='<text x="'+cx+'" y="'+(top+hPx/2+4)+'" font-size="11" font-weight="700" fill="#5a4a0a" text-anchor="middle">F</text>';
+ s+='<text x="'+cx+'" y="'+(top-6)+'" font-size="11" fill="#dce3ea" text-anchor="middle">'+bl.toFixed(1)+'×'+bw.toFixed(1)+'mm</text>';
+ s+='<text x="'+cx+'" y="'+(c.H-5)+'" font-size="10.5" fill="#ffb454" text-anchor="middle">'+tr('本体の下の穴は使用不可')+'</text>';return s;},
+ r:function(part,PF,c){var P=PF,bodyLen=P.bodyLen||6.5,bend=P.bend||0.3,maxSpan=P.maxSpan||13;
+ var minH=Math.max(1,Math.round((bodyLen+2*bend)/c.pitch)),maxH=Math.round(maxSpan/c.pitch),n=Math.min(9,maxH+1);
+ var s=c.ground+c.holes(n+1);
+ var lx=c.x0,rx=c.x0+minH*c.PX,cx=(lx+rx)/2,bodyPx=Math.max(14,bodyLen/c.pitch*c.PX),bh=Math.max(13,(P.bodyWid||2.5)/c.pitch*c.PX),bodyY=c.baseY-36;
+ s+='<path d="M'+lx+','+(c.baseY-2)+' V'+(bodyY+bh*0.55)+'" stroke="#cfd8df" stroke-width="2.2" fill="none"/><path d="M'+rx+','+(c.baseY-2)+' V'+(bodyY+bh*0.55)+'" stroke="#cfd8df" stroke-width="2.2" fill="none"/>';
+ s+='<rect x="'+(cx-bodyPx/2)+'" y="'+bodyY+'" width="'+bodyPx+'" height="'+bh+'" rx="'+(bh/2)+'" fill="url(#ppcyl)" stroke="#7e5e30" stroke-width="1.2"/>';
+ ['0.28#5a3a18','0.45#bb0000','0.6#d49a00'].forEach(function(b){var f=b.split('#');s+='<rect x="'+(cx-bodyPx/2+bodyPx*parseFloat(f[0]))+'" y="'+(bodyY+1)+'" width="2.6" height="'+(bh-2)+'" fill="#'+f[1]+'"/>';});
+ s+='<text x="'+cx+'" y="'+(bodyY-7)+'" font-size="11" fill="#dce3ea" text-anchor="middle">'+bodyLen.toFixed(1)+'mm</text>';
+ s+='<text x="'+cx+'" y="'+(c.H-5)+'" font-size="10.5" fill="#5edcff" text-anchor="middle">'+tr('最小スパン')+' '+minH+' '+tr('穴')+' ('+tr('最大')+' '+maxH+')</text>';return s;},
+ ic:function(part,PF,c){var pins=(part&&part.pins)||{},ks=Object.keys(pins);
+ if(!ks.length)return c.ground+'<text x="'+(c.W/2)+'" y="'+c.baseY+'" font-size="11" fill="#8a94a0" text-anchor="middle">'+tr('ピン配置から自動描画')+'</text>';
+ var xs=ks.map(function(k){return pins[k][0];}),ys=ks.map(function(k){return pins[k][1];});
+ var minx=Math.min.apply(null,xs),maxx=Math.max.apply(null,xs),miny=Math.min.apply(null,ys),maxy=Math.max.apply(null,ys);
+ var cols=maxx-minx+1,rws=maxy-miny+1,cw=Math.max(8,Math.min(22,(c.W-56)/(cols+0.5),(c.H-34)/(rws+0.5))),gx=(c.W-cols*cw)/2,gy=14;
+ var s='';for(var rr=0;rr<rws;rr++)for(var cc=0;cc<cols;cc++){s+='<circle cx="'+(gx+cc*cw+cw/2)+'" cy="'+(gy+rr*cw+cw/2)+'" r="3" fill="#16241a" stroke="#3a5a3a"/>';}
+ s+='<rect x="'+(gx+cw*0.15)+'" y="'+(gy+cw*0.15)+'" width="'+(cols*cw-cw*0.3)+'" height="'+(rws*cw-cw*0.3)+'" rx="5" fill="#16181c" stroke="#5edcff" stroke-width="1.3" opacity="0.93"/>';
+ ks.forEach(function(k){s+='<circle cx="'+(gx+(pins[k][0]-minx)*cw+cw/2)+'" cy="'+(gy+(pins[k][1]-miny)*cw+cw/2)+'" r="2.6" fill="#ffd24d"/>';});
+ s+='<circle cx="'+(gx+cw/2)+'" cy="'+(gy+cw/2)+'" r="3.6" fill="none" stroke="#ff5d5d" stroke-width="1.4"/>';
+ s+='<text x="'+(c.W/2)+'" y="'+(c.H-5)+'" font-size="10.5" fill="#5edcff" text-anchor="middle">'+(part.family?part.family+' · ':'')+ks.length+tr('ピン')+'</text>';return s;}
+};
+function drawPhysPreview(part){var el=document.getElementById('physpreview');if(!el||!CFG.physical)return;
+var kind=(part&&part.kind)||'r',PF=part?physFor(part):(CFG.physical.r||{});
+if(part){PF=Object.assign({},PF);(PHYS_DIMS[kind]||[]).forEach(function(d){PF[d.key]=dimVal(part,d);});}/* 編集中スコープの値を写す（kind時は同種既定＝数値と一致） */
 var pitch=CFG.pitch||2.54,PX=24,W=288,H=112,baseY=80,x0=24;
 function holes(n){var s='';for(var i=0;i<n;i++){var x=x0+i*PX;s+='<ellipse cx="'+x+'" cy="'+baseY+'" rx="6.5" ry="2.8" fill="#16241a" stroke="#3a5a3a" stroke-width="1.2"/>';}return s;}
-var s='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block"><defs><linearGradient id="ppcyl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ecd2a8"/><stop offset="0.45" stop-color="#d9b38c"/><stop offset="1" stop-color="#9c7642"/></linearGradient><linearGradient id="ppcan" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3a4452"/><stop offset="0.4" stop-color="#1a2230"/><stop offset="1" stop-color="#0a0e14"/></linearGradient></defs>';
-s+='<rect x="0" y="'+(baseY+3)+'" width="'+W+'" height="'+(H-baseY-3)+'" fill="rgba(46,110,70,.22)"/>';
-if(kind==='elec'){var dia=PF.dia||(CFG.physical.elec&&CFG.physical.elec.dia)||6.5;
-var dh=Math.round(dia/pitch),n=Math.max(4,dh+2),diaPx=dia/pitch*PX,cx=x0+(dh*PX)/2+PX,canTop=baseY-Math.max(36,diaPx*1.15);
-s+=holes(n+1);
-s+='<rect x="'+(cx-diaPx/2)+'" y="'+canTop+'" width="'+diaPx+'" height="'+(baseY-2-canTop)+'" rx="'+Math.min(7,diaPx/2)+'" fill="url(#ppcan)" stroke="#444" stroke-width="1.2"/>';
-s+='<ellipse cx="'+cx+'" cy="'+canTop+'" rx="'+(diaPx/2)+'" ry="'+(diaPx*0.16)+'" fill="#2a3340" stroke="#555"/>';
-s+='<text x="'+cx+'" y="'+(canTop-6)+'" font-size="11" fill="#dce3ea" text-anchor="middle">φ'+dia.toFixed(1)+'mm</text>';
-s+='<text x="'+cx+'" y="'+(H-5)+'" font-size="10.5" fill="#ffb454" text-anchor="middle">'+tr('缶の下の穴は使用不可')+'</text>';}
-else{var P=PF,bodyLen=P.bodyLen||6.5,bend=P.bend||0.3,maxSpan=P.maxSpan||13;
-var minH=Math.max(1,Math.round((bodyLen+2*bend)/pitch)),maxH=Math.round(maxSpan/pitch),n=Math.min(9,maxH+1);
-s+=holes(n+1);
-var lx=x0,rx=x0+minH*PX,cx=(lx+rx)/2,bodyPx=Math.max(14,bodyLen/pitch*PX),bh=Math.max(13,(P.bodyWid||2.5)/pitch*PX),bodyY=baseY-36;
-s+='<path d="M'+lx+','+(baseY-2)+' V'+(bodyY+bh*0.55)+'" stroke="#cfd8df" stroke-width="2.2" fill="none"/><path d="M'+rx+','+(baseY-2)+' V'+(bodyY+bh*0.55)+'" stroke="#cfd8df" stroke-width="2.2" fill="none"/>';
-s+='<rect x="'+(cx-bodyPx/2)+'" y="'+bodyY+'" width="'+bodyPx+'" height="'+bh+'" rx="'+(bh/2)+'" fill="url(#ppcyl)" stroke="#7e5e30" stroke-width="1.2"/>';
-['0.28#5a3a18','0.45#bb0000','0.6#d49a00'].forEach(function(b){var f=b.split('#');s+='<rect x="'+(cx-bodyPx/2+bodyPx*parseFloat(f[0]))+'" y="'+(bodyY+1)+'" width="2.6" height="'+(bh-2)+'" fill="#'+f[1]+'"/>';});
-s+='<text x="'+cx+'" y="'+(bodyY-7)+'" font-size="11" fill="#dce3ea" text-anchor="middle">'+bodyLen.toFixed(1)+'mm</text>';
-s+='<text x="'+cx+'" y="'+(H-5)+'" font-size="10.5" fill="#5edcff" text-anchor="middle">'+tr('最小スパン')+' '+minH+' '+tr('穴')+' ('+tr('最大')+' '+maxH+')</text>';}
-el.innerHTML=s+'</svg>';}
+var c={pitch:pitch,PX:PX,W:W,H:H,baseY:baseY,x0:x0,holes:holes,ground:'<rect x="0" y="'+(baseY+3)+'" width="'+W+'" height="'+(H-baseY-3)+'" fill="rgba(46,110,70,.22)"/>'};
+var defs='<defs><linearGradient id="ppcyl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ecd2a8"/><stop offset="0.45" stop-color="#d9b38c"/><stop offset="1" stop-color="#9c7642"/></linearGradient><linearGradient id="ppcan" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3a4452"/><stop offset="0.4" stop-color="#1a2230"/><stop offset="1" stop-color="#0a0e14"/></linearGradient></defs>';
+var drawer=PHYS_PREVIEW[kind]||PHYS_PREVIEW.r;
+el.innerHTML='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block">'+defs+drawer(part,PF,c)+'</svg>';}
 function tgl(box,label,k){label=tr(label);var d=document.createElement('label');d.className='tgl';
 var i=document.createElement('input');i.type='checkbox';i.checked=LY[k];
 i.onchange=function(){LY[k]=i.checked;render();};
