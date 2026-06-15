@@ -1,7 +1,7 @@
 {
   "name": "perfwire",
   "description": "AI-assisted wiring planner for hand-soldered perfboards (universal board / protoboard). Generates board-state JSON from a netlist/schematic, runs solver.py to place/route/audit, and audits the human-edited result from the index.html drag editor against physical reality. Use for perfboard / protoboard / universal board / jumper wiring / solder bridge / wiring plan / netlist-to-board requests. ユニバーサル基板・穴あき基板・配線計画・はんだブリッジ・perfwire の依頼で使用。",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "author": { "name": "Yusuke Arai", "email": "yusuke.arai@kecku.com" },
   "homepage": "https://github.com/YusukeAraiKecku/perfwire",
   "repository": "https://github.com/YusukeAraiKecku/perfwire",
