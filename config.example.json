@@ -1,11 +1,63 @@
 {
   "_comment": "perfwire しきい値設定。寸法は実部品に合わせて調整→ solver.py --config で再計算",
   "grid_pitch_mm": 2.54,
+  "_physical": "source = 出典(凡例に表示＋parity_check.mjs が HTML DEFCFG と一致を検証)。寸法はエージェントが datasheet/代理店で調べて両ファイルを更新する。",
   "physical": {
-    "r":    { "_": "1/4Wカーボン軸リード", "body_len_mm": 6.5, "body_wid_mm": 2.5, "bend_margin_mm": 0.3, "max_span_mm": 13.0, "diag": true, "standing": true, "standing_span_holes": [1, 2], "tall": false },
-    "film": { "_": "1uF100Vフィルム箱(立て)", "body_len_mm": 10.0, "body_wid_mm": 4.5, "pitch_holes": [2, 2], "diag": false, "tall": true },
-    "disc": { "_": "0.1uF円板セラ", "body_len_mm": 5.0, "body_wid_mm": 2.5, "pitch_holes": [1, 3], "diag": true, "tall": true },
-    "elec": { "_": "電解(径は実物で調整: 10uF=5mm/100uF=6.5mm)", "dia_mm": 6.5, "pitch_holes": [1, 3], "diag": true, "tall": true }
+    "r": {
+      "_": "1/4W炭素皮膜 軸リード。寸法は電力定格(W)+系列で決まり、抵抗値(Ω)では不変",
+      "body_len_mm": 6.3,
+      "body_wid_mm": 2.4,
+      "bend_margin_mm": 0.3,
+      "max_span_mm": 13.0,
+      "diag": true,
+      "standing": true,
+      "standing_span_holes": [
+        1,
+        2
+      ],
+      "tall": false,
+      "lead_dia_mm": 0.55,
+      "source": "Yageo CFR-25 1/4W datasheet (FCR 2024-04)"
+    },
+    "film": {
+      "_": "1uF100Vフィルム箱(立て)",
+      "body_len_mm": 10.0,
+      "body_wid_mm": 4.5,
+      "pitch_holes": [
+        2,
+        2
+      ],
+      "diag": false,
+      "tall": true,
+      "source": "Vishay MKT/BC (verify exact part)"
+    },
+    "disc": {
+      "_": "0.1uF円板セラ",
+      "body_len_mm": 5.0,
+      "body_wid_mm": 2.5,
+      "pitch_holes": [
+        1,
+        3
+      ],
+      "diag": true,
+      "tall": true,
+      "source": "Vishay/Meritek (verify exact part)"
+    },
+    "elec": {
+      "_": "電解(径は実物で調整: 10uF=5mm/100uF=6.5mm)",
+      "dia_mm": 6.5,
+      "pitch_holes": [
+        1,
+        3
+      ],
+      "diag": true,
+      "tall": true,
+      "source": "Panasonic FC / JustRadios size chart"
+    },
+    "ic": {
+      "_": "DIP本体寸法はピン配置から導出。出典のみ保持",
+      "source": "JEDEC MS-001 (DIP)"
+    }
   },
   "rules": {
     "body_overlap": false,
@@ -13,31 +65,204 @@
     "edge_margin_holes": 0,
     "lead_margin_mm": 5.0,
     "_single_lead_allowlist": "ERC: 単一リードを許可する I/O 点（外部マイク/スピーカ等。空配列なら全て警告）",
-    "single_lead_allowlist": ["IF_MIC", "MIC_IN", "SPK_N", "SPK_P"]
+    "single_lead_allowlist": [
+      "IF_MIC",
+      "MIC_IN",
+      "SPK_N",
+      "SPK_P"
+    ]
   },
   "net_classes": {
-    "HIZ": { "nets": ["INA_P"], "max_wire_holes": 6, "adj_penalty": 8, "keep_away_from": ["OUT", "PWR"], "keep_away_holes": 2 },
-    "SIG": { "nets": ["INA_N", "SPKP_AC", "SPKN_AC", "INA2_P", "INA2_N", "SUM", "MIC_IN", "SPK_P", "SPK_N", "VREF"], "max_wire_holes": 14, "adj_penalty": 3, "keep_away_from": [], "keep_away_holes": 0 },
-    "OUT": { "nets": ["OUTA1", "SPK_OUT", "OUTB2", "IF_MIC"], "max_wire_holes": 99, "adj_penalty": 2, "keep_away_from": ["HIZ"], "keep_away_holes": 2 },
-    "PWR": { "nets": ["V3V3", "GND", "VMID"], "max_wire_holes": 99, "adj_penalty": 1, "keep_away_from": [], "keep_away_holes": 0 }
+    "HIZ": {
+      "nets": [
+        "INA_P"
+      ],
+      "max_wire_holes": 6,
+      "adj_penalty": 8,
+      "keep_away_from": [
+        "OUT",
+        "PWR"
+      ],
+      "keep_away_holes": 2
+    },
+    "SIG": {
+      "nets": [
+        "INA_N",
+        "SPKP_AC",
+        "SPKN_AC",
+        "INA2_P",
+        "INA2_N",
+        "SUM",
+        "MIC_IN",
+        "SPK_P",
+        "SPK_N",
+        "VREF"
+      ],
+      "max_wire_holes": 14,
+      "adj_penalty": 3,
+      "keep_away_from": [],
+      "keep_away_holes": 0
+    },
+    "OUT": {
+      "nets": [
+        "OUTA1",
+        "SPK_OUT",
+        "OUTB2",
+        "IF_MIC"
+      ],
+      "max_wire_holes": 99,
+      "adj_penalty": 2,
+      "keep_away_from": [
+        "HIZ"
+      ],
+      "keep_away_holes": 2
+    },
+    "PWR": {
+      "nets": [
+        "V3V3",
+        "GND",
+        "VMID"
+      ],
+      "max_wire_holes": 99,
+      "adj_penalty": 1,
+      "keep_away_from": [],
+      "keep_away_holes": 0
+    }
   },
   "decoupling": [
-    { "cap": "C3", "pin": "U1.8", "max_holes": 2 },
-    { "cap": "C9", "pin": "U2.8", "max_holes": 2 },
-    { "cap": "C5", "pin": "C6.p", "max_holes": 3 },
-    { "cap": "C4", "pin": "W.RED", "max_holes": 4 }
+    {
+      "cap": "C3",
+      "pin": "U1.8",
+      "max_holes": 2
+    },
+    {
+      "cap": "C9",
+      "pin": "U2.8",
+      "max_holes": 2
+    },
+    {
+      "cap": "C5",
+      "pin": "C6.p",
+      "max_holes": 3
+    },
+    {
+      "cap": "C4",
+      "pin": "W.RED",
+      "max_holes": 4
+    }
   ],
   "part_overrides": {
     "_comment": "個体別の寸法上書き（実測して調整）",
-    "C4": { "dia_mm": 5.0 },
-    "C6": { "dia_mm": 6.5 }
+    "C4": {
+      "dia_mm": 5.0
+    },
+    "C6": {
+      "dia_mm": 6.5
+    }
   },
-  "weights": { "bridge_bonus": 20, "wire_len": 1.0, "caution_base": 1.5, "hiz_mult": 3.0, "keep_away_penalty": 6.0 },
+  "weights": {
+    "bridge_bonus": 20,
+    "wire_len": 1.0,
+    "caution_base": 1.5,
+    "hiz_mult": 3.0,
+    "keep_away_penalty": 6.0,
+    "diag_penalty": 4.0,
+    "span_penalty": 1.5,
+    "standing_penalty": 1.0
+  },
+  "_placement_profiles": "配置の目的（手法）プリセット。初心者は平易な目的名で選ぶ→ weights に展開。エージェントは回路種別で既定を選ぶ。HTML側 DEFCFG.profiles と weights 一致を parity_check が検証。default_profile はガイダンス無しの新規盤の既定。weights を直接編集すると UI は『カスタム』表示。",
+  "default_profile": "analog",
+  "placement_profiles": {
+    "easy": {
+      "ja": "組みやすさ優先",
+      "en": "Easy to build",
+      "beginner": true,
+      "desc_ja": "直交・寝かせ・最小スパン・ゆとりある間隔。手はんだと目視確認のしやすさを最優先（初心者おすすめ）",
+      "desc_en": "Orthogonal, lying-flat, minimal span, roomy spacing. Optimised for easy hand-soldering and visual inspection (recommended for beginners)",
+      "weights": {
+        "bridge_bonus": 14,
+        "wire_len": 1.0,
+        "caution_base": 2.5,
+        "hiz_mult": 3.0,
+        "keep_away_penalty": 4.0,
+        "diag_penalty": 6.0,
+        "span_penalty": 2.5,
+        "standing_penalty": 3.5
+      }
+    },
+    "analog": {
+      "ja": "アナログ・高感度優先",
+      "en": "Analog / sensitive",
+      "desc_ja": "高Z入力を短く、入出力を強く分離、デカップリング近接。オペアンプ/オーディオ/センサなど発振・ノイズに弱い回路向け",
+      "desc_en": "Short high-Z inputs, strong input/output separation, tight decoupling. For op-amp / audio / sensor circuits prone to oscillation and noise",
+      "weights": {
+        "bridge_bonus": 20,
+        "wire_len": 1.0,
+        "caution_base": 1.5,
+        "hiz_mult": 3.0,
+        "keep_away_penalty": 6.0,
+        "diag_penalty": 4.0,
+        "span_penalty": 1.5,
+        "standing_penalty": 1.0
+      }
+    },
+    "compact": {
+      "ja": "省スペース優先",
+      "en": "Compact",
+      "desc_ja": "ブリッジ多用で銅線最少、立て実装可、密でも可。小さい基板に詰めたい上級者向け",
+      "desc_en": "Bridge-heavy for fewest jumpers, standing mounts allowed, density accepted. For experienced builders fitting a small board",
+      "weights": {
+        "bridge_bonus": 30,
+        "wire_len": 1.5,
+        "caution_base": 1.0,
+        "hiz_mult": 2.0,
+        "keep_away_penalty": 3.0,
+        "diag_penalty": 1.5,
+        "span_penalty": 0.5,
+        "standing_penalty": 0.3
+      }
+    }
+  },
   "_rail_rank": "ERC極性: 電位の高い順に大きい値。電解の + 足がより高電位レールにあるか検査（無ければ INFO のみ）",
-  "rail_rank": { "V3V3": 2, "VMID": 1, "GND": 0 },
+  "rail_rank": {
+    "V3V3": 2,
+    "VMID": 1,
+    "GND": 0
+  },
   "_rail_volts": "ERC抵抗電力: 各レールの実電位[V]。抵抗に value[Ω] があり両端がここにあれば P=ΔV²/R を定格(rated_w 既定0.25W)と照合。VMID は V3V3 の中点",
-  "rail_volts": { "V3V3": 3.3, "VMID": 1.65, "GND": 0 },
+  "rail_volts": {
+    "V3V3": 3.3,
+    "VMID": 1.65,
+    "GND": 0
+  },
   "_power_entry": "ERC電源到達性: 各 PWR ネットの給電リード。当該ネットが 1 連結かつこの根に届くか検査（VMID は外部給電なしのため未掲載＝検査対象外）",
-  "power_entry": { "V3V3": ["W.RED"], "GND": ["W.BLK1", "W.BLK2"] },
-  "propose_order": ["C6", "C4", "C3", "C9", "C5", "R5", "R4", "R1", "R2", "R3", "R10", "R9", "R7", "R8", "R12", "R11", "R13"]
+  "power_entry": {
+    "V3V3": [
+      "W.RED"
+    ],
+    "GND": [
+      "W.BLK1",
+      "W.BLK2"
+    ]
+  },
+  "propose_order": [
+    "C6",
+    "C4",
+    "C3",
+    "C9",
+    "C5",
+    "R5",
+    "R4",
+    "R1",
+    "R2",
+    "R3",
+    "R10",
+    "R9",
+    "R7",
+    "R8",
+    "R12",
+    "R11",
+    "R13"
+  ],
+  "_weights_craft": "diag_penalty: 斜め配置の罰則 / span_penalty: 本体長を超える伸長の罰則(穴) / standing_penalty: 立て実装の罰則。大きいほど整然・直交・寝かせ優先（配置を再提案で反映）"
 }

@@ -111,6 +111,31 @@ if (JSON.stringify(DEFCFG.powerEntry) !== JSON.stringify(PYCFG.power_entry)) cfg
 const jdec = (DEFCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max).sort();
 const pdec = (PYCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max_holes).sort();
 if (JSON.stringify(jdec) !== JSON.stringify(pdec)) cfgFails.push('decoupling list differ');
+// Physical footprints + cited source: the editor reads dims/source from DEFCFG.physical
+// (legend span-range + provenance), the solver from config.example.json.physical. If they
+// drift, the legend/spans and the solver disagree on the same part — and the dimension
+// citation shown to the user no longer matches what the solver used. Lock both (there is
+// no separate PHYSREF table any more; source lives next to the dims it cites).
+const PHYS_DIM = [['bodyLen', 'body_len_mm'], ['bodyWid', 'body_wid_mm'], ['maxSpan', 'max_span_mm'], ['dia', 'dia_mm'], ['bend', 'bend_margin_mm']];
+for (const k of ['r', 'film', 'disc', 'elec', 'ic']) {
+  const j = DEFCFG.physical[k] || {}, p = (PYCFG.physical || {})[k] || {};
+  if (j.source !== p.source) cfgFails.push(`physical.${k}.source(${JSON.stringify(j.source)}) != config(${JSON.stringify(p.source)})`);
+  for (const [jk, pk] of PHYS_DIM) if (j[jk] !== undefined && j[jk] !== p[pk]) cfgFails.push(`physical.${k}.${jk}(${j[jk]}) != config.${pk}(${p[pk]})`);
+}
+// Placement profiles (the plain-language goals the editor dropdown and `solver.py --profile`
+// share): both files must agree on each goal's NAME and its full weight vector, or the agent and
+// the human would mean different layouts by the same goal name. The editor uses camelCase weight
+// keys, the solver snake_case — map and compare every one.
+const PROF_WMAP = { bridgeBonus: 'bridge_bonus', wireLen: 'wire_len', cautionBase: 'caution_base', hizMult: 'hiz_mult', keepAwayPen: 'keep_away_penalty', diagPen: 'diag_penalty', spanPen: 'span_penalty', standPen: 'standing_penalty' };
+const jprof = DEFCFG.profiles || {}, pprof = PYCFG.placement_profiles || {};
+if (Object.keys(jprof).length !== Object.keys(pprof).length) cfgFails.push(`profile count ${Object.keys(jprof).length} != config ${Object.keys(pprof).length}`);
+for (const k of Object.keys(jprof)) {
+  if (!pprof[k]) { cfgFails.push(`profile ${k} missing in config`); continue; }
+  if (jprof[k].ja !== pprof[k].ja) cfgFails.push(`profile.${k}.ja(${jprof[k].ja}) != config(${pprof[k].ja})`);
+  const jw = jprof[k].weights || {}, pw = pprof[k].weights || {};
+  for (const [jk, pk] of Object.entries(PROF_WMAP)) if (jw[jk] !== pw[pk]) cfgFails.push(`profile.${k}.${jk}(${jw[jk]}) != config.${pk}(${pw[pk]})`);
+}
+if (DEFCFG.defaultProfile !== PYCFG.default_profile) cfgFails.push(`defaultProfile(${DEFCFG.defaultProfile}) != config.default_profile(${PYCFG.default_profile})`);
 
 const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'client-hardware_tap_buffer.json'), 'utf8'));
 // openNets/powerReach depend on the solver's auto-routing (Python adds jumpers, the editor

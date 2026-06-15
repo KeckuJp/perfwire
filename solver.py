@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""perfwire solver v3 — 物理寸法・EE制約・しきい値設定（perfwire_config.json）対応
+"""perfwire solver v3 — 物理寸法・EE制約・しきい値設定（config.example.json）対応
 処理: 1) ロックされていない部品を制約つき貪欲再配置（本体フットプリント・スパン・デカップリング近接・
         ネットクラス分離を考慮し、足が同ネットに隣接=ブリッジ化を最大化）
       2) ネットごとの連結成分を被覆線で接続（隣の空き穴＋ブリッジ、空き無し→直付け）
@@ -16,7 +16,7 @@ import re
 DEF_CFG = {
     "grid_pitch_mm": 2.54,
     "physical": {
-        "r": {"body_len_mm": 6.5, "body_wid_mm": 2.5, "bend_margin_mm": 0.3, "max_span_mm": 13.0,
+        "r": {"body_len_mm": 6.3, "body_wid_mm": 2.4, "bend_margin_mm": 0.3, "max_span_mm": 13.0,
               "diag": True, "standing": True, "standing_span_holes": [1, 2], "tall": False},
         "film": {"body_len_mm": 10.0, "body_wid_mm": 4.5, "pitch_holes": [2, 2], "diag": False, "tall": True},
         "disc": {"body_len_mm": 5.0, "body_wid_mm": 2.5, "pitch_holes": [1, 3], "diag": True, "tall": True},
@@ -25,7 +25,8 @@ DEF_CFG = {
     "rules": {"body_overlap": False, "max_joints_per_pad": 3, "edge_margin_holes": 0},
     "net_classes": {},
     "decoupling": [],
-    "weights": {"bridge_bonus": 8, "wire_len": 1.0, "caution_base": 1.5, "hiz_mult": 3.0, "keep_away_penalty": 6.0},
+    "weights": {"bridge_bonus": 8, "wire_len": 1.0, "caution_base": 1.5, "hiz_mult": 3.0, "keep_away_penalty": 6.0,
+                "diag_penalty": 4.0, "span_penalty": 1.5, "standing_penalty": 1.0},
     "propose_order": [],
 }
 
@@ -40,6 +41,17 @@ def load_cfg(path):
                 else:
                     a[k] = v
         merge(cfg, user)
+    else:
+        # No config file -> fall back to the bare DEF_CFG, whose net_classes/decoupling
+        # are empty. That silently turns OFF the core EE checks (decoupling distance,
+        # class wire-length, keep-away, polarity, power-reach). Never let that pass
+        # unannounced — the skill's whole value depends on a populated config.
+        why = ("%r not found" % path) if path else "no --config given"
+        sys.stderr.write(
+            "perfwire: WARNING no config loaded (%s) — EE audit DEGRADED: built-in "
+            "DEF_CFG has empty net_classes/decoupling, so decoupling-distance, "
+            "wire-length, keep-away, polarity and power-reach checks run empty. "
+            "Pass --config config.example.json.\n" % why)
     return cfg
 
 def neighbors(p):
@@ -617,9 +629,14 @@ def bom_rows(state):
     """部品を kind+label でまとめた BOM。"""
     groups = {}
     for p in state.get("parts", []):
-        key = (p.get("kind", "?"), p.get("label") or p.get("id", "?"))
+        # family (e.g. "Raspberry Pi Pico", "relay", "inductor") is the human-facing part type;
+        # kind is the geometric primitive used to draw/place it (ic = any named-pin part,
+        # r/disc/elec/film = 2-lead). A new component is added by choosing the right primitive
+        # and naming it via family — no new kind needed.
+        key = (p.get("family") or "", p.get("kind", "?"), p.get("label") or p.get("id", "?"))
         groups.setdefault(key, []).append(p.get("id", "?"))
-    return [{"kind": k[0], "label": k[1], "qty": len(ids), "refs": sorted(ids)} for k, ids in sorted(groups.items())]
+    return [{"family": k[0], "kind": k[1], "label": k[2], "qty": len(ids), "refs": sorted(ids)}
+            for k, ids in sorted(groups.items())]
 
 def build_packet_md(state, cfg):
     """ベンチ用ビルドパケット（BOM + 切断長表 + ブリッジ一覧）を markdown で。"""
@@ -627,9 +644,9 @@ def build_packet_md(state, cfg):
     cuts = cut_sheet(state, cfg)
     out = ["# perfwire build packet — " + str(state.get("proposal", "")), "",
            "## BOM (" + str(sum(b["qty"] for b in bom)) + " parts)", "",
-           "| kind | label | qty | refs |", "|---|---|---|---|"]
+           "| type | label | qty | refs |", "|---|---|---|---|"]
     for b in bom:
-        out.append("| " + b["kind"] + " | " + b["label"] + " | " + str(b["qty"]) + " | " + ", ".join(b["refs"]) + " |")
+        out.append("| " + (b.get("family") or b["kind"]) + " | " + b["label"] + " | " + str(b["qty"]) + " | " + ", ".join(b["refs"]) + " |")
     out += ["", "## Jumper cut sheet (" + str(len(cuts)) + " wires; lead margin " + str(cfg.get("rules", {}).get("lead_margin_mm", 5.0)) + "mm each end)", "",
             "| net | from | to | straight mm | manhattan mm |", "|---|---|---|---|---|"]
     for c in cuts:
@@ -646,7 +663,7 @@ def _is_pwr(n):
     return u in _PWR_NAMES or bool(re.match(r"^[+\-]?\d+V\d*$", u)) or bool(re.match(r"^V\d+$", u))
 
 def emit_config(state):
-    """盤面状態から perfwire_config.json の叩き台を導出（ヒューリスティック）。人がレビュー前提。
+    """盤面状態から config（しきい値JSON）の叩き台を導出（ヒューリスティック）。人がレビュー前提。
     既存の DEF_CFG をベースに、推定できる net_classes / rail_rank / power_entry /
     single_lead_allowlist / decoupling を埋め、不確実な箇所は _TODO で印を付ける。"""
     leads = state.get("leads", {})
@@ -835,7 +852,18 @@ def solve(state, cfg, propose=False):
                                     if ocl in ka and md <= kh and on != nn:
                                         s += W["keep_away_penalty"]
                         if standing:
-                            s += 0.5
+                            s += W.get("standing_penalty", 0.5)
+                        else:
+                            # craft penalties: prefer clean orthogonal, minimally-spanned placements
+                            # (a diagonal/over-stretched part is what forces jumpers to go diagonal)
+                            ddx, ddy = abs(p2[0] - p1[0]), abs(p2[1] - p1[1])
+                            if ddx and ddy:
+                                s += W.get("diag_penalty", 0.0)
+                            Pp = cfg["physical"].get(p["kind"], {})
+                            min_h = Pp.get("body_len_mm", 6.5) / cfg.get("grid_pitch_mm", 2.54)
+                            span_h = (ddx * ddx + ddy * ddy) ** 0.5
+                            if span_h > min_h:
+                                s += W.get("span_penalty", 0.0) * (span_h - min_h)
                         if best is None or s < best[0]:
                             best = (s, p1, p2, standing)
             if best is None:
@@ -1214,9 +1242,29 @@ if __name__ == "__main__":
         sys.stderr.reconfigure(encoding="utf-8")
     except Exception:
         pass
+    # --list-profiles は入力 state を要さない（usage チェックより前に処理）。
+    if "--list-profiles" in sys.argv:
+        _ci = sys.argv.index("--config") if "--config" in sys.argv else -1
+        _cp = (sys.argv[_ci + 1] if 0 <= _ci and _ci + 1 < len(sys.argv) else
+               os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.example.json"))
+        try:
+            _cfg = load_cfg(_cp)
+        except (OSError, ValueError) as e:
+            sys.stderr.write("perfwire: cannot read config %r: %s\n" % (_cp, e)); sys.exit(2)
+        _profs, _dft = _cfg.get("placement_profiles") or {}, _cfg.get("default_profile")
+        if not _profs:
+            sys.stderr.write("perfwire: no placement_profiles in %r\n" % _cp); sys.exit(2)
+        print("placement profiles (pass with --profile <key>):")
+        for _k, _v in _profs.items():
+            _mk = "  [default]" if _k == _dft else ("  [beginner]" if _v.get("beginner") else "")
+            print("  %-9s %s%s" % (_k, _v.get("ja") or _v.get("en") or "", _mk))
+            if _v.get("desc_ja"):
+                print("            %s" % _v["desc_ja"])
+        sys.exit(0)
     # CLI ブートストラップも human-readable に: 引数なし/ファイル無し/JSON 不正で traceback を出さない。
     if len(sys.argv) < 2 or sys.argv[1].startswith("-"):
         sys.stderr.write("perfwire: usage: solver.py <state.json> [--lint | --propose | --propose-n | "
+                         "--profile <key> | --list-profiles | "
                          "--emit-config | --emit-packet | --guard <net> [--guard-net <net>]] "
                          "[--config <file>] [-o <out>]\n")
         sys.exit(2)
@@ -1229,13 +1277,24 @@ if __name__ == "__main__":
 
     src = sys.argv[1]
     propose = "--propose" in sys.argv
-    cfgp = _arg_after("--config") if "--config" in sys.argv else os.path.join(os.path.dirname(os.path.abspath(__file__)), "perfwire_config.json")
+    cfgp = _arg_after("--config") if "--config" in sys.argv else os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.example.json")
     dst = _arg_after("-o") if "-o" in sys.argv else None
     try:
         cfg = load_cfg(cfgp)
     except (OSError, ValueError) as e:
         sys.stderr.write("perfwire: cannot read config %r: %s\n" % (cfgp, e))
         sys.exit(2)
+    # --profile <key>: 配置目的プリセットの weights を cfg.weights に上書き（placePart/solve が読む）。
+    # 監査(ee)・EE上限は不変＝profile は「どう置くか」だけを変える。未知キーは候補を挙げて停止。
+    if "--profile" in sys.argv:
+        pk = _arg_after("--profile")
+        profs = cfg.get("placement_profiles") or {}
+        if pk not in profs:
+            sys.stderr.write("perfwire: unknown --profile %r (have: %s; see --list-profiles)\n"
+                             % (pk, ", ".join(profs) or "none"))
+            sys.exit(2)
+        cfg.setdefault("weights", {}).update(profs[pk].get("weights") or {})
+        sys.stderr.write("perfwire: profile %r applied — %s\n" % (pk, profs[pk].get("ja") or profs[pk].get("en") or ""))
     try:
         state = json.load(io.open(src, encoding="utf-8"))
     except FileNotFoundError:
