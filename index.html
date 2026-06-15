@@ -217,6 +217,9 @@ var JE={
 '押した結果（OK/NG）はまずここに出ます。NGはこの下に直し方が並びます。':'Results (OK/NG) of what you pressed appear here first; fixes for any NG are listed below.',
 '写真下絵（実機トレース）':'Photo underlay (trace a real board)',
 '部品オプション（共通設定）':'Part options (shared)','物理寸法':'Dimensions','缶 直径 mm':'Can diameter mm',
+'外部接続（基板の外へ）':'External connections (off-board)','未割当':'unassigned','ホバーで基板上の接続先を強調':'Hover to highlight its net on the board',
+'出力（外部へ）':'output (off-board)','入力（外部から）':'input (from outside)','入出力（双方向）':'I/O (bidirectional)','電源（外部）':'power (external)','電源入力':'power in',
+'OC出力':'open-collector out','3状態出力':'tri-state out','外部接続':'external','テスト点':'test point','未接続端子':'no-connect','外部線':'external wire',
 '円板 直径 mm':'Disc diameter mm','円板セラミックコンデンサの直径。本体の下の穴は使用不可。':'Ceramic disc diameter. Holes under the body are unusable.',
 'フィルム 本体長 mm':'Film body length mm','フィルム箱コンデンサの長辺。本体の下の穴は使用不可。':'Film box long side. Holes under the body are unusable.',
 'フィルム 本体幅 mm':'Film body width mm','フィルム箱コンデンサの短辺（厚み方向）。':'Film box short side (thickness).',
@@ -681,6 +684,23 @@ D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct&&e.bridge
 var NS='http://www.w3.org/2000/svg';
 function E(t,a){var n=document.createElementNS(NS,t);for(var k in a)n.setAttribute(k,a[k]);svg.appendChild(n);return n;}
 function T(x,y,s,a){var b={x:x,y:y,'font-size':11,'font-family':'Segoe UI,sans-serif','paint-order':'stroke',stroke:'rgba(0,0,0,0.55)','stroke-width':'2',fill:'#fff'};for(var k in (a||{}))b[k]=a[k];var n=E('text',b);n.textContent=s;return n;}
+/* 外部接続（基板の外へ出る W.* 端子）を「どこから・何に・どう」分かるように描く。
+   内部の足は丸ドット、外部端子は角タグ＋最寄りの基板端へ向かう矢印＋役割ラベル。 */
+var ROLEJ={out:'出力（外部へ）',in:'入力（外部から）',bidir:'入出力（双方向）',pwr:'電源（外部）',pwr_in:'電源入力',oc:'OC出力',tri:'3状態出力',passive:'外部接続',test:'テスト点',nc:'未接続端子'};
+function roleWord(role){return (role&&ROLEJ[role])?tr(ROLEJ[role]):tr('外部線');}
+function drawExtTerminal(o,pos,v,col,dim){
+var dL=v[0]-(OX-20),dR=(OX+(cols-1)*PITCH+20)-v[0],dT=v[1]-(OY-20),dB=(OY+(rows-1)*PITCH+20)-v[1];
+var m=Math.min(dL,dR,dT,dB),ux=0,uy=0,edge=m;
+if(m===dL)ux=-1;else if(m===dR)ux=1;else if(m===dT)uy=-1;else uy=1;/* 最寄りの基板端へ向ける＝その辺から外へ出る */
+var len=Math.min(Math.max(edge+6,PITCH*0.55),PITCH*1.25),e2=[v[0]+ux*len,v[1]+uy*len];
+E('line',{x1:v[0],y1:v[1],x2:e2[0],y2:e2[1],stroke:'#fff','stroke-width':5,opacity:0.5*dim,'stroke-linecap':'round'});/* 暗いネット色でも見えるよう白いケーシング */
+E('line',{x1:v[0],y1:v[1],x2:e2[0],y2:e2[1],stroke:col,'stroke-width':2.6,opacity:dim,'stroke-linecap':'round'});
+var ah=7,pp=[-uy,ux],t1=[e2[0]+ux*ah,e2[1]+uy*ah],t2=[e2[0]+pp[0]*ah*0.62,e2[1]+pp[1]*ah*0.62],t3=[e2[0]-pp[0]*ah*0.62,e2[1]-pp[1]*ah*0.62];
+E('path',{d:'M'+t1[0]+','+t1[1]+' L'+t2[0]+','+t2[1]+' L'+t3[0]+','+t3[1]+' Z',fill:col,stroke:'#fff','stroke-width':0.8,opacity:dim});/* 外向き矢印＝基板の外へ出る向き */
+E('rect',{x:v[0]-5.5,y:v[1]-5.5,width:11,height:11,rx:2.5,fill:col,stroke:'#fff','stroke-width':1.6,opacity:dim});/* 角タグ＝外部端子（内部の足は丸ドットと区別） */
+if(LY.labels){var lbl=o.name.replace('W.','');/* 盤上は名前だけ（ネット・役割は凡例「外部接続」に）。基板内側へ置きクリップ回避 */
+var lx=v[0]-ux*9,ly=v[1]-uy*9+(uy?(uy<0?15:-7):4),anc=ux<0?'start':(ux>0?'end':'middle');
+T(lx,ly,lbl,{'font-size':10,'text-anchor':anc,fill:'#e6edf3'});}}
 function bodyOutline(p){var a=xy(p.leads[0][0],p.leads[0][1]),b=xy(p.leads[1][0],p.leads[1][1]),mx2=(a[0]+b[0])/2,my2=(a[1]+b[1])/2,P=physFor(p);
 var ang=Math.atan2(b[1]-a[1],b[0]-a[0])*180/Math.PI;
 if(p.kind==='elec')return E('circle',{cx:mx2,cy:my2,r:mm((P.dia||6.5)/2),fill:'rgba(94,220,255,.10)',stroke:'rgba(94,220,255,.55)','stroke-width':1.4,'stroke-dasharray':'5 4','pointer-events':'none'});
@@ -768,9 +788,9 @@ if(selPart===p)E('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'#5edcff','strok
 if(p.locked)E('rect',{x:mx2-4,y:my2-16,width:8,height:8,rx:2,fill:'#fff',stroke:'#333'});
 if(LY.labels)T(mx2-16,my2-12,p.label+(standing?tr('(縦)'):''),{'font-size':10});}});
 if(LY.foot||tempFoot)D.parts.forEach(function(p){if(p.kind!=='ic')bodyOutline(p);});
-Object.keys(lm).forEach(function(k){var o=lm[k],pos=k.split(',').map(Number),v=xy(pos[0],pos[1]);
-E('circle',{cx:v[0],cy:v[1],r:4,fill:D.netColors[o.net]||'#999',stroke:'#fff','stroke-width':1,opacity:hoverNet&&o.net!==hoverNet?0.25:1});
-if(LY.labels&&o.part===null)T(v[0]+7,v[1]+4,o.name.replace('W.',''),{'font-size':10});});
+Object.keys(lm).forEach(function(k){var o=lm[k],pos=k.split(',').map(Number),v=xy(pos[0],pos[1]),col=D.netColors[o.net]||'#999',dim=hoverNet&&o.net!==hoverNet?0.25:1;
+if(o.part===null){drawExtTerminal(o,pos,v,col,dim);}
+else{E('circle',{cx:v[0],cy:v[1],r:4,fill:col,stroke:'#fff','stroke-width':1,opacity:dim});}});
 if(LY.caut){var hn={};Object.keys(lm).forEach(function(k){hn[k]=lm[k].net;});D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});
 Object.keys(hn).forEach(function(kk){var p2=kk.split(',').map(Number);[[1,0],[0,1]].forEach(function(d){var q=key([p2[0]+d[0],p2[1]+d[1]]);if(hn[q]&&hn[q]!==hn[kk]){var a=xy(p2[0],p2[1]),b=xy(p2[0]+d[0],p2[1]+d[1]);T((a[0]+b[0])/2-4,(a[1]+b[1])/2+4,'×',{fill:'#ff5d5d','font-size':12,stroke:'none'});}});});}
 if(LY.ends)D.wires.forEach(function(w){var col=D.netColors[w.net]||'#999';[w.a,w.b].forEach(function(e){var v=e.direct?xy(e.pad[0],e.pad[1]):xy(e.hole[0],e.hole[1]);
@@ -1143,6 +1163,14 @@ dd.textContent=(dl.dim?dl.dim+' ':'')+(dl.rng?'· '+tr('スパン')+' '+dl.rng+'
 info.appendChild(nm);info.appendChild(rf);info.appendChild(dd);row.appendChild(sw);row.appendChild(info);
 row.onclick=function(){selPart=ps[0];render();};
 box.appendChild(row);});
+var exts=Object.keys(D.leads).filter(function(k){return k.slice(0,2)==='W.';}).sort();
+if(exts.length){var eh=document.createElement('div');eh.style.cssText='font-weight:600;font-size:11.5px;margin:9px 0 3px';eh.textContent=tr('外部接続（基板の外へ）');box.appendChild(eh);
+exts.forEach(function(k){var L=D.leads[k]||{},row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:7px;margin:3px 0;font-size:11px;cursor:pointer;border-radius:6px;padding:1px 3px';
+row.title=tr('ホバーで基板上の接続先を強調');row.onmouseenter=function(){hoverNet=L.net;render();};row.onmouseleave=function(){hoverNet=null;render();};
+var sw=document.createElement('span');sw.style.cssText='flex:none;width:11px;height:11px;border-radius:2px;border:1px solid #fff;background:'+(D.netColors[L.net]||'#999');
+var info2=document.createElement('div'),nm2=document.createElement('span');nm2.style.fontWeight='600';nm2.textContent=k.replace('W.','');
+var meta=document.createElement('span');meta.style.color='var(--mut)';meta.textContent='  '+(L.net||tr('未割当'))+' · '+roleWord(L.role||'');
+info2.appendChild(nm2);info2.appendChild(meta);row.appendChild(sw);row.appendChild(info2);box.appendChild(row);});any=true;}
 if(!any)box.innerHTML='<div class="hint">'+tr('部品がありません')+'</div>';}
 var NETPAL=['#d62839','#1f7a8c','#e0a100','#7b2cbf','#2a9d8f','#ef476f','#118ab2','#9c6644','#6a994e','#ff7b00','#5e548e','#bc6c25'];
 function netColor(net){if(net&&!D.netColors[net])D.netColors[net]=NETPAL[Object.keys(D.netColors).length%NETPAL.length];}
