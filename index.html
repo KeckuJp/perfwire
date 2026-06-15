@@ -247,7 +247,7 @@ var JE={
 '部品の物理寸法（実寸プレビュー）':'Part dimensions (true-size preview)','EE 制約（基板にゾーン表示）':'EE constraints (zones on board)','ネットクラス割当':'Net classes','部品を追加':'Add part',
 'ラベル':'Labels','被覆線':'Wires','注意×':'Caution ×','ブロック穴':'Blocked holes','実寸法（本体）':'True size (bodies)',
 'ブリッジ優先（銅線削減）':'Prefer bridges (fewer wires)','配線長の重み':'Wire length weight','隣接ペナルティ基準':'Adjacency penalty','高Zペナルティ倍率':'High-Z penalty multiplier','入出力分離ペナルティ':'In/out separation penalty',
-'抵抗 本体長 mm':'Resistor body length mm','抵抗 曲げ代 mm':'Resistor bend margin mm','抵抗 最大スパン mm':'Resistor max span mm','抵抗の立て実装を許可':'Allow standing resistors','電解C4 直径 mm':'Electrolytic C4 dia mm','電解C6 直径 mm':'Electrolytic C6 dia mm',
+'抵抗 本体長 mm':'Resistor body length mm','抵抗 曲げ代 mm':'Resistor bend margin mm','抵抗 最大スパン mm':'Resistor max span mm','抵抗の立て実装を許可':'Allow standing resistors',
 '高Z配線長上限（穴）':'High-Z wire limit (holes)','信号配線長上限（穴）':'Signal wire limit (holes)','デカップリング距離上限（穴）':'Decoupling distance limit (holes)','入出力分離距離（穴）':'In/out keep-away (holes)','パッド接合数上限':'Max joints per pad',
 '銅線を許容':'allow wires','ブリッジに寄せる':'favor bridges','長さ気にしない':'length-agnostic','短さ重視':'prefer short','密でもよい':'dense OK','離して置く':'spread out','標準扱い':'standard','厳格に隔離':'strict isolation','近くてもよい':'near OK','強く分離':'separate strongly',
 '小型部品':'small part','大型部品':'large part','きつく曲げ可':'tight bends','余裕が必要':'needs slack','詰めて配置':'compact','広く許容':'generous','細い缶':'thin can','太い缶':'fat can',
@@ -261,8 +261,6 @@ var JE={
 'リードを曲げるのに必要な本体からの余白。きつく曲げられるなら小さく。最小スパンに影響。':'Clearance needed to bend the lead away from the body. Affects min span.',
 'リードを伸ばして届く最大距離。大きくすると配置の自由度が上がるがリードが長くなる。':'Max reach with stretched leads. Larger = more placement freedom but longer leads.',
 '抵抗を縦に立てて1〜2穴で実装する選択肢をソルバーに与える。面積は節約できるが背が高くなる。':'Lets the solver mount resistors vertically in 1-2 holes. Saves area, but taller.',
-'電解コンデンサC4の缶の直径。円の中の穴は使用不可になる。動かすと基板に実寸の円が表示される。':'Can diameter of electrolytic C4. Holes under the can become unusable. Previews the true-size circle.',
-'電解コンデンサC6の缶の直径。円の中の穴は使用不可になる。動かすと基板に実寸の円が表示される。':'Can diameter of electrolytic C6. Holes under the can become unusable. Previews the true-size circle.',
 '高インピーダンスネットに許す銅線の長さ。動かすと各線の長さが基板に表示され、超過する線は赤くなる。':'Max jumper length for high-Z nets. Lengths appear on the board; over-limit wires turn red.',
 '信号ネットに許す銅線の長さ。動かすと該当する線の長さ表示と超過の赤表示が出る。':'Max jumper length for signal nets. Lengths appear on the board; over-limit wires turn red.',
 'パスコンがICの電源ピンから離れてよい距離。動かすと許容ゾーン（青枠）が基板に表示される。監査・再配置の両方に効く。':'How far a bypass cap may sit from its IC power pin. Blue allowed-zone preview. Drives both audit and placement.',
@@ -1451,14 +1449,14 @@ function footPreview(){tempFoot=true;render();clearTimeout(footTimer);footTimer=
    ここに1関数足すだけで「同じように見えて動く」。各関数は選択部品の scope 解決済み寸法(PF)を読む。 */
 var PHYS_PREVIEW={
  elec:function(part,PF,c){var dia=PF.dia||(CFG.physical.elec&&CFG.physical.elec.dia)||6.5;
- var dh=Math.round(dia/c.pitch),n=Math.max(4,dh+2),diaPx=dia/c.pitch*c.PX,cx=c.x0+(dh*c.PX)/2+c.PX,canTop=c.baseY-Math.max(36,diaPx*1.15);
+ var dh=Math.round(dia/c.pitch),n=Math.max(4,dh+2),diaPx=dia/c.pitch*c.PX,cx=c.x0+(dh*c.PX)/2+c.PX,canTop=Math.max(8,c.baseY-Math.max(36,diaPx*1.15));
  var s=c.ground+c.holes(n+1);
  s+='<rect x="'+(cx-diaPx/2)+'" y="'+canTop+'" width="'+diaPx+'" height="'+(c.baseY-2-canTop)+'" rx="'+Math.min(7,diaPx/2)+'" fill="url(#ppcan)" stroke="#444" stroke-width="1.2"/>';
  s+='<ellipse cx="'+cx+'" cy="'+canTop+'" rx="'+(diaPx/2)+'" ry="'+(diaPx*0.16)+'" fill="#2a3340" stroke="#555"/>';
  s+='<text x="'+cx+'" y="'+(canTop-6)+'" font-size="11" fill="#dce3ea" text-anchor="middle">φ'+dia.toFixed(1)+'mm</text>';
  s+='<text x="'+cx+'" y="'+(c.H-5)+'" font-size="10.5" fill="#ffb454" text-anchor="middle">'+tr('缶の下の穴は使用不可')+'</text>';return s;},
  disc:function(part,PF,c){var dia=PF.bodyLen||5;
- var dh=Math.max(1,Math.round(dia/c.pitch)),n=Math.max(3,dh+2),diaPx=dia/c.pitch*c.PX,cx=c.x0+c.PX+diaPx/2,cy=c.baseY-2-Math.max(26,diaPx*0.6);
+ var dh=Math.max(1,Math.round(dia/c.pitch)),n=Math.max(3,dh+2),diaPx=dia/c.pitch*c.PX,cx=c.x0+c.PX+diaPx/2,cy=Math.max(diaPx/2+10,c.baseY-2-Math.max(26,diaPx*0.6));
  var s=c.ground+c.holes(n+1);
  s+='<path d="M'+(cx-diaPx*0.2)+','+cy+' V'+(c.baseY-2)+'" stroke="#cfd8df" stroke-width="2"/><path d="M'+(cx+diaPx*0.2)+','+cy+' V'+(c.baseY-2)+'" stroke="#cfd8df" stroke-width="2"/>';
  s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+(diaPx/2)+'" fill="#b5651d" stroke="#7e4612" stroke-width="1.3"/>';
@@ -1490,7 +1488,7 @@ var PHYS_PREVIEW={
  var s='';for(var rr=0;rr<rws;rr++)for(var cc=0;cc<cols;cc++){s+='<circle cx="'+(gx+cc*cw+cw/2)+'" cy="'+(gy+rr*cw+cw/2)+'" r="3" fill="#16241a" stroke="#3a5a3a"/>';}
  s+='<rect x="'+(gx+cw*0.15)+'" y="'+(gy+cw*0.15)+'" width="'+(cols*cw-cw*0.3)+'" height="'+(rws*cw-cw*0.3)+'" rx="5" fill="#16181c" stroke="#5edcff" stroke-width="1.3" opacity="0.93"/>';
  ks.forEach(function(k){s+='<circle cx="'+(gx+(pins[k][0]-minx)*cw+cw/2)+'" cy="'+(gy+(pins[k][1]-miny)*cw+cw/2)+'" r="2.6" fill="#ffd24d"/>';});
- s+='<circle cx="'+(gx+cw/2)+'" cy="'+(gy+cw/2)+'" r="3.6" fill="none" stroke="#ff5d5d" stroke-width="1.4"/>';
+ var p1=pins['1'];if(p1)s+='<circle cx="'+(gx+(p1[0]-minx)*cw+cw/2)+'" cy="'+(gy+(p1[1]-miny)*cw+cw/2)+'" r="3.6" fill="none" stroke="#ff5d5d" stroke-width="1.4"/>';/* pin-1 マーカーは『1』キーの実位置（最小角に固定しない） */
  s+='<text x="'+(c.W/2)+'" y="'+(c.H-5)+'" font-size="10.5" fill="#5edcff" text-anchor="middle">'+(part.family?part.family+' · ':'')+ks.length+tr('ピン')+'</text>';return s;}
 };
 function drawPhysPreview(part){var el=document.getElementById('physpreview');if(!el||!CFG.physical)return;
