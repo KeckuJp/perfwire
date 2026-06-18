@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.6.3] — 2026-06-18
+
+### Added
+- **`railReff` (WARN) — full-network rail-to-rail effective short.** Computes the
+  effective resistance `R_eff` of the resistor network between each pair of power
+  rails and warns when `I = |ΔV|/R_eff` exceeds `rail_short_ma` (default 50). This
+  catches what per-resistor `railShort` structurally misses: **series chains**
+  (22+22Ω = 44Ω = 75 mA), **parallel** low-R paths (120∥120 = 60Ω = 55 mA, where
+  each branch alone is 27.5 mA = ok), and arbitrary **meshes** (Wheatstone
+  bridges). `R_eff` is solved by a reduced nodal Laplacian via no-pivot Gaussian
+  elimination over a sorted node index — the grounded Laplacian of a connected
+  resistor net is SPD, so no-pivot elimination is stable *and* bit-deterministic.
+  With fixed node/edge/summation order and no FMA, the float solve is
+  **byte-identical across the JS and Python engines** (the gate also compares only
+  `{pair, ok}`, as for `railShort`). Per-pair de-dup defers single direct resistors
+  to `railShort`; reuses `rail_short_ma` (no new config); WARN-only (`fabReady`
+  unchanged). Designed via a parity-feasibility workflow and passed a 3-angle
+  adversarial audit (R_eff verified vs hand-computed values incl. an unbalanced
+  bridge = 17000/71).
+
+### Fixed
+- `topology_audit` return-rail (GND) selection: the JS engine now breaks ties by
+  lexicographically-smallest net name, matching Python's `min((rank, name))`, so a
+  future multi-rank-0 power config (e.g. AGND + DGND) cannot diverge between engines.
+
 ## [0.6.2] — 2026-06-18
 
 ### Added — effective-short ERC checks
