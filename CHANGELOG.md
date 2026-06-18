@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.6.4] — 2026-06-18
+
+### Fixed
+- **Non-finite resistor `value` (Infinity/NaN)** is no longer echoed into the
+  solver's `out.json` as a bare `Infinity` token (invalid JSON that would crash a
+  downstream `JSON.parse`). It is coerced to `null` at intake and treated as
+  "unspecified" by every rail-leak check; the JS engine adds an `isFinite()` guard
+  so both engines exclude non-finite values identically.
+- **A 0-ohm part** (`kind:"r", value:0`) modeled as a component rather than a
+  jumper previously fell through *all* rail-leak checks. A 0-ohm resistor is a
+  galvanic jumper, so `netMerge`'s union-find now unions the two lead holes of any
+  2-lead `value:0` part — a 0-ohm part bridging two distinct nets now correctly
+  fires `netMerge` (hard short). Mirrored in both engines.
+
 ## [0.6.3] — 2026-06-18
 
 ### Added
