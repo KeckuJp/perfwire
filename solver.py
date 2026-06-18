@@ -543,6 +543,23 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
             rated = p.get("rated_w", p.get("ratedW", 0.25))  # JS/Py 両綴りを許容（パリティ）
             res_power.append({"part": p["id"], "watts": round(w, 4), "rated": rated, "ok": w <= rated})
     out["resistorPower"] = res_power
+    # レール間過電流（railShort）: 抵抗の両端が rail_volts の異なるレールにあり I=|ΔV|/R が閾値
+    # （rail_short_ma 既定50mA）超＝定格内でも実効的な部分短絡（過大な静止電流でレールが垂れる）。WARN。
+    # 注: 単一抵抗のみ判定。直列チェーン/並列経路の実効抵抗 R_eff は両エンジンの float パリティの都合で v1 では非対象。
+    rail_short_ma = cfg.get("rail_short_ma", 50)
+    rail_short = []
+    for p in bd.parts:
+        if p.get("kind") != "r":
+            continue
+        R = p.get("value")
+        if not isinstance(R, (int, float)) or R <= 0:
+            continue
+        nm = p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
+        n1, n2 = bd.net_of_lead.get(nm[0]), bd.net_of_lead.get(nm[1])
+        if n1 in rail_volts and n2 in rail_volts and n1 != n2:
+            ma = abs(rail_volts[n1] - rail_volts[n2]) / R * 1000.0
+            rail_short.append({"part": p["id"], "ma": round(ma, 2), "max": rail_short_ma, "ok": ma <= rail_short_ma})
+    out["railShort"] = rail_short
     # デカップリング値の妥当性: バイパスに 1uF 超を割り当てていれば HF 不足の警告（0.01-0.1uF 推奨）。
     listed_caps = {d["cap"] for d in cfg.get("decoupling", [])}
     dec_val = []
@@ -843,6 +860,13 @@ def fix_suggestions(ee):
     for r in ee.get("resistorPower", []):
         if not r.get("ok"):
             fx.append({"finding": "resistorPower", "target": r["part"], "suggestion": "定格Wを上げる or 抵抗値を見直す / increase rated W or revise R"})
+    for m in ee.get("netMerge", []):
+        fx.append({"finding": "netMerge", "target": "/".join(m["nets"]), "suggestion": "橋/配線を分離して別ネットの導通を切る / separate the bridge/wire joining the nets"})
+    for c in ee.get("clampRisk", []):
+        fx.append({"finding": "clampRisk", "target": c["pin"], "suggestion": "入力に直列抵抗かクランプを追加（外部信号のレール超えで ESD ダイオードが導通） / add a series resistor or clamp at the input"})
+    for r in ee.get("railShort", []):
+        if not r.get("ok"):
+            fx.append({"finding": "railShort", "target": r["part"], "suggestion": "抵抗値を上げる or レールを分離（過電流。定格Wを上げても解決しない） / raise R or separate the rails (over-current; higher wattage does NOT help)"})
     return fx
 
 def solve(state, cfg, propose=False):
@@ -1073,7 +1097,8 @@ def solve(state, cfg, propose=False):
     ee_warn = (sum(1 for o in bd.overlaps if o["sev"] == "warn")
                + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"])
                + sum(1 for g in ee["grounding"] if g["daisyReturn"]) + len(ee["undrivenNets"])
-               + len(ee["decouplingValueWarn"]) + len(ee["clampRisk"]))
+               + len(ee["decouplingValueWarn"]) + len(ee["clampRisk"])
+               + sum(1 for x in ee["railShort"] if not x["ok"]))
 
     out = json.loads(json.dumps(state))
     out["parts"] = bd.parts
