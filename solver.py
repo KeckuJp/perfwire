@@ -382,6 +382,39 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
     groups += [tuple(sorted(s)) for s in hole_nets.values() if len(s) >= 2]
     out["netMerge"] = [{"nets": list(g)} for g in sorted(set(groups))]
 
+    # ERC: ブリッジ先が宙ぶらりん（bridgeDangle, HARD NG）。配線端点の bridgeTo（はんだ橋の行き先）が
+    # 何にもアンカーされない空き穴を指す＝union(上の wires ループ)がその橋を「接続済み」と無条件に信用
+    # するため openNets は緑のまま見逃す“無言の断線”。アンカー条件＝bt にリードがある／bt==自分の tap
+    # パッド／bt が padBridge に含まれる／他の配線端点が bt に着地。いずれも無ければ橋の行き先が無接続。
+    lead_holes = set(bd.lead_pos.values())
+    wire_hole_set = set()
+    for w in wires:
+        for e in (w["a"], w["b"]):
+            wire_hole_set.add(tuple(e["pad"]) if e.get("direct") else tuple(e["hole"]))
+    pb_holes = set()
+    for br in pad_bridges:
+        pb_holes.add(tuple(br[0]))
+        pb_holes.add(tuple(br[1]))
+    dangle = []
+    seen_d = set()
+    for w in wires:
+        for e in (w["a"], w["b"]):
+            if e.get("direct") or not e.get("bridgeTo"):
+                continue
+            bt = tuple(e["bridgeTo"])
+            pad = tuple(e["pad"])
+            hole = tuple(e["hole"])
+            anchored = (bt in lead_holes) or (bt == pad) or (bt in pb_holes) or (bt in (wire_hole_set - {hole}))
+            if anchored:
+                continue
+            k = (w.get("net"), e.get("tap"), hole, bt)
+            if k in seen_d:
+                continue
+            seen_d.add(k)
+            dangle.append({"net": w.get("net"), "tap": e.get("tap"), "hole": list(hole), "bridgeTo": list(bt)})
+    dangle.sort(key=lambda d: (d["net"] or "", d["tap"] or "", d["hole"], d["bridgeTo"]))
+    out["bridgeDangle"] = dangle
+
     # ERC: 重複 refdes（id 重複は leadNames/decoupling 参照を壊す）
     cnt = {}
     for p in bd.parts:
@@ -985,6 +1018,8 @@ def fix_suggestions(ee):
             fx.append({"finding": "resistorPower", "target": r["part"], "suggestion": "定格Wを上げる or 抵抗値を見直す / increase rated W or revise R"})
     for m in ee.get("netMerge", []):
         fx.append({"finding": "netMerge", "target": "/".join(m["nets"]), "suggestion": "橋/配線を分離して別ネットの導通を切る / separate the bridge/wire joining the nets"})
+    for d in ee.get("bridgeDangle", []):
+        fx.append({"finding": "bridgeDangle", "target": d.get("tap") or d.get("net"), "suggestion": "配線端をパッドへ直挿し or 橋の行き先を実パッド/穴に接続（宙ぶらりんのブリッジは無言の断線） / plug the wire into the pad directly, or anchor the bridge to a real pad/hole"})
     for c in ee.get("clampRisk", []):
         fx.append({"finding": "clampRisk", "target": c["pin"], "suggestion": "入力に直列抵抗かクランプを追加（外部信号のレール超えで ESD ダイオードが導通） / add a series resistor or clamp at the input"})
     for r in ee.get("railShort", []):
@@ -1219,7 +1254,8 @@ def solve(state, cfg, propose=False):
              + sum(1 for x in ee["polarity"] if x["ok"] is False)
              + sum(1 for x in ee["powerReach"] if not x["ok"]) + len(ee["floatingPowerPins"])
              + len(ee["multipleDrivers"]) + len(ee["stripShorts"])
-             + sum(1 for x in ee["resistorPower"] if not x["ok"]) + len(ee["pinConflicts"]))
+             + sum(1 for x in ee["resistorPower"] if not x["ok"]) + len(ee["pinConflicts"])
+             + len(ee["bridgeDangle"]))
     ee_warn = (sum(1 for o in bd.overlaps if o["sev"] == "warn")
                + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"])
                + sum(1 for g in ee["grounding"] if g["daisyReturn"]) + len(ee["undrivenNets"])

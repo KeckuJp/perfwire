@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.5] — 2026-06-19
+
+### Added
+- **`bridgeDangle` (HARD NG) — a wire endpoint whose solder-bridge points at a
+  hole that is anchored to nothing.** The connectivity solver unconditionally
+  trusts a wire endpoint's `bridgeTo` (it unions the landing hole with the bridge
+  target), so a wire shifted one hole onto an empty cell with a bridge to a
+  dead hole still reports `openNets: []` — a silent open the existing checks miss.
+  `bridgeDangle` flags an endpoint when its `bridgeTo` target is **not** anchored
+  by any of: a part lead, the endpoint's own tap pad, a `padBridge`, or another
+  wire endpoint landing there. The normal "land adjacent + bridge to the pad"
+  idiom (used by ~95% of endpoints on a real board) is always anchored, so it
+  does not fire — only a genuinely dangling bridge does. Mirrored byte-for-byte
+  in `solver.py` and `index.html`; wiring-dependent (skipped on the synthetic
+  parity fixtures, asserted empty on the bundled samples).
+
+### Fixed
+- `netMerge` (galvanic cross-net short) and the new `bridgeDangle` are now both
+  counted by `ercHardCount()` and reflected in `#eedump`/`auditState`, so the
+  editor verdict treats them as the hard NGs they are (previously `netMerge`
+  reached the verdict only via the aggregate NG count, not `auditState`).
+
 ## [0.6.4] — 2026-06-18
 
 ### Fixed
