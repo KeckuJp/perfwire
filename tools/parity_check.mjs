@@ -21,7 +21,7 @@ function grab(re, label) {
 }
 // Pull DEFCFG + the helpers ercAudit needs + ercAudit itself, straight from index.html.
 const DEFCFG_SRC = grab(/var DEFCFG=[\s\S]*?\]\};/, 'DEFCFG');
-const ERC_SRC = grab(/function ercAudit\(\)\{[\s\S]*?railShort:railShort\};\}/, 'ercAudit');
+const ERC_SRC = grab(/function ercAudit\(\)\{[\s\S]*?railReff:railReff\};\}/, 'ercAudit');
 const STRIP_SRC = grab(/function stripSegs\([\s\S]*?return segs;\}/, 'stripSegs');
 
 function key(p) { return p[0] + ',' + p[1]; }
@@ -64,6 +64,7 @@ const FIELDS = {
   clampRisk: a => JSON.stringify((a || []).map(x => ({ pin: x.pin, via: (x.via || []).slice().sort() })).sort((p, q) => p.pin < q.pin ? -1 : 1)),
   netMerge: a => JSON.stringify((a || []).map(m => m.nets.slice().sort()).sort((x, y) => JSON.stringify(x) < JSON.stringify(y) ? -1 : 1)),
   railShort: a => JSON.stringify((a || []).map(x => ({ part: x.part, ok: !!x.ok })).sort((p, q) => p.part < q.part ? -1 : 1)),
+  railReff: a => JSON.stringify((a || []).map(x => ({ pair: x.pair, ok: !!x.ok })).sort((p, q) => JSON.stringify(p.pair) < JSON.stringify(q.pair) ? -1 : 1)),
 };
 
 // synthetic stripboard fixtures so the golden test also covers strip connectivity / shorts / cuts
@@ -90,6 +91,21 @@ const VALUE = {
   parts: [
     { id: 'R9', kind: 'r', leads: [[1, 1], [1, 3]], leadNames: ['R9.a', 'R9.b'], value: 33 },
     { id: 'C3', kind: 'disc', leads: [[3, 1], [3, 3]], leadNames: ['C3.p', 'C3.n'], value: 1e-5 },
+  ],
+  padBridges: [], wires: [], blockedHoles: [], trackCuts: [],
+};
+// effective-short fixture: a 2-resistor SERIES chain V3V3->MIDX->GND (22+22 -> R_eff=44ohm -> 75mA > 50)
+// trips railReff but NOT railShort (each resistor touches only ONE rail). Proves the full-network R_eff
+// solve on the populated case (the gap per-resistor railShort misses). Integer values, clear 50mA margin.
+const EFFSHORT = {
+  grid: { cols: 10, rows: 6, type: 'perf' }, netColors: { V3V3: '#f00', GND: '#000', MIDX: '#0a0' },
+  leads: {
+    'R1.a': { net: 'V3V3', at: [1, 1] }, 'R1.b': { net: 'MIDX', at: [1, 3] },
+    'R2.a': { net: 'MIDX', at: [3, 1] }, 'R2.b': { net: 'GND', at: [3, 3] },
+  },
+  parts: [
+    { id: 'R1', kind: 'r', leads: [[1, 1], [1, 3]], leadNames: ['R1.a', 'R1.b'], value: 22 },
+    { id: 'R2', kind: 'r', leads: [[3, 1], [3, 3]], leadNames: ['R2.a', 'R2.b'], value: 22 },
   ],
   padBridges: [], wires: [], blockedHoles: [], trackCuts: [],
 };
@@ -150,11 +166,12 @@ const WIRING_DEP = ['openNets', 'powerReach', 'netMerge'];
 const cases = sample.proposals.map(p => ({ name: p.name, state: p.state, skip: [] }))
   .concat([{ name: 'strip:short', state: STRIP([]), skip: WIRING_DEP },
            { name: 'strip:cut', state: STRIP([[[3, 1], [4, 1]]]), skip: WIRING_DEP },
-           { name: 'value:over-power+bypass+pinconflict', state: VALUE, skip: WIRING_DEP }]);
+           { name: 'value:over-power+bypass+pinconflict', state: VALUE, skip: WIRING_DEP },
+           { name: 'effshort:series-rail', state: EFFSHORT, skip: WIRING_DEP }]);
 // fixture-completeness: these gate-affecting fields are easy to ship "always empty" (they need
 // value/role/rail inputs). Require at least one case to exercise each on the non-empty path,
 // so a regression that silently zeroes them out can't pass the golden test.
-const MUST_COVER = ['resistorPower', 'decouplingValueWarn', 'pinConflicts', 'multipleDrivers', 'stripShorts', 'clampRisk', 'railShort'];
+const MUST_COVER = ['resistorPower', 'decouplingValueWarn', 'pinConflicts', 'multipleDrivers', 'stripShorts', 'clampRisk', 'railShort', 'railReff'];
 const coverage = Object.fromEntries(MUST_COVER.map(f => [f, 0]));
 const tmp = mkdtempSync(join(tmpdir(), 'pw-parity-'));
 const failures = [];
