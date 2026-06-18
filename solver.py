@@ -457,6 +457,61 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
             undriven.append(net)
     out["undrivenNets"] = undriven
 
+    # クランプ危険（半導体電圧域ルール）: IC の入力ピン(role=in)が、直列抵抗を介さず
+    # （cap 等の非抵抗2端子部品のみを経由して）外部 I/O 端子（single_lead_allowlist のネット）へ
+    # 到達できる＝外部信号がレール[Vss,Vdd]を超えると入力 ESD/クランプダイオードが導通し、
+    # 実効ショート/ラッチアップになりうる。直列 R があれば電流制限され安全なので、抵抗(kind='r')は
+    # 経路を遮断する。allowlist が空（外部端子未定義）なら自然に無効。WARN（振幅不問のヒューリスティック）。
+    # 限界(v1, 許容): 直列素子のブロック判定は kind=='r' のみ＝直列フェライト/ビーズ/0Ωジャンパ/TVS は
+    # 未モデル、抵抗値も不問（0Ω でも保護扱い＝偽陰性の裾）。kind ラベル誤りに依存する点も同様。
+    # いずれも非ゲートの WARN に限った精度の限界として許容（将来 value 閾値や導通素子種で精緻化可）。
+    cap_adj = {}
+    for p in bd.parts:
+        if p.get("kind") in ("r", "ic"):
+            continue
+        names = p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
+        if len(names) != 2:
+            continue
+        n1, n2 = bd.net_of_lead.get(names[0]), bd.net_of_lead.get(names[1])
+        if n1 and n2 and n1 != n2:
+            cap_adj.setdefault(n1, set()).add(n2)
+            cap_adj.setdefault(n2, set()).add(n1)
+    # 外部端子(allowlist)のうち、基板内の能動出力(role out/pwr_out)から cap 経由で駆動される
+    # ネットはレール内に収まる（op-amp 出力＝電源レール内）ので過電圧アグレッサーではない＝除外。
+    # 例: IF_MIC は基板出力で U2.7(out) が C2 経由で駆動するため、クランプ対象から外す。
+    driven = set()
+    dstack = []
+    for nm, net in bd.net_of_lead.items():
+        if net and role.get(nm) in ("out", "pwr_out") and net not in driven:
+            driven.add(net)
+            dstack.append(net)
+    while dstack:
+        for nb in cap_adj.get(dstack.pop(), ()):
+            if nb not in driven:
+                driven.add(nb)
+                dstack.append(nb)
+    clamp = []
+    for p in bd.parts:
+        if p.get("kind") != "ic":
+            continue
+        for pin in p["pins"]:
+            nm = p["id"] + "." + pin
+            if role.get(nm) != "in":
+                continue
+            start = bd.net_of_lead.get(nm)
+            if not start:
+                continue
+            seen, stack = {start}, [start]
+            while stack:
+                for nb in cap_adj.get(stack.pop(), ()):
+                    if nb not in seen:
+                        seen.add(nb)
+                        stack.append(nb)
+            ext = sorted(n for n in seen if n in allow and n not in driven)
+            if ext:
+                clamp.append({"pin": nm, "net": start, "via": ext})
+    out["clampRisk"] = sorted(clamp, key=lambda x: x["pin"])
+
     # 値考慮の EE 深化（すべて任意入力依存・後方互換）:
     rail_volts = cfg.get("rail_volts", {}) if isinstance(cfg.get("rail_volts"), dict) else {}
     # 抵抗の消費電力: 両端ネットの電位が rail_volts で既知なら P=ΔV^2/R。定格(rated_w 既定0.25W)超で NG。
@@ -1004,7 +1059,7 @@ def solve(state, cfg, propose=False):
     ee_warn = (sum(1 for o in bd.overlaps if o["sev"] == "warn")
                + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"])
                + sum(1 for g in ee["grounding"] if g["daisyReturn"]) + len(ee["undrivenNets"])
-               + len(ee["decouplingValueWarn"]))
+               + len(ee["decouplingValueWarn"]) + len(ee["clampRisk"]))
 
     out = json.loads(json.dumps(state))
     out["parts"] = bd.parts

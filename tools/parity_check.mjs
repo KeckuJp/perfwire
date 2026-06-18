@@ -21,7 +21,7 @@ function grab(re, label) {
 }
 // Pull DEFCFG + the helpers ercAudit needs + ercAudit itself, straight from index.html.
 const DEFCFG_SRC = grab(/var DEFCFG=[\s\S]*?\]\};/, 'DEFCFG');
-const ERC_SRC = grab(/function ercAudit\(\)\{[\s\S]*?pinConflicts:pinConflicts\};\}/, 'ercAudit');
+const ERC_SRC = grab(/function ercAudit\(\)\{[\s\S]*?clampRisk:clamp\};\}/, 'ercAudit');
 const STRIP_SRC = grab(/function stripSegs\([\s\S]*?return segs;\}/, 'stripSegs');
 
 function key(p) { return p[0] + ',' + p[1]; }
@@ -61,6 +61,7 @@ const FIELDS = {
   resistorPower: a => JSON.stringify((a || []).map(x => ({ part: x.part, ok: !!x.ok })).sort((p, q) => p.part < q.part ? -1 : 1)),
   decouplingValueWarn: a => JSON.stringify((a || []).map(x => x.cap).sort()),
   pinConflicts: a => JSON.stringify((a || []).map(x => x.net).sort()),
+  clampRisk: a => JSON.stringify((a || []).map(x => ({ pin: x.pin, via: (x.via || []).slice().sort() })).sort((p, q) => p.pin < q.pin ? -1 : 1)),
 };
 
 // synthetic stripboard fixtures so the golden test also covers strip connectivity / shorts / cuts
@@ -149,7 +150,7 @@ const cases = sample.proposals.map(p => ({ name: p.name, state: p.state, skip: [
 // fixture-completeness: these gate-affecting fields are easy to ship "always empty" (they need
 // value/role/rail inputs). Require at least one case to exercise each on the non-empty path,
 // so a regression that silently zeroes them out can't pass the golden test.
-const MUST_COVER = ['resistorPower', 'decouplingValueWarn', 'pinConflicts', 'multipleDrivers', 'stripShorts'];
+const MUST_COVER = ['resistorPower', 'decouplingValueWarn', 'pinConflicts', 'multipleDrivers', 'stripShorts', 'clampRisk'];
 const coverage = Object.fromEntries(MUST_COVER.map(f => [f, 0]));
 const tmp = mkdtempSync(join(tmpdir(), 'pw-parity-'));
 const failures = [];
