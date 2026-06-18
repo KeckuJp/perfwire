@@ -42,7 +42,7 @@ def main() -> None:
             for key in ("openNets", "singleLeadNets", "unconnectedLeads", "duplicateIds",
                         "polarity", "powerReach", "keepAway", "decouplingCoverage",
                         "floatingPowerPins", "multipleDrivers", "undrivenNets", "stripShorts",
-                        "resistorPower", "decouplingValueWarn", "pinConflicts", "clampRisk", "netMerge", "railShort",
+                        "resistorPower", "decouplingValueWarn", "pinConflicts", "clampRisk", "netMerge", "railShort", "railReff",
                         "grounding", "guard", "crosstalk", "fabReady"):
                 if key not in ee:
                     failures.append(f"{name}: ee missing ERC key '{key}'")

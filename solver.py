@@ -242,6 +242,49 @@ def strip_segments(cols, rows, axis, cutset):
                 segs.append(seg)
     return segs
 
+def _solve_reff(e_sorted, comp, node_names, src, ref):
+    """縮約ノーダル・ラプラシアンで src-ref 間の実効抵抗 R_eff を解く（1A 注入・ref 接地・ピボット無し）。
+    SPD（連結抵抗網の接地ラプラシアンは対称・狭義対角優位）なのでピボット不要で安定＝両エンジン ビット一致。
+    +,-,*,/ のみ・加算順固定・set 反復/sum()/FMA 不使用（index.html の solveReff と行単位ミラー）。"""
+    cc = comp[src]
+    inner = [n for n in node_names if comp[n] == cc and n != ref]
+    m = len(inner)
+    if m == 0:
+        return None
+    ri = {nm2: k for k, nm2 in enumerate(inner)}
+    G = [[0.0] * m for _ in range(m)]
+    bv = [0.0] * m
+    for ea, eb, g, _pid in e_sorted:
+        if comp[ea] != cc:
+            continue
+        ia = ri.get(ea, -1)
+        ib = ri.get(eb, -1)
+        if ia >= 0:
+            G[ia][ia] = G[ia][ia] + g
+        if ib >= 0:
+            G[ib][ib] = G[ib][ib] + g
+        if ia >= 0 and ib >= 0:
+            G[ia][ib] = G[ia][ib] - g
+            G[ib][ia] = G[ib][ia] - g
+    bv[ri[src]] = 1.0
+    for i in range(m):
+        piv = G[i][i]
+        if piv == 0.0:
+            return None
+        for k in range(i + 1, m):
+            if G[k][i] != 0.0:
+                factor = G[k][i] / piv
+                for jj in range(i, m):
+                    G[k][jj] = G[k][jj] - factor * G[i][jj]
+                bv[k] = bv[k] - factor * bv[i]
+    v = [0.0] * m
+    for i in range(m - 1, -1, -1):
+        s = bv[i]
+        for jj in range(i + 1, m):
+            s = s - G[i][jj] * v[jj]
+        v[i] = s / G[i][i]
+    return v[ri[src]]
+
 def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
     """ネットリスト/トポロジ系の電気ルールチェック（ERC）と設計レビュー系の監査。
     すべて状態グラフ（leads / parts / padBridges / wires / net_classes）から計算する。
@@ -560,6 +603,64 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
             ma = abs(rail_volts[n1] - rail_volts[n2]) / R * 1000.0
             rail_short.append({"part": p["id"], "ma": round(ma, 2), "max": rail_short_ma, "ok": ma <= rail_short_ma})
     out["railShort"] = rail_short
+    # レール間 実効ショート（railReff, WARN）: 抵抗ネットワークの実効抵抗 R_eff を縮約ノーダル・ラプラシアン
+    # （ピボット無しガウス消去）で解き I=|ΔV|/R_eff が rail_short_ma 超を警告。per-resistor の railShort が
+    # 見逃す「直列チェーン/並列低R/メッシュ」を拾う。ノード=ネット名昇順・エッジ=(min,max,id)昇順で固定＝
+    # 両エンジン ビット一致。0Ω 部品は value>0 で除外（レールリーク系の対象外。実機の 0Ω ジャンパは
+    # padBridge/穴併合として netMerge が拾うが、kind=='r' value:0 単体部品は別管理）。単一直結抵抗で
+    # 説明できる対は railShort 担当＝ペア単位 dedup で除外。閾値は rail_short_ma を電流上限として再利用。
+    redges = []
+    for p in bd.parts:
+        if p.get("kind") != "r":
+            continue
+        R = p.get("value")
+        if not isinstance(R, (int, float)) or R <= 0:
+            continue
+        nm = p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
+        n1, n2 = bd.net_of_lead.get(nm[0]), bd.net_of_lead.get(nm[1])
+        if n1 and n2 and n1 != n2:
+            redges.append((n1, n2, 1.0 / R, p["id"]))
+    rail_reff = []
+    if redges:
+        node_set = set()
+        for ea, eb, g, pid in redges:
+            node_set.add(ea)
+            node_set.add(eb)
+        node_names = sorted(node_set)
+        node_idx = {nm2: i for i, nm2 in enumerate(node_names)}
+        e_sorted = sorted(redges, key=lambda e: (min(e[0], e[1]), max(e[0], e[1]), e[3]))
+        uf2 = {nm2: nm2 for nm2 in node_names}
+        def _uf(x):
+            while uf2[x] != x:
+                uf2[x] = uf2[uf2[x]]
+                x = uf2[x]
+            return x
+        for ea, eb, g, pid in e_sorted:
+            uf2[_uf(ea)] = _uf(eb)
+        comp = {nm2: _uf(nm2) for nm2 in node_names}
+        rail_names = sorted(n for n in rail_volts if isinstance(rail_volts.get(n), (int, float)))
+        for i in range(len(rail_names)):
+            for j in range(i + 1, len(rail_names)):
+                A, B = rail_names[i], rail_names[j]
+                if A not in node_idx or B not in node_idx or comp[A] != comp[B]:
+                    continue
+                reff = _solve_reff(e_sorted, comp, node_names, A, B)
+                if reff is None or reff <= 0:
+                    continue
+                # ペア単位 dedup: A-B が単一直結抵抗で説明できる（並列/直列で R_eff が下がっていない）なら
+                # railShort 担当＝出さない。直結 A-B 抵抗の最小 R と R_eff をほぼ同値で比較（dead-end の ULP も許容）。
+                direct_min = None
+                for e in e_sorted:
+                    if (e[0] == A and e[1] == B) or (e[0] == B and e[1] == A):
+                        rv = 1.0 / e[2]
+                        if direct_min is None or rv < direct_min:
+                            direct_min = rv
+                if direct_min is not None and reff >= direct_min * (1.0 - 1e-6):
+                    continue
+                ma = abs(rail_volts[A] - rail_volts[B]) / reff * 1000.0
+                rail_reff.append({"pair": [A, B], "ohms": round(reff, 4), "ma": round(ma, 2),
+                                  "max": rail_short_ma, "ok": ma <= rail_short_ma})
+    out["railReff"] = rail_reff
     # デカップリング値の妥当性: バイパスに 1uF 超を割り当てていれば HF 不足の警告（0.01-0.1uF 推奨）。
     listed_caps = {d["cap"] for d in cfg.get("decoupling", [])}
     dec_val = []
@@ -877,6 +978,9 @@ def fix_suggestions(ee):
     for r in ee.get("railShort", []):
         if not r.get("ok"):
             fx.append({"finding": "railShort", "target": r["part"], "suggestion": "抵抗値を上げる or レールを分離（過電流。定格Wを上げても解決しない） / raise R or separate the rails (over-current; higher wattage does NOT help)"})
+    for r in ee.get("railReff", []):
+        if not r.get("ok"):
+            fx.append({"finding": "railReff", "target": "/".join(r["pair"]), "suggestion": "レール間の実効抵抗が低すぎ（直列/並列経路）。抵抗を上げる or 経路を分離 / rail-to-rail effective resistance too low (series/parallel path); raise R or break the path"})
     return fx
 
 def solve(state, cfg, propose=False):
@@ -1108,7 +1212,8 @@ def solve(state, cfg, propose=False):
                + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"])
                + sum(1 for g in ee["grounding"] if g["daisyReturn"]) + len(ee["undrivenNets"])
                + len(ee["decouplingValueWarn"]) + len(ee["clampRisk"])
-               + sum(1 for x in ee["railShort"] if not x["ok"]))
+               + sum(1 for x in ee["railShort"] if not x["ok"])
+               + sum(1 for x in ee["railReff"] if not x["ok"]))
 
     out = json.loads(json.dumps(state))
     out["parts"] = bd.parts
