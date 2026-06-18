@@ -302,7 +302,7 @@ var JE={
 '直交ペナルティ（斜め抑制）':'Orthogonality penalty (suppress diagonals)','抵抗などを斜めに置く配置への罰則。大きいほど縦横（直交）に寝かせた整然配置を優先。「配置を再提案」で反映。':'Penalty for placing parts diagonally. Higher = prefers tidy horizontal/vertical (orthogonal) placement. Applied on Re-place.','斜めも可':'diagonals ok','直交優先':'prefer orthogonal',
 'スパンペナルティ（伸長抑制）':'Span penalty (suppress stretching)','部品本体より大きく足を広げた配置への罰則。大きいほど足を伸ばさず最小スパンで置く。「配置を再提案」で反映。':'Penalty for spreading leads wider than the body. Higher = minimal span, leads not stretched. Applied on Re-place.','伸ばしてよい':'may stretch','詰めて置く':'keep tight',
 '立て実装ペナルティ':'Standing penalty','抵抗を縦に立てて置く配置への罰則。大きいほど寝かせ実装を優先（はんだ付け・検査が容易）。「配置を再提案」で反映。':'Penalty for mounting resistors standing/vertical. Higher = prefers lying-flat (easier to solder/inspect). Applied on Re-place.','立ててよい':'standing ok','寝かせ優先':'prefer lying',
-'ストリップ短絡':'Strip short','ネット短絡':'Net short','橋/配線を分離':'separate bridge/wire','出力競合':'Output contention','オープンネット':'Open net','未接続':'Unconnected','電源ピン浮き':'Floating power pin','電源未到達':'Power unreachable','重複ID':'Duplicate id','極性逆':'Reversed polarity','単一リード':'Single-lead net','未駆動入力':'Undriven input','入力クランプ':'Input clamp','直列抵抗/クランプを追加':'add series R / clamp','レール過電流':'Rail overcurrent','R上げ/レール分離':'raise R / separate rail','レール実効短絡':'Rail effective short','実効抵抗を上げる/経路分離':'raise R_eff / break path','未分類':'Unclassified','離隔違反':'Keep-away viol','高Zガード推奨':'High-Z guard','平行近接':'Parallel-near','対':' pairs','深':'depth ','穴':'holes ',
+'ストリップ短絡':'Strip short','ネット短絡':'Net short','橋/配線を分離':'separate bridge/wire','ブリッジ宙ぶらりん':'Dangling bridge','橋の行き先を実パッド/穴に接続':'anchor bridge to a real pad/hole','出力競合':'Output contention','オープンネット':'Open net','未接続':'Unconnected','電源ピン浮き':'Floating power pin','電源未到達':'Power unreachable','重複ID':'Duplicate id','極性逆':'Reversed polarity','単一リード':'Single-lead net','未駆動入力':'Undriven input','入力クランプ':'Input clamp','直列抵抗/クランプを追加':'add series R / clamp','レール過電流':'Rail overcurrent','R上げ/レール分離':'raise R / separate rail','レール実効短絡':'Rail effective short','実効抵抗を上げる/経路分離':'raise R_eff / break path','未分類':'Unclassified','離隔違反':'Keep-away viol','高Zガード推奨':'High-Z guard','平行近接':'Parallel-near','対':' pairs','深':'depth ','穴':'holes ',
 '自動結線: 空の配線を補完（被覆線':'Auto-wired empty board (wires','本）':')',
 '手順':'Step','完了':'done','この手順は済':'this step done','立て実装':'standing','を挿入:':' — insert at:','はんだブリッジ:':'Solder bridge:','の足へ直付け':' direct-solder to lead','に挿し':' insert at',' へブリッジ':' bridge to','※ブリッジ先なし（要修正）':'(no bridge target — fix)','ネット':'net','カット':'Cut','ビルドパケット':'Build packet',
 'はじめに':'Intro','確認':'Verify',
@@ -534,6 +534,12 @@ var mgrp={};
 Object.keys(rootNets).forEach(function(r){var ns=Object.keys(rootNets[r]).sort();if(ns.length>=2)mgrp[ns.join('|')]=ns;});
 Object.keys(holeNets).forEach(function(h){var ns=Object.keys(holeNets[h]).sort();if(ns.length>=2)mgrp[ns.join('|')]=ns;});
 var netMerge=Object.keys(mgrp).sort().map(function(k){return {nets:mgrp[k]};});
+var leadHoles={},bdCovered={};D.parts.forEach(function(p){partLeads(p).forEach(function(L){leadHoles[key(L.pos)]=1;bdCovered[L.name]=1;});});Object.keys(D.leads).forEach(function(k){if(!bdCovered[k]&&D.leads[k].at)leadHoles[key(D.leads[k].at)]=1;});
+var wireHoles={};D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){wireHoles[e.direct?key(e.pad):key(e.hole)]=1;});});
+var pbHoles={};D.padBridges.forEach(function(b){pbHoles[key(b[0])]=1;pbHoles[key(b[1])]=1;});
+var bdang=[],bdSeen={};
+D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct||!e.bridgeTo)return;var bt=key(e.bridgeTo),pad=key(e.pad),hole=key(e.hole);var anchored=leadHoles[bt]||bt===pad||pbHoles[bt]||(wireHoles[bt]&&bt!==hole);if(anchored)return;var kk=(w.net||'')+'|'+(e.tap||'')+'|'+hole+'|'+bt;if(bdSeen[kk])return;bdSeen[kk]=1;bdang.push({net:w.net,tap:e.tap,hole:e.hole,bridgeTo:e.bridgeTo});});});
+bdang.sort(function(a,b){var an=a.net||'',bn=b.net||'';if(an!==bn)return an<bn?-1:1;var at=a.tap||'',bt2=b.tap||'';if(at!==bt2)return at<bt2?-1:1;var ah=key(a.hole),bh=key(b.hole);if(ah!==bh)return ah<bh?-1:1;var ab=key(a.bridgeTo),bb=key(b.bridgeTo);return ab<bb?-1:(ab>bb?1:0);});
 var cnt={};D.parts.forEach(function(p){cnt[p.id]=(cnt[p.id]||0)+1;});
 var dup=Object.keys(cnt).filter(function(i){return cnt[i]>1;}).sort();
 var unclassified=Object.keys(leadsPerNet).filter(function(n){return clsOf(n)===null;}).sort();
@@ -589,7 +595,7 @@ var listedCaps={};(CFG.decoupling||[]).forEach(function(d){listedCaps[d.cap]=1;}
 var decVal=[];D.parts.forEach(function(p){if(listedCaps[p.id]&&typeof p.value==='number'&&p.value>1e-6)decVal.push({cap:p.id,farads:p.value});});
 var rbnSet={};Object.keys(D.leads).forEach(function(k){var net=D.leads[k].net,r=role[k];if(net&&r)(rbnSet[net]=rbnSet[net]||{})[r]=1;});
 var pinConflicts=[];Object.keys(rbnSet).sort().forEach(function(net){var s=rbnSet[net];if(s['out']&&(s['pwr']||s['pwr_out']))pinConflicts.push({net:net,kinds:Object.keys(s).sort()});});
-return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol,powerReach:powerReach,floatingPowerPins:floating.sort(),multipleDrivers:multi,undrivenNets:undriven,stripShorts:stripShorts,resistorPower:resPower,decouplingValueWarn:decVal,pinConflicts:pinConflicts,clampRisk:clamp,netMerge:netMerge,railShort:railShort,railReff:railReff};}
+return {openNets:open,singleLeadNets:single,unconnectedLeads:unconnected.sort(),duplicateIds:dup,unclassifiedNets:unclassified,keepAway:ka,polarity:pol,powerReach:powerReach,floatingPowerPins:floating.sort(),multipleDrivers:multi,undrivenNets:undriven,stripShorts:stripShorts,resistorPower:resPower,decouplingValueWarn:decVal,pinConflicts:pinConflicts,clampRisk:clamp,netMerge:netMerge,railShort:railShort,railReff:railReff,bridgeDangle:bdang};}
 function stripSegs(cols,rows,axis,cuts){var segs=[],a,b,seg;
 if(axis==='col'){for(var c=1;c<=cols;c++){seg=[[c,1]];for(var r=2;r<=rows;r++){if(cuts[key([c,r-1])+'|'+key([c,r])]){segs.push(seg);seg=[];}seg.push([c,r]);}if(seg.length)segs.push(seg);}}
 else{for(var r2=1;r2<=rows;r2++){seg=[[1,r2]];for(var c2=2;c2<=cols;c2++){if(cuts[key([c2-1,r2])+'|'+key([c2,r2])]){segs.push(seg);seg=[];}seg.push([c2,r2]);}if(seg.length)segs.push(seg);}}
@@ -667,7 +673,7 @@ var erc=ercAudit();
 var polbad=erc.polarity.filter(function(x){return x.ok===false;}).map(function(x){return x.part;});
 var preachbad=erc.powerReach.filter(function(x){return !x.ok;}).map(function(x){return x.net;});
 var respbad=erc.resistorPower.filter(function(x){return !x.ok;}).map(function(x){return x.part+' '+x.watts+'W';});
-var ercNg=erc.openNets.length+erc.netMerge.length+erc.unconnectedLeads.length+erc.duplicateIds.length+polbad.length+preachbad.length+erc.floatingPowerPins.length+erc.multipleDrivers.length+erc.stripShorts.length+respbad.length+erc.pinConflicts.length;
+var ercNg=erc.openNets.length+erc.netMerge.length+erc.bridgeDangle.length+erc.unconnectedLeads.length+erc.duplicateIds.length+polbad.length+preachbad.length+erc.floatingPowerPins.length+erc.multipleDrivers.length+erc.stripShorts.length+respbad.length+erc.pinConflicts.length;
 ngs+=ercNg;
 var eb=[];
 if(erc.pinConflicts.length)eb.push('<span class="ng">'+tr('出力電源競合')+' '+erc.pinConflicts.map(function(x){return x.net;}).join(',')+'</span>');
@@ -677,6 +683,7 @@ if(erc.stripShorts.length)eb.push('<span class="ng">'+tr('ストリップ短絡'
 if(erc.multipleDrivers.length)eb.push('<span class="ng">'+tr('出力競合')+' '+erc.multipleDrivers.map(function(m){return m.net+'('+m.pins.join('+')+')';}).join(' ')+'</span>');
 if(erc.openNets.length)eb.push('<span class="ng">'+tr('オープンネット')+' '+erc.openNets.join(',')+'</span>');
 if(erc.netMerge.length)eb.push('<span class="ng">'+tr('ネット短絡')+' '+erc.netMerge.map(function(x){return x.nets.join('/');}).join(' ')+'</span>');
+if(erc.bridgeDangle.length)eb.push('<span class="ng">'+tr('ブリッジ宙ぶらりん')+' '+erc.bridgeDangle.map(function(x){return (x.tap||x.net)+'→'+x.bridgeTo.join(',');}).join(' ')+'</span>');
 if(erc.unconnectedLeads.length)eb.push('<span class="ng">'+tr('未接続')+' '+erc.unconnectedLeads.join(',')+'</span>');
 if(erc.floatingPowerPins.length)eb.push('<span class="ng">'+tr('電源ピン浮き')+' '+erc.floatingPowerPins.join(',')+'</span>');
 if(preachbad.length)eb.push('<span class="ng">'+tr('電源未到達')+' '+preachbad.join(',')+'</span>');
@@ -702,6 +709,7 @@ h+='<br>'+tr('レイアウト品質')+': '+trf('ジャンパ 中央{0}/最長{1}
 var fixes=[];
 erc.openNets.forEach(function(n){fixes.push(tr('オープンネット')+' '+n+': '+tr('ジャンパーで接続'));});
 erc.netMerge.forEach(function(m){fixes.push(tr('ネット短絡')+' '+m.nets.join('/')+': '+tr('橋/配線を分離'));});
+erc.bridgeDangle.forEach(function(x){fixes.push(tr('ブリッジ宙ぶらりん')+' '+(x.tap||x.net)+': '+tr('橋の行き先を実パッド/穴に接続'));});
 erc.stripShorts.forEach(function(s){fixes.push(tr('ストリップ短絡')+' '+s.nets.join('/')+': '+tr('track cutで分離'));});
 erc.multipleDrivers.forEach(function(m){fixes.push(tr('出力競合')+' '+m.net+': '+tr('ドライバを1つに'));});
 erc.unconnectedLeads.forEach(function(l){fixes.push(tr('未接続')+' '+l+': '+tr('ネット割当'));});
@@ -716,7 +724,7 @@ erc.railShort.filter(function(x){return !x.ok;}).forEach(function(x){fixes.push(
 erc.railReff.filter(function(x){return !x.ok;}).forEach(function(x){fixes.push(tr('レール実効短絡')+' '+x.pair.join('-')+': '+tr('実効抵抗を上げる/経路分離'));});
 D.wires.forEach(function(w){var wl=dist(w.a.hole,w.b.hole),mx=cdef(w.net).maxWire;if(wl>mx)fixes.push(tr('配線長')+' '+w.net+': '+tr('経路短縮/再配置'));});
 if(fixes.length)h+='<br>'+tr('修正提案')+':<br>'+fixes.map(function(x){return '<span class="mut2">• '+x+'</span>';}).join('<br>');
-try{var ed=document.getElementById('eedump');if(ed)ed.textContent=JSON.stringify({wireLength:GEE.wireLength,decoupling:GEE.decoupling,padJoints:GEE.padJoints,bodyOverlaps:GEE.bodyOverlaps,grounding:topo.grounding,openNets:erc.openNets,singleLeadNets:erc.singleLeadNets,unconnectedLeads:erc.unconnectedLeads,duplicateIds:erc.duplicateIds,unclassifiedNets:erc.unclassifiedNets,polarity:erc.polarity,powerReach:erc.powerReach,floatingPowerPins:erc.floatingPowerPins,multipleDrivers:erc.multipleDrivers,undrivenNets:erc.undrivenNets,stripShorts:erc.stripShorts,resistorPower:erc.resistorPower,decouplingValueWarn:erc.decouplingValueWarn,pinConflicts:erc.pinConflicts,fabReady:ngs===0});}catch(e){}
+try{var ed=document.getElementById('eedump');if(ed)ed.textContent=JSON.stringify({wireLength:GEE.wireLength,decoupling:GEE.decoupling,padJoints:GEE.padJoints,bodyOverlaps:GEE.bodyOverlaps,grounding:topo.grounding,openNets:erc.openNets,singleLeadNets:erc.singleLeadNets,unconnectedLeads:erc.unconnectedLeads,duplicateIds:erc.duplicateIds,unclassifiedNets:erc.unclassifiedNets,polarity:erc.polarity,powerReach:erc.powerReach,floatingPowerPins:erc.floatingPowerPins,multipleDrivers:erc.multipleDrivers,undrivenNets:erc.undrivenNets,stripShorts:erc.stripShorts,resistorPower:erc.resistorPower,decouplingValueWarn:erc.decouplingValueWarn,pinConflicts:erc.pinConflicts,netMerge:erc.netMerge,bridgeDangle:erc.bridgeDangle,fabReady:ngs===0});}catch(e){}
 var el=document.getElementById('audit');var ast=auditState();/* #eedump was just written above; classify hard vs the accepted soft wire-length margin so the verdict matches the guide */
 var vOK='<div class="vd vok">'+tr('✓ 組んで大丈夫です（赤いNGなし）')+'</div>',vNG='<div class="vd vng">'+trf('✗ 先に直してください（NG {0}件）',ngs)+'</div>';
 var vd=ast.fabReady?vOK:ast.hard?vNG:ast.soft?'<div class="vd vwr">'+tr('△ 指摘は配線長のみ（既知の許容範囲）。組んで大丈夫です')+'</div>':(ngs?vNG:vOK);
@@ -1051,7 +1059,7 @@ var safe=hiz.replace(/[^A-Za-z0-9]/g,''),i=0;Object.keys(ring).forEach(function(
 info.push(hiz+'→'+gn+' ('+Object.keys(ring).length+')');});
 if(added){st.proposal='guard';props.push({name:tr('ガード')+': '+info.join(', '),orig:deep(st),cur:deep(st)});curI=props.length-1;refreshSel();loadProp(curI);auditNow();showHelp(tr('ガードリングを新規案として生成しました（採用/破棄可）。'));}
 else showHelp(tr('ガード対象の高Zネットが見つかりませんでした。'));}
-function ercHardCount(){var e=ercAudit();return e.openNets.length+e.unconnectedLeads.length+e.duplicateIds.length+e.floatingPowerPins.length+e.multipleDrivers.length+e.stripShorts.length+e.pinConflicts.length+e.polarity.filter(function(x){return x.ok===false;}).length+e.powerReach.filter(function(x){return !x.ok;}).length+e.resistorPower.filter(function(x){return !x.ok;}).length;}
+function ercHardCount(){var e=ercAudit();return e.openNets.length+e.netMerge.length+e.bridgeDangle.length+e.unconnectedLeads.length+e.duplicateIds.length+e.floatingPowerPins.length+e.multipleDrivers.length+e.stripShorts.length+e.pinConflicts.length+e.polarity.filter(function(x){return x.ok===false;}).length+e.powerReach.filter(function(x){return !x.ok;}).length+e.resistorPower.filter(function(x){return !x.ok;}).length;}
 function proposeMultiBest(){if(busy||GUIDE.on)return;var grid=[];[10,20,30].forEach(function(bb){[0.5,1.0,2.0].forEach(function(wl){grid.push([bb,wl]);});});
 var origW=deep(CFG.weights),base=deep(D),out=[],i=0;snap();
 (function step(){
@@ -1414,7 +1422,7 @@ cps.forEach(function(c){out+='- [ ] '+holeName(c[0])+'('+c[2]+') ↮ '+holeName(
 return out;}
 function auditState(){var s={fabReady:false,hard:false,soft:false};try{var ee=JSON.parse(document.getElementById('eedump').textContent||'{}');var A=function(x){return Array.isArray(x)?x:[];};
 s.fabReady=ee.fabReady===true;
-s.hard=A(ee.openNets).length>0||A(ee.unconnectedLeads).length>0||A(ee.duplicateIds).length>0||A(ee.polarity).some(function(x){return x&&x.ok===false;})||A(ee.powerReach).some(function(x){return x&&x.ok===false;})||A(ee.floatingPowerPins).length>0||A(ee.multipleDrivers).length>0||A(ee.stripShorts).length>0||A(ee.pinConflicts).length>0||(ee.bodyOverlaps&&ee.bodyOverlaps.ng>0)||A(ee.padJoints).length>0||A(ee.decoupling).some(function(x){return x&&x.ok===false;})||A(ee.resistorPower).some(function(x){return x&&x.ok===false;});
+s.hard=A(ee.openNets).length>0||A(ee.unconnectedLeads).length>0||A(ee.duplicateIds).length>0||A(ee.polarity).some(function(x){return x&&x.ok===false;})||A(ee.powerReach).some(function(x){return x&&x.ok===false;})||A(ee.floatingPowerPins).length>0||A(ee.multipleDrivers).length>0||A(ee.stripShorts).length>0||A(ee.pinConflicts).length>0||(ee.bodyOverlaps&&ee.bodyOverlaps.ng>0)||A(ee.padJoints).length>0||A(ee.decoupling).some(function(x){return x&&x.ok===false;})||A(ee.resistorPower).some(function(x){return x&&x.ok===false;})||A(ee.netMerge).length>0||A(ee.bridgeDangle).length>0;
 s.soft=A(ee.wireLength).some(function(x){return x&&x.ok===false;});}catch(e){}return s;}/* split fab-blocking NG (polarity/connect/short/overlap) from the accepted high-Z wire-length margin so the guide doesn't tell a beginner they broke a working board */
 function buildSteps(){var st=[],ord={ic:0,r:1,film:2,disc:3,elec:4};
 st.push({t:'intro',sig:'intro',phase:'intro'});

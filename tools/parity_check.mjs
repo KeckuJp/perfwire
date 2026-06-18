@@ -21,7 +21,7 @@ function grab(re, label) {
 }
 // Pull DEFCFG + the helpers ercAudit needs + ercAudit itself, straight from index.html.
 const DEFCFG_SRC = grab(/var DEFCFG=[\s\S]*?\]\};/, 'DEFCFG');
-const ERC_SRC = grab(/function ercAudit\(\)\{[\s\S]*?railReff:railReff\};\}/, 'ercAudit');
+const ERC_SRC = grab(/function ercAudit\(\)\{[\s\S]*?bridgeDangle:bdang\};\}/, 'ercAudit');
 const STRIP_SRC = grab(/function stripSegs\([\s\S]*?return segs;\}/, 'stripSegs');
 
 function key(p) { return p[0] + ',' + p[1]; }
@@ -65,6 +65,7 @@ const FIELDS = {
   netMerge: a => JSON.stringify((a || []).map(m => m.nets.slice().sort()).sort((x, y) => JSON.stringify(x) < JSON.stringify(y) ? -1 : 1)),
   railShort: a => JSON.stringify((a || []).map(x => ({ part: x.part, ok: !!x.ok })).sort((p, q) => p.part < q.part ? -1 : 1)),
   railReff: a => JSON.stringify((a || []).map(x => ({ pair: x.pair, ok: !!x.ok })).sort((p, q) => JSON.stringify(p.pair) < JSON.stringify(q.pair) ? -1 : 1)),
+  bridgeDangle: a => JSON.stringify((a || []).map(x => ({ net: x.net, tap: x.tap, bridgeTo: x.bridgeTo })).sort((p, q) => JSON.stringify(p) < JSON.stringify(q) ? -1 : 1)),
 };
 
 // synthetic stripboard fixtures so the golden test also covers strip connectivity / shorts / cuts
@@ -162,7 +163,7 @@ const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'client-hardware_t
 // openNets/powerReach depend on the solver's auto-routing (Python adds jumpers, the editor
 // evaluates the as-given wiring), so they only match on fully-wired inputs (the sample proposals).
 // The synthetic strip fixtures carry no jumpers -> skip those two fields for them.
-const WIRING_DEP = ['openNets', 'powerReach', 'netMerge'];
+const WIRING_DEP = ['openNets', 'powerReach', 'netMerge', 'bridgeDangle'];
 const cases = sample.proposals.map(p => ({ name: p.name, state: p.state, skip: [] }))
   .concat([{ name: 'strip:short', state: STRIP([]), skip: WIRING_DEP },
            { name: 'strip:cut', state: STRIP([[[3, 1], [4, 1]]]), skip: WIRING_DEP },
