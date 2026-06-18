@@ -142,6 +142,11 @@ class Board:
                 return isinstance(p.get("leads"), list) and len(p["leads"]) >= 2
             return False  # kind 欠落 or 未知 kind は取り込み時に除外（rebuild/footprint の KeyError 防止）
         self.parts = [p for p in json.loads(json.dumps(state.get("parts") or [])) if _valid(p)]
+        # 非有限の value（Infinity/NaN）は None に正規化＝レールリーク系で「値なし」扱い＋出力が不正 JSON にならない
+        for _p in self.parts:
+            _v = _p.get("value")
+            if isinstance(_v, float) and not math.isfinite(_v):
+                _p["value"] = None
         self.state = state
         self.cls_of_net = {}
         for cname, cdef in cfg.get("net_classes", {}).items():
@@ -339,6 +344,13 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
             if not e.get("direct") and e.get("bridgeTo"):
                 u(h, tuple(e["bridgeTo"]))
         u(pts[0], pts[1])
+    # 0Ω の 2 端子部品＝ガルバニックなジャンパ＝両リード穴を併合（別ネット間なら netMerge が短絡として拾う）
+    for p0 in bd.parts:
+        if p0.get("kind") == "ic" or p0.get("value") != 0:
+            continue
+        lds0 = p0.get("leads")
+        if lds0 and len(lds0) >= 2:
+            u(tuple(lds0[0]), tuple(lds0[1]))
     # ストリップボード: 同一ストリップ（cut で分割した連続穴）は銅箔で連結。セグメント内を union し、
     # 同セグメントに異ネットのリードが乗っていれば確実なショート（要 track cut）= stripShorts。
     grid = bd.state.get("grid", {})
