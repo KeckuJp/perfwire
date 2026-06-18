@@ -247,6 +247,12 @@
       "W.BLK2"
     ]
   },
+  "_reference_rails": "ERC grounding: 外部給電の無い内部基準レール（VMID 等）も還流トポロジ評価。根=基準点リード（VMID の bypass C6.p）。daisy-chain なら daisyReturn 警告（共通インピーダンス結合）",
+  "reference_rails": {
+    "VMID": [
+      "C6.p"
+    ]
+  },
   "propose_order": [
     "C6",
     "C4",

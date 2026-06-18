@@ -611,6 +611,13 @@ def topology_audit(bd, net_of_hole, pad_bridges, wires, cfg):
 
     # スターGND / デイジーチェーン評価（power_entry を根に BFS）
     pe = cfg.get("power_entry", {})
+    # 内部基準レール（VMID 等）も還流トポロジ評価に含める（外部給電が無いので reference_rails で根を指定）。
+    ref = cfg.get("reference_rails", {})
+    ref = ref if isinstance(ref, dict) else {}
+    entries = dict(pe)
+    for rnet, rleads in ref.items():
+        entries.setdefault(rnet, rleads)  # power_entry を優先
+    ref_set = set(ref.keys())
     return_net = None
     rank = cfg.get("rail_rank", {})
     pwr_nets = set(cfg.get("net_classes", {}).get("PWR", {}).get("nets", []))
@@ -618,31 +625,34 @@ def topology_audit(bd, net_of_hole, pad_bridges, wires, cfg):
         ranked = [(rank[n], n) for n in pwr_nets if n in rank]
         if ranked:
             return_net = min(ranked)[1]  # 最低電位＝リターン（GND）
-    for net, entry_leads in pe.items():
+    for net, entry_leads in entries.items():
         roots = [bd.lead_pos[l] for l in entry_leads if l in bd.lead_pos]
         nodes = [h for h, n in net_of_hole.items() if n == net]
         if not roots or len(nodes) < 3:
             continue
-        depth, seen, frontier, d = {}, set(), [tuple(r) for r in roots], 0
+        # 深さ/到達は「部品リードのホップ数」で測る（純粋な中継・空き穴は段数に数えない）
+        # ＝物理スパンでなく直列段数（共通インピーダンスの連なり）を評価する。
+        lead_holes = set(bd.lead_pos.values())
+        depth, seen, frontier = {}, set(), [tuple(r) for r in roots]
         for r in frontier:
             seen.add(r)
             depth[r] = 0
         while frontier:
             nxt = []
-            d += 1
             for u in frontier:
                 for v in adj.get(u, ()):
                     if net_of_hole.get(v) == net and v not in seen:
                         seen.add(v)
-                        depth[v] = d
+                        depth[v] = depth[u] + (1 if v in lead_holes else 0)
                         nxt.append(v)
             frontier = nxt
-        reached = len(seen)
-        max_depth = max(depth.values()) if depth else 0
+        lead_seen = [h for h in seen if h in lead_holes]
+        reached = len(lead_seen)
+        max_depth = max((depth[h] for h in lead_seen), default=0)
         root_deg = sum(1 for r in roots for v in adj.get(tuple(r), ()) if net_of_hole.get(v) == net)
         # デイジーチェーン指標: 経路長が長く分岐が少ない＝共通インピーダンス結合リスク
         topo = "star" if max_depth <= 2 else ("daisy-chain" if max_depth >= max(4, reached * 0.6) else "mixed")
-        daisy = topo == "daisy-chain" and net == return_net
+        daisy = topo == "daisy-chain" and (net == return_net or net in ref_set)
         out["grounding"].append({"net": net, "rootDegree": root_deg, "reached": reached,
                                  "maxDepth": max_depth, "topology": topo, "daisyReturn": daisy})
 

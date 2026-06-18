@@ -112,6 +112,7 @@ if (JSON.stringify(DEFCFG.railRank) !== JSON.stringify(PYCFG.rail_rank)) cfgFail
 if (JSON.stringify(DEFCFG.railVolts || null) !== JSON.stringify(PYCFG.rail_volts || null)) cfgFails.push('rail_volts differ');
 if ((DEFCFG.railShortMa ?? 50) !== (PYCFG.rail_short_ma ?? 50)) cfgFails.push(`railShortMa(${DEFCFG.railShortMa}) != rail_short_ma(${PYCFG.rail_short_ma})`);
 if (JSON.stringify(DEFCFG.powerEntry) !== JSON.stringify(PYCFG.power_entry)) cfgFails.push('power_entry differ');
+if (JSON.stringify(DEFCFG.referenceRails || null) !== JSON.stringify(PYCFG.reference_rails || null)) cfgFails.push('reference_rails differ');
 const jdec = (DEFCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max).sort();
 const pdec = (PYCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max_holes).sort();
 if (JSON.stringify(jdec) !== JSON.stringify(pdec)) cfgFails.push('decoupling list differ');

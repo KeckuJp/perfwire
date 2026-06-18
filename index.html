@@ -202,6 +202,7 @@ var DEFCFG={pitch:2.54,allowStanding:true,
  railVolts:{V3V3:3.3,VMID:1.65,GND:0},
  railShortMa:50,
  powerEntry:{V3V3:['W.RED'],GND:['W.BLK1','W.BLK2']},
+ referenceRails:{VMID:['C6.p']},
  classes:{HIZ:{nets:['INA_P'],maxWire:6,adjPen:8,keepAway:['OUT','PWR'],keepHoles:2},
  SIG:{nets:['INA_N','SPKP_AC','SPKN_AC','INA2_P','INA2_N','SUM','MIC_IN','SPK_P','SPK_N','VREF'],maxWire:14,adjPen:3,keepAway:[],keepHoles:0},
  OUT:{nets:['OUTA1','SPK_OUT','OUTB2','IF_MIC'],maxWire:99,adjPen:2,keepAway:['HIZ'],keepHoles:2},
@@ -588,6 +589,9 @@ D.parts.forEach(function(p){partLeads(p).forEach(function(L){var net=D.leads[L.n
 D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});return hn;}
 function topoAudit(){
 var pe=CFG.powerEntry||DEFCFG.powerEntry||{},rank=CFG.railRank||DEFCFG.railRank||{};
+var ref=(CFG.referenceRails&&typeof CFG.referenceRails==='object')?CFG.referenceRails:((DEFCFG.referenceRails&&typeof DEFCFG.referenceRails==='object')?DEFCFG.referenceRails:{});
+var entries={};Object.keys(pe).forEach(function(n){entries[n]=pe[n];});Object.keys(ref).forEach(function(n){if(entries[n]===undefined)entries[n]=ref[n];});
+var refSet={};Object.keys(ref).forEach(function(n){refSet[n]=1;});
 var hn=holeNetMap();
 var adj={};function link(a,b){var ka=key(a),kb=key(b);(adj[ka]=adj[ka]||{})[kb]=1;(adj[kb]=adj[kb]||{})[ka]=1;}
 D.padBridges.forEach(function(b){link(b[0],b[1]);});
@@ -595,15 +599,17 @@ D.wires.forEach(function(w){var ea=w.a.direct?w.a.pad:w.a.hole,eb=w.b.direct?w.b
 var lm={};Object.keys(D.leads).forEach(function(k){lm[k]=D.leads[k].at;});
 D.parts.forEach(function(p){partLeads(p).forEach(function(L){lm[L.name]=L.pos;});});
 var pwr=(CFG.classes.PWR&&CFG.classes.PWR.nets)||[];var ret=null,best=1e9;pwr.forEach(function(n){if(rank[n]!==undefined&&rank[n]<best){best=rank[n];ret=n;}});
+var leadHoles={};Object.keys(lm).forEach(function(k){leadHoles[key(lm[k])]=1;});
 var grounding=[];
-Object.keys(pe).forEach(function(net){var roots=pe[net].map(function(l){return lm[l];}).filter(Boolean).map(key);
+Object.keys(entries).forEach(function(net){var roots=entries[net].map(function(l){return lm[l];}).filter(Boolean).map(key);
 var nodes=Object.keys(hn).filter(function(kk){return hn[kk]===net;});if(!roots.length||nodes.length<3)return;
-var depth={},seen={},fr=roots.slice(),d=0;roots.forEach(function(r){seen[r]=1;depth[r]=0;});
-while(fr.length){var nx=[];d++;fr.forEach(function(uu){Object.keys(adj[uu]||{}).forEach(function(vv){if(hn[vv]===net&&!seen[vv]){seen[vv]=1;depth[vv]=d;nx.push(vv);}});});fr=nx;}
-var reached=Object.keys(seen).length,maxD=0;Object.keys(depth).forEach(function(kk){if(depth[kk]>maxD)maxD=depth[kk];});
+var depth={},seen={},fr=roots.slice();roots.forEach(function(r){seen[r]=1;depth[r]=0;});
+while(fr.length){var nx=[];fr.forEach(function(uu){Object.keys(adj[uu]||{}).forEach(function(vv){if(hn[vv]===net&&!seen[vv]){seen[vv]=1;depth[vv]=depth[uu]+(leadHoles[vv]?1:0);nx.push(vv);}});});fr=nx;}
+var leadSeen=Object.keys(seen).filter(function(kk){return leadHoles[kk];});
+var reached=leadSeen.length,maxD=0;leadSeen.forEach(function(kk){if(depth[kk]>maxD)maxD=depth[kk];});
 var rootDeg=0;roots.forEach(function(r){Object.keys(adj[r]||{}).forEach(function(vv){if(hn[vv]===net)rootDeg++;});});
 var topo=maxD<=2?'star':(maxD>=Math.max(4,reached*0.6)?'daisy-chain':'mixed');
-grounding.push({net:net,reached:reached,maxDepth:maxD,topology:topo,daisyReturn:(topo==='daisy-chain'&&net===ret)});});
+grounding.push({net:net,reached:reached,maxDepth:maxD,topology:topo,daisyReturn:(topo==='daisy-chain'&&(net===ret||refSet[net]))});});
 var gg=geom(),blk={};(D.blockedHoles||[]).forEach(function(b){blk[key(b)]=1;});
 var guard=[];var hizHoles={};Object.keys(hn).forEach(function(kk){if(clsOf(hn[kk])==='HIZ')(hizHoles[hn[kk]]=hizHoles[hn[kk]]||[]).push(kk.split(',').map(Number));});
 Object.keys(hizHoles).sort().forEach(function(net){var ring={};hizHoles[net].forEach(function(h){for(var dx=-1;dx<=1;dx++)for(var dy=-1;dy<=1;dy++){if(!dx&&!dy)continue;var q=[h[0]+dx,h[1]+dy],kq=key(q);if(hn[kq]!==net&&inb(q[0],q[1])&&!hn[kq]&&!gg.occ[kq]&&!gg.icSet[kq]&&!gg.bodySet[kq]&&!blk[kq])ring[kq]=q;}});
