@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.6.1] — 2026-06-18
+
+### Added
+- **`clampRisk` ERC — input ESD-clamp / latch-up risk** (warn-level). For each IC
+  input pin (`role=in`), it walks cap-coupled (non-resistive) net adjacency; if an
+  external I/O terminal (`single_lead_allowlist`) is reachable **without a series
+  resistor**, it flags `{pin, net, via}`. An off-board signal that can exceed the IC
+  rails `[Vss,Vdd]` would conduct the input ESD/clamp diode (effective short /
+  latch-up); a series R limits that current. Nets driven on-board by an op-amp output
+  (`out`/`pwr_out`, via caps) are rail-bounded and **excluded**, so a board *output*
+  (e.g. `IF_MIC`) is not a false aggressor. Reuses `pinTypes` / `single_lead_allowlist`
+  — **no new config**; summed into `ee_warn`, never `ee_ng`, so **fabReady is
+  unaffected**. solver.py + byte-for-byte index.html mirror; covered by
+  `parity_check.mjs` (FIELDS + MUST_COVER) and `ci_smoke.py`. v1 limits (documented):
+  only `kind==r` blocks the path; resistor value is ignored.
+
+[0.6.1]: https://github.com/YusukeAraiKecku/perfwire/releases/tag/v0.6.1
+
 ## [0.6.0] — 2026-06-15
 
 A large editor/UX + component-model release focused on beginner usability and the
