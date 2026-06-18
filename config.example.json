@@ -235,6 +235,8 @@
     "VMID": 1.65,
     "GND": 0
   },
+  "_rail_short_ma": "ERC railShort: 抵抗が異なるレール間にあり I=|ΔV|/R がこの値[mA]超で警告（定格内でも過大電流＝実効的な部分短絡）",
+  "rail_short_ma": 50,
   "_power_entry": "ERC電源到達性: 各 PWR ネットの給電リード。当該ネットが 1 連結かつこの根に届くか検査（VMID は外部給電なしのため未掲載＝検査対象外）",
   "power_entry": {
     "V3V3": [
@@ -243,6 +245,12 @@
     "GND": [
       "W.BLK1",
       "W.BLK2"
+    ]
+  },
+  "_reference_rails": "ERC grounding: 外部給電の無い内部基準レール（VMID 等）も還流トポロジ評価。根=基準点リード（VMID の bypass C6.p）。daisy-chain なら daisyReturn 警告（共通インピーダンス結合）",
+  "reference_rails": {
+    "VMID": [
+      "C6.p"
     ]
   },
   "propose_order": [

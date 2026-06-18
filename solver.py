@@ -277,8 +277,12 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
     def u(a, b):
         par[f(a)] = f(b)
     node_net = {}
+    hole_nets = {}  # 穴 -> その穴に乗る全リードの異なるネット集合（同一ホール多ネット短絡の検出。node_net は last-write）
     for lead, xyv in bd.lead_pos.items():
-        node_net[xyv] = bd.net_of_lead.get(lead)
+        nt = bd.net_of_lead.get(lead)
+        node_net[xyv] = nt
+        if nt:
+            hole_nets.setdefault(xyv, set()).add(nt)
         f(xyv)
     for br in pad_bridges:
         a, b = tuple(br[0]), tuple(br[1])
@@ -287,7 +291,7 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
         pts = []
         for e in (w["a"], w["b"]):
             h = tuple(e["pad"]) if e.get("direct") else tuple(e["hole"])
-            node_net.setdefault(h, w["net"])
+            node_net.setdefault(h, w.get("net"))
             pts.append(h)
             if not e.get("direct") and e.get("bridgeTo"):
                 u(h, tuple(e["bridgeTo"]))
@@ -308,10 +312,20 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
                 strip_shorts.append({"segment": [list(seg[0]), list(seg[-1])], "nets": nets_on})
     out["stripShorts"] = strip_shorts
     roots_per_net = {}
+    root_nets = {}
     for node, net in node_net.items():
         if net:
-            roots_per_net.setdefault(net, set()).add(f(node))
+            r = f(node)
+            roots_per_net.setdefault(net, set()).add(r)
+            root_nets.setdefault(r, set()).add(net)
     out["openNets"] = sorted([n for n, rs in roots_per_net.items() if len(rs) > 1])
+    # クロスネット短絡（netMerge）: 1 連結成分（leads+padBridges+wires+strip の union-find）に
+    # 異なる「意図ネット」が 2 つ以上同居＝ガルバニック短絡（はんだ橋/配線ミスで別ネットが導通）。
+    # openNets（1 ネットが分裂）の逆＝2 ネットの併合。perfboard では未検出だった本当のギャップ。HARD NG。
+    # 併合グループ = 連結成分内の異ネット（橋/配線/strip 経由）＋ 同一ホール多ネット（銅箔共有）。重複除去。
+    groups = [tuple(sorted(s)) for s in root_nets.values() if len(s) >= 2]
+    groups += [tuple(sorted(s)) for s in hole_nets.values() if len(s) >= 2]
+    out["netMerge"] = [{"nets": list(g)} for g in sorted(set(groups))]
 
     # ERC: 重複 refdes（id 重複は leadNames/decoupling 参照を壊す）
     cnt = {}
@@ -529,6 +543,23 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
             rated = p.get("rated_w", p.get("ratedW", 0.25))  # JS/Py 両綴りを許容（パリティ）
             res_power.append({"part": p["id"], "watts": round(w, 4), "rated": rated, "ok": w <= rated})
     out["resistorPower"] = res_power
+    # レール間過電流（railShort）: 抵抗の両端が rail_volts の異なるレールにあり I=|ΔV|/R が閾値
+    # （rail_short_ma 既定50mA）超＝定格内でも実効的な部分短絡（過大な静止電流でレールが垂れる）。WARN。
+    # 注: 単一抵抗のみ判定。直列チェーン/並列経路の実効抵抗 R_eff は両エンジンの float パリティの都合で v1 では非対象。
+    rail_short_ma = cfg.get("rail_short_ma", 50)
+    rail_short = []
+    for p in bd.parts:
+        if p.get("kind") != "r":
+            continue
+        R = p.get("value")
+        if not isinstance(R, (int, float)) or R <= 0:
+            continue
+        nm = p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
+        n1, n2 = bd.net_of_lead.get(nm[0]), bd.net_of_lead.get(nm[1])
+        if n1 in rail_volts and n2 in rail_volts and n1 != n2:
+            ma = abs(rail_volts[n1] - rail_volts[n2]) / R * 1000.0
+            rail_short.append({"part": p["id"], "ma": round(ma, 2), "max": rail_short_ma, "ok": ma <= rail_short_ma})
+    out["railShort"] = rail_short
     # デカップリング値の妥当性: バイパスに 1uF 超を割り当てていれば HF 不足の警告（0.01-0.1uF 推奨）。
     listed_caps = {d["cap"] for d in cfg.get("decoupling", [])}
     dec_val = []
@@ -580,6 +611,13 @@ def topology_audit(bd, net_of_hole, pad_bridges, wires, cfg):
 
     # スターGND / デイジーチェーン評価（power_entry を根に BFS）
     pe = cfg.get("power_entry", {})
+    # 内部基準レール（VMID 等）も還流トポロジ評価に含める（外部給電が無いので reference_rails で根を指定）。
+    ref = cfg.get("reference_rails", {})
+    ref = ref if isinstance(ref, dict) else {}
+    entries = dict(pe)
+    for rnet, rleads in ref.items():
+        entries.setdefault(rnet, rleads)  # power_entry を優先
+    ref_set = set(ref.keys())
     return_net = None
     rank = cfg.get("rail_rank", {})
     pwr_nets = set(cfg.get("net_classes", {}).get("PWR", {}).get("nets", []))
@@ -587,31 +625,34 @@ def topology_audit(bd, net_of_hole, pad_bridges, wires, cfg):
         ranked = [(rank[n], n) for n in pwr_nets if n in rank]
         if ranked:
             return_net = min(ranked)[1]  # 最低電位＝リターン（GND）
-    for net, entry_leads in pe.items():
+    for net, entry_leads in entries.items():
         roots = [bd.lead_pos[l] for l in entry_leads if l in bd.lead_pos]
         nodes = [h for h, n in net_of_hole.items() if n == net]
         if not roots or len(nodes) < 3:
             continue
-        depth, seen, frontier, d = {}, set(), [tuple(r) for r in roots], 0
+        # 深さ/到達は「部品リードのホップ数」で測る（純粋な中継・空き穴は段数に数えない）
+        # ＝物理スパンでなく直列段数（共通インピーダンスの連なり）を評価する。
+        lead_holes = set(bd.lead_pos.values())
+        depth, seen, frontier = {}, set(), [tuple(r) for r in roots]
         for r in frontier:
             seen.add(r)
             depth[r] = 0
         while frontier:
             nxt = []
-            d += 1
             for u in frontier:
                 for v in adj.get(u, ()):
                     if net_of_hole.get(v) == net and v not in seen:
                         seen.add(v)
-                        depth[v] = d
+                        depth[v] = depth[u] + (1 if v in lead_holes else 0)
                         nxt.append(v)
             frontier = nxt
-        reached = len(seen)
-        max_depth = max(depth.values()) if depth else 0
+        lead_seen = [h for h in seen if h in lead_holes]
+        reached = len(lead_seen)
+        max_depth = max((depth[h] for h in lead_seen), default=0)
         root_deg = sum(1 for r in roots for v in adj.get(tuple(r), ()) if net_of_hole.get(v) == net)
         # デイジーチェーン指標: 経路長が長く分岐が少ない＝共通インピーダンス結合リスク
         topo = "star" if max_depth <= 2 else ("daisy-chain" if max_depth >= max(4, reached * 0.6) else "mixed")
-        daisy = topo == "daisy-chain" and net == return_net
+        daisy = topo == "daisy-chain" and (net == return_net or net in ref_set)
         out["grounding"].append({"net": net, "rootDegree": root_deg, "reached": reached,
                                  "maxDepth": max_depth, "topology": topo, "daisyReturn": daisy})
 
@@ -829,6 +870,13 @@ def fix_suggestions(ee):
     for r in ee.get("resistorPower", []):
         if not r.get("ok"):
             fx.append({"finding": "resistorPower", "target": r["part"], "suggestion": "定格Wを上げる or 抵抗値を見直す / increase rated W or revise R"})
+    for m in ee.get("netMerge", []):
+        fx.append({"finding": "netMerge", "target": "/".join(m["nets"]), "suggestion": "橋/配線を分離して別ネットの導通を切る / separate the bridge/wire joining the nets"})
+    for c in ee.get("clampRisk", []):
+        fx.append({"finding": "clampRisk", "target": c["pin"], "suggestion": "入力に直列抵抗かクランプを追加（外部信号のレール超えで ESD ダイオードが導通） / add a series resistor or clamp at the input"})
+    for r in ee.get("railShort", []):
+        if not r.get("ok"):
+            fx.append({"finding": "railShort", "target": r["part"], "suggestion": "抵抗値を上げる or レールを分離（過電流。定格Wを上げても解決しない） / raise R or separate the rails (over-current; higher wattage does NOT help)"})
     return fx
 
 def solve(state, cfg, propose=False):
@@ -1051,7 +1099,7 @@ def solve(state, cfg, propose=False):
     ee_ng = (sum(1 for x in ee["decoupling"] if not x["ok"]) + len(ee["padJoints"])
              + sum(1 for o in bd.overlaps if o["sev"] == "ng")
              + sum(1 for x in ee["wireLength"] if not x["ok"])
-             + len(ee["openNets"]) + len(ee["unconnectedLeads"]) + len(ee["duplicateIds"])
+             + len(ee["openNets"]) + len(ee["netMerge"]) + len(ee["unconnectedLeads"]) + len(ee["duplicateIds"])
              + sum(1 for x in ee["polarity"] if x["ok"] is False)
              + sum(1 for x in ee["powerReach"] if not x["ok"]) + len(ee["floatingPowerPins"])
              + len(ee["multipleDrivers"]) + len(ee["stripShorts"])
@@ -1059,7 +1107,8 @@ def solve(state, cfg, propose=False):
     ee_warn = (sum(1 for o in bd.overlaps if o["sev"] == "warn")
                + len(ee["singleLeadNets"]) + len(ee["keepAway"]) + len(ee["unclassifiedNets"])
                + sum(1 for g in ee["grounding"] if g["daisyReturn"]) + len(ee["undrivenNets"])
-               + len(ee["decouplingValueWarn"]) + len(ee["clampRisk"]))
+               + len(ee["decouplingValueWarn"]) + len(ee["clampRisk"])
+               + sum(1 for x in ee["railShort"] if not x["ok"]))
 
     out = json.loads(json.dumps(state))
     out["parts"] = bd.parts

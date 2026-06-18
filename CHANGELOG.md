@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.6.2] — 2026-06-18
+
+### Added — effective-short ERC checks
+Three netlist checks for "current concentrating into an effective short" (no
+hard solder bridge required), plus an analog-reference grounding refinement:
+
+- **`netMerge` (HARD NG)** — two distinct intended nets joined into one galvanic
+  node: a real short that was undetected on perfboards (`stripShorts` only
+  covered strip boards; `openNets` is the inverse — one net split). Catches
+  bridge/wire merges *and* same-hole multi-net shorts (per-hole net set, since
+  `node_net` is last-write-wins). Editor-path by design — the solver re-routes
+  per-net and never emits a merge — so it is `WIRING_DEP` in parity like `openNets`.
+- **`railShort` (WARN)** — a resistor bridging two rails that draws excess
+  quiescent current (`I = |ΔV|/R > rail_short_ma`, default 50 mA): an effective
+  partial short *even when it stays under its power rating* (the gap
+  `resistorPower` misses). Per-resistor v1; full-network R_eff / series chains
+  are deferred to keep cross-engine float parity stable.
+- **Reference-rail grounding** — the star/daisy return-topology analysis now also
+  evaluates internal reference rails that have no external feed (new optional
+  config `reference_rails`, e.g. `VMID` rooted at its bypass cap), flagging a
+  daisy-chained analog mid-rail (common-impedance coupling). Return-topology
+  depth now counts **component-lead hops**, not routing-hole hops, so a
+  board-spanning but electrically-star rail no longer false-reads as daisy.
+
+All WARN-level checks leave `fabReady` unchanged; `netMerge` is the only hard NG.
+Each ships a byte-for-byte `solver.py` / `index.html` mirror, parity coverage,
+and passed an adversarial audit loop. The CLI `ee.fixes` list now also covers
+`clampRisk` / `netMerge` / `railShort`.
+
+[0.6.2]: https://github.com/YusukeAraiKecku/perfwire/releases/tag/v0.6.2
+
 ## [0.6.1] — 2026-06-18
 
 ### Added

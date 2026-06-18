@@ -21,7 +21,7 @@ function grab(re, label) {
 }
 // Pull DEFCFG + the helpers ercAudit needs + ercAudit itself, straight from index.html.
 const DEFCFG_SRC = grab(/var DEFCFG=[\s\S]*?\]\};/, 'DEFCFG');
-const ERC_SRC = grab(/function ercAudit\(\)\{[\s\S]*?clampRisk:clamp\};\}/, 'ercAudit');
+const ERC_SRC = grab(/function ercAudit\(\)\{[\s\S]*?railShort:railShort\};\}/, 'ercAudit');
 const STRIP_SRC = grab(/function stripSegs\([\s\S]*?return segs;\}/, 'stripSegs');
 
 function key(p) { return p[0] + ',' + p[1]; }
@@ -62,6 +62,8 @@ const FIELDS = {
   decouplingValueWarn: a => JSON.stringify((a || []).map(x => x.cap).sort()),
   pinConflicts: a => JSON.stringify((a || []).map(x => x.net).sort()),
   clampRisk: a => JSON.stringify((a || []).map(x => ({ pin: x.pin, via: (x.via || []).slice().sort() })).sort((p, q) => p.pin < q.pin ? -1 : 1)),
+  netMerge: a => JSON.stringify((a || []).map(m => m.nets.slice().sort()).sort((x, y) => JSON.stringify(x) < JSON.stringify(y) ? -1 : 1)),
+  railShort: a => JSON.stringify((a || []).map(x => ({ part: x.part, ok: !!x.ok })).sort((p, q) => p.part < q.part ? -1 : 1)),
 };
 
 // synthetic stripboard fixtures so the golden test also covers strip connectivity / shorts / cuts
@@ -108,7 +110,9 @@ if (DEFCFG.rules.maxJoints !== PYCFG.rules.max_joints_per_pad) cfgFails.push('ru
 if (JSON.stringify((DEFCFG.rules.singleLeadAllow || []).slice().sort()) !== JSON.stringify((PYCFG.rules.single_lead_allowlist || []).slice().sort())) cfgFails.push('single-lead allowlist differ');
 if (JSON.stringify(DEFCFG.railRank) !== JSON.stringify(PYCFG.rail_rank)) cfgFails.push('rail_rank differ');
 if (JSON.stringify(DEFCFG.railVolts || null) !== JSON.stringify(PYCFG.rail_volts || null)) cfgFails.push('rail_volts differ');
+if ((DEFCFG.railShortMa ?? 50) !== (PYCFG.rail_short_ma ?? 50)) cfgFails.push(`railShortMa(${DEFCFG.railShortMa}) != rail_short_ma(${PYCFG.rail_short_ma})`);
 if (JSON.stringify(DEFCFG.powerEntry) !== JSON.stringify(PYCFG.power_entry)) cfgFails.push('power_entry differ');
+if (JSON.stringify(DEFCFG.referenceRails || null) !== JSON.stringify(PYCFG.reference_rails || null)) cfgFails.push('reference_rails differ');
 const jdec = (DEFCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max).sort();
 const pdec = (PYCFG.decoupling || []).map(d => d.cap + ':' + d.pin + ':' + d.max_holes).sort();
 if (JSON.stringify(jdec) !== JSON.stringify(pdec)) cfgFails.push('decoupling list differ');
@@ -142,7 +146,7 @@ const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'client-hardware_t
 // openNets/powerReach depend on the solver's auto-routing (Python adds jumpers, the editor
 // evaluates the as-given wiring), so they only match on fully-wired inputs (the sample proposals).
 // The synthetic strip fixtures carry no jumpers -> skip those two fields for them.
-const WIRING_DEP = ['openNets', 'powerReach'];
+const WIRING_DEP = ['openNets', 'powerReach', 'netMerge'];
 const cases = sample.proposals.map(p => ({ name: p.name, state: p.state, skip: [] }))
   .concat([{ name: 'strip:short', state: STRIP([]), skip: WIRING_DEP },
            { name: 'strip:cut', state: STRIP([[[3, 1], [4, 1]]]), skip: WIRING_DEP },
@@ -150,7 +154,7 @@ const cases = sample.proposals.map(p => ({ name: p.name, state: p.state, skip: [
 // fixture-completeness: these gate-affecting fields are easy to ship "always empty" (they need
 // value/role/rail inputs). Require at least one case to exercise each on the non-empty path,
 // so a regression that silently zeroes them out can't pass the golden test.
-const MUST_COVER = ['resistorPower', 'decouplingValueWarn', 'pinConflicts', 'multipleDrivers', 'stripShorts', 'clampRisk'];
+const MUST_COVER = ['resistorPower', 'decouplingValueWarn', 'pinConflicts', 'multipleDrivers', 'stripShorts', 'clampRisk', 'railShort'];
 const coverage = Object.fromEntries(MUST_COVER.map(f => [f, 0]));
 const tmp = mkdtempSync(join(tmpdir(), 'pw-parity-'));
 const failures = [];

@@ -42,12 +42,12 @@ def main() -> None:
             for key in ("openNets", "singleLeadNets", "unconnectedLeads", "duplicateIds",
                         "polarity", "powerReach", "keepAway", "decouplingCoverage",
                         "floatingPowerPins", "multipleDrivers", "undrivenNets", "stripShorts",
-                        "resistorPower", "decouplingValueWarn", "pinConflicts", "clampRisk",
+                        "resistorPower", "decouplingValueWarn", "pinConflicts", "clampRisk", "netMerge", "railShort",
                         "grounding", "guard", "crosstalk", "fabReady"):
                 if key not in ee:
                     failures.append(f"{name}: ee missing ERC key '{key}'")
             # the bundled (perfboard) sample must have no hard ERC errors
-            for key in ("openNets", "unconnectedLeads", "duplicateIds", "floatingPowerPins", "multipleDrivers",
+            for key in ("openNets", "netMerge", "unconnectedLeads", "duplicateIds", "floatingPowerPins", "multipleDrivers",
                         "stripShorts", "pinConflicts"):
                 if ee.get(key):
                     failures.append(f"{name}: unexpected ERC error {key}={ee[key]}")
