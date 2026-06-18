@@ -277,8 +277,12 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
     def u(a, b):
         par[f(a)] = f(b)
     node_net = {}
+    hole_nets = {}  # 穴 -> その穴に乗る全リードの異なるネット集合（同一ホール多ネット短絡の検出。node_net は last-write）
     for lead, xyv in bd.lead_pos.items():
-        node_net[xyv] = bd.net_of_lead.get(lead)
+        nt = bd.net_of_lead.get(lead)
+        node_net[xyv] = nt
+        if nt:
+            hole_nets.setdefault(xyv, set()).add(nt)
         f(xyv)
     for br in pad_bridges:
         a, b = tuple(br[0]), tuple(br[1])
@@ -287,7 +291,7 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
         pts = []
         for e in (w["a"], w["b"]):
             h = tuple(e["pad"]) if e.get("direct") else tuple(e["hole"])
-            node_net.setdefault(h, w["net"])
+            node_net.setdefault(h, w.get("net"))
             pts.append(h)
             if not e.get("direct") and e.get("bridgeTo"):
                 u(h, tuple(e["bridgeTo"]))
@@ -308,10 +312,20 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
                 strip_shorts.append({"segment": [list(seg[0]), list(seg[-1])], "nets": nets_on})
     out["stripShorts"] = strip_shorts
     roots_per_net = {}
+    root_nets = {}
     for node, net in node_net.items():
         if net:
-            roots_per_net.setdefault(net, set()).add(f(node))
+            r = f(node)
+            roots_per_net.setdefault(net, set()).add(r)
+            root_nets.setdefault(r, set()).add(net)
     out["openNets"] = sorted([n for n, rs in roots_per_net.items() if len(rs) > 1])
+    # クロスネット短絡（netMerge）: 1 連結成分（leads+padBridges+wires+strip の union-find）に
+    # 異なる「意図ネット」が 2 つ以上同居＝ガルバニック短絡（はんだ橋/配線ミスで別ネットが導通）。
+    # openNets（1 ネットが分裂）の逆＝2 ネットの併合。perfboard では未検出だった本当のギャップ。HARD NG。
+    # 併合グループ = 連結成分内の異ネット（橋/配線/strip 経由）＋ 同一ホール多ネット（銅箔共有）。重複除去。
+    groups = [tuple(sorted(s)) for s in root_nets.values() if len(s) >= 2]
+    groups += [tuple(sorted(s)) for s in hole_nets.values() if len(s) >= 2]
+    out["netMerge"] = [{"nets": list(g)} for g in sorted(set(groups))]
 
     # ERC: 重複 refdes（id 重複は leadNames/decoupling 参照を壊す）
     cnt = {}
@@ -1051,7 +1065,7 @@ def solve(state, cfg, propose=False):
     ee_ng = (sum(1 for x in ee["decoupling"] if not x["ok"]) + len(ee["padJoints"])
              + sum(1 for o in bd.overlaps if o["sev"] == "ng")
              + sum(1 for x in ee["wireLength"] if not x["ok"])
-             + len(ee["openNets"]) + len(ee["unconnectedLeads"]) + len(ee["duplicateIds"])
+             + len(ee["openNets"]) + len(ee["netMerge"]) + len(ee["unconnectedLeads"]) + len(ee["duplicateIds"])
              + sum(1 for x in ee["polarity"] if x["ok"] is False)
              + sum(1 for x in ee["powerReach"] if not x["ok"]) + len(ee["floatingPowerPins"])
              + len(ee["multipleDrivers"]) + len(ee["stripShorts"])
