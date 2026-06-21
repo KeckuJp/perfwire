@@ -343,7 +343,7 @@ var JE={
 '出力電源競合':'Output-to-power','抵抗過負荷':'Resistor over-power','パスコン値':'Decoupling value',
 '修正提案':'Suggested fixes','最良配置を自動探索（重み格子）':'Auto-search best placement (weight grid)','探索':'search','最良配置:':'Best placement:',
 'ガードリング生成（高Z）':'Synthesize guard ring (high-Z)','ガード':'Guard','ガードネット不明':'guard net unknown','ガードリングを新規案として生成しました（採用/破棄可）。':'Guard ring generated as a new proposal (accept or discard).','ガード対象の高Zネットが見つかりませんでした。':'No high-Z net to guard.','ジャンパーで接続':'connect with a jumper','track cutで分離':'split with a track cut','ドライバを1つに':'leave one driver','ネット割当':'assign a net','refdes一意化':'make refdes unique','電源へ接続':'connect to supply','+を高電位へ':'+ lead to higher rail','給電へ結線':'wire to supply entry','出力を電源から分離':'separate output from power','定格up/値見直し':'raise rated W / revise R','経路短縮/再配置':'shorten run / re-place',
-'モード: カット（ストリップ基板）':'Mode: cut (stripboard)','基板種別を切替（ユニバーサル⇄ストリップ）':'Toggle board type (perfboard / stripboard)','ストリップ向き切替（行⇄列）':'Toggle strip axis (row / column)',
+'モード: カット（ストリップ基板）':'Mode: cut (stripboard)','基板種別を切替（ユニバーサル⇄ストリップ）':'Toggle board type (perfboard / stripboard)','基板種別を切替（独立ランド/ストリップ/十字配線/ブレッドボード/連ランド）':'Cycle board type (perf / strip / cross-mesh / breadboard / cluster)','基板種別':'Board type','十字/格子基板: 必要なカットを自動生成＋一覧（ネット分離）':'Cross/grid board: auto-generate required cuts + list (isolate nets)','カット自動生成は十字/格子（mesh）基板のみ。先に基板種別を切替えてください。':'Auto-cut is for cross/grid (mesh) boards only — switch the board type first.','必要カット {0} 本を生成（盤面に表示・テキスト欄・.md）。これを実機で切ればネットが分離します。':'Generated {0} required cuts (shown on board, text box, .md). Cut these on the real board to isolate the nets.','必要カット一覧':'Required cut list','十字/格子基板の銅橋を切ってネットを分離する。各行＝隣接2穴の間の銅橋を1本カット。':'Cut the copper bridges of a cross/grid board to isolate nets. Each line = one bridge between two adjacent holes.','穴名＝列番号+行アルファベット（例 6B）。':'Hole = column + row letter (e.g. 6B).','空':'free','ストリップ向き切替（行⇄列）':'Toggle strip axis (row / column)',
 'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。':'Ring = jumper insertion hole. Drag to a free adjacent hole (the bridge follows). Drop onto a lead to direct-solder.',
 '本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。':'Drag bodies or leads; valid holes glow green while dragging a lead. Click to select, then toggle lock.',
 '隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。':'Drag across two adjacent holes to add a solder bridge; click an existing one to delete.',
@@ -523,10 +523,11 @@ D.padBridges.forEach(function(b){u(key(b[0]),key(b[1]));});
 D.wires.forEach(function(w){var pts=[];[w.a,w.b].forEach(function(e){var hp=e.direct?e.pad:e.hole,kk=key(hp);if(nodeNet[kk]===undefined)nodeNet[kk]=w.net;f(kk);pts.push(kk);if(!e.direct&&e.bridgeTo)u(kk,key(e.bridgeTo));});u(pts[0],pts[1]);});
 D.parts.forEach(function(p){if(p.kind==='ic'||p.value!==0)return;if(p.leads&&p.leads.length>=2)u(key(p.leads[0]),key(p.leads[1]));});
 var stripShorts=[];
-if(D.grid.type==='strip'){var cuts={};(D.trackCuts||[]).forEach(function(cc){cuts[key(cc[0])+'|'+key(cc[1])]=1;cuts[key(cc[1])+'|'+key(cc[0])]=1;});
-stripSegs(cols,rows,D.grid.stripAxis||'row',cuts).forEach(function(seg){for(var i=1;i<seg.length;i++)u(key(seg[i-1]),key(seg[i]));
-var ns={};seg.forEach(function(h){var n=nodeNet[key(h)];if(n)ns[n]=1;});var nl=Object.keys(ns).sort();
-if(nl.length>=2)stripShorts.push({segment:[seg[0],seg[seg.length-1]],nets:nl});});}
+var cuts={};(D.trackCuts||[]).forEach(function(cc){if(cc&&cc.length>=2&&cc[0]&&cc[0].length>=2&&cc[1]&&cc[1].length>=2){cuts[key(cc[0])+'|'+key(cc[1])]=1;cuts[key(cc[1])+'|'+key(cc[0])]=1;}});
+var btype=D.grid.type||'perf';
+boardLinks(cols,rows,D.grid,cuts).forEach(function(seg){for(var i=1;i<seg.length;i++)u(key(seg[i-1]),key(seg[i]));
+if(btype==='strip'||btype==='breadboard'||btype==='cluster'){var ns={};seg.forEach(function(h){var n=nodeNet[key(h)];if(n)ns[n]=1;});var nl=Object.keys(ns).sort();
+if(nl.length>=2)stripShorts.push({segment:[seg[0],seg[seg.length-1]],nets:nl});}});
 var roots={};Object.keys(nodeNet).forEach(function(kk){var n=nodeNet[kk];if(n){roots[n]=roots[n]||{};roots[n][f(kk)]=1;}});
 var open=Object.keys(roots).filter(function(n){return Object.keys(roots[n]).length>1;}).sort();
 var rootNets={};Object.keys(nodeNet).forEach(function(kk){var n=nodeNet[kk];if(n){var r=f(kk);(rootNets[r]=rootNets[r]||{})[n]=1;}});
@@ -600,6 +601,19 @@ function stripSegs(cols,rows,axis,cuts){var segs=[],a,b,seg;
 if(axis==='col'){for(var c=1;c<=cols;c++){seg=[[c,1]];for(var r=2;r<=rows;r++){if(cuts[key([c,r-1])+'|'+key([c,r])]){segs.push(seg);seg=[];}seg.push([c,r]);}if(seg.length)segs.push(seg);}}
 else{for(var r2=1;r2<=rows;r2++){seg=[[1,r2]];for(var c2=2;c2<=cols;c2++){if(cuts[key([c2-1,r2])+'|'+key([c2,r2])]){segs.push(seg);seg=[];}seg.push([c2,r2]);}if(seg.length)segs.push(seg);}}
 return segs;}
+function boardLinks(cols,rows,grid,cuts){var t=(grid&&grid.type)||'perf',segs=[];
+if(t==='strip')return stripSegs(cols,rows,grid.stripAxis||'row',cuts);
+if(t==='mesh'){for(var r=1;r<=rows;r++)for(var c=1;c<=cols;c++){[[c+1,r],[c,r+1]].forEach(function(nb){if(nb[0]<=cols&&nb[1]<=rows&&!cuts[key([c,r])+'|'+key(nb)])segs.push([[c,r],nb]);});}return segs;}
+if(t==='breadboard'){var segLen=grid.segLen||5,railRows={};(grid.railRows||[1,rows]).forEach(function(x){railRows[x]=1;});
+for(var c2=1;c2<=cols;c2++){var seg=[];for(var r2=1;r2<=rows;r2++){if(railRows[r2]){if(seg.length){segs.push(seg);seg=[];}continue;}if(seg.length>=segLen||(seg.length&&cuts[key([c2,r2-1])+'|'+key([c2,r2])])){segs.push(seg);seg=[];}seg.push([c2,r2]);}if(seg.length)segs.push(seg);}
+Object.keys(railRows).map(Number).sort(function(a,b){return a-b;}).forEach(function(rr){if(rr>=1&&rr<=rows){var sg=[[1,rr]];for(var c3=2;c3<=cols;c3++){if(cuts[key([c3-1,rr])+'|'+key([c3,rr])]){segs.push(sg);sg=[];}sg.push([c3,rr]);}if(sg.length)segs.push(sg);}});
+return segs;}
+if(t==='cluster'){var size=Math.max(2,grid.clusterSize||2);
+if((grid.clusterAxis||'row')==='col'){for(var c4=1;c4<=cols;c4++)for(var r0=1;r0<=rows;r0+=size){var s=[];for(var rr2=r0;rr2<Math.min(r0+size,rows+1);rr2++)s.push([c4,rr2]);if(s.length>=2)segs.push(s);}}
+else{for(var r4=1;r4<=rows;r4++)for(var c0=1;c0<=cols;c0+=size){var s2=[];for(var cc2=c0;cc2<Math.min(c0+size,cols+1);cc2++)s2.push([cc2,r4]);if(s2.length>=2)segs.push(s2);}}
+return segs;}
+if(t==='custom'){(grid.boardLinks||[]).forEach(function(ln){if(ln&&ln.length>=2&&ln[0]&&ln[0].length>=2&&ln[1]&&ln[1].length>=2){var a=ln[0],b=ln[1];if(!cuts[key(a)+'|'+key(b)])segs.push([a,b]);}});return segs;}
+return [];}
 function holeNetMap(){var hn={};Object.keys(D.leads).forEach(function(k){if(D.leads[k].net)hn[key(D.leads[k].at)]=D.leads[k].net;});
 D.parts.forEach(function(p){partLeads(p).forEach(function(L){var net=D.leads[L.name]?D.leads[L.name].net:null;if(net)hn[key(L.pos)]=net;});});
 D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});return hn;}
@@ -791,12 +805,15 @@ PITCH=BASE*ZOOM;
 while(svg.firstChild)svg.removeChild(svg.firstChild);
 var W2=OX+(cols-1)*PITCH+34,H2=OY+(rows-1)*PITCH+34,c,r;
 svg.setAttribute('width',W2);svg.setAttribute('height',H2);
-E('rect',{x:OX-20,y:OY-20,width:(cols-1)*PITCH+40,height:(rows-1)*PITCH+40,rx:10,fill:D.grid.type==='strip'?'#3a2a1c':'#2c6e46',stroke:D.grid.type==='strip'?'#5a3a20':'#1c4a30','stroke-width':2});
-if(D.grid.type==='strip'){var ax=D.grid.stripAxis||'row';
+var _bt=D.grid.type||'perf',_meshlike=(_bt==='mesh'||_bt==='breadboard'||_bt==='cluster'||_bt==='custom');
+E('rect',{x:OX-20,y:OY-20,width:(cols-1)*PITCH+40,height:(rows-1)*PITCH+40,rx:10,fill:_bt==='strip'?'#3a2a1c':(_meshlike?'#402b1a':'#2c6e46'),stroke:_bt==='strip'?'#5a3a20':(_meshlike?'#6a4524':'#1c4a30'),'stroke-width':2});
+if(_bt==='strip'){var ax=D.grid.stripAxis||'row';
 if(ax==='row'){for(var sr=1;sr<=rows;sr++){var sa=xy(1,sr),sbb=xy(cols,sr);E('rect',{x:sa[0]-PITCH*0.42,y:sa[1]-PITCH*0.32,width:(cols-1)*PITCH+PITCH*0.84,height:PITCH*0.64,rx:PITCH*0.3,fill:'rgba(206,140,80,.45)',stroke:'rgba(150,90,45,.7)','stroke-width':1});}}
-else{for(var sc=1;sc<=cols;sc++){var ta=xy(sc,1);E('rect',{x:ta[0]-PITCH*0.32,y:ta[1]-PITCH*0.42,width:PITCH*0.64,height:(rows-1)*PITCH+PITCH*0.84,rx:PITCH*0.3,fill:'rgba(206,140,80,.45)',stroke:'rgba(150,90,45,.7)','stroke-width':1});}}
-(D.trackCuts||[]).forEach(function(cc){var a=xy(cc[0][0],cc[0][1]),b=xy(cc[1][0],cc[1][1]),mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,horiz=cc[0][1]===cc[1][1];
-if(horiz)E('line',{x1:mx,y1:my-PITCH*0.34,x2:mx,y2:my+PITCH*0.34,stroke:'#1a0f08','stroke-width':3});else E('line',{x1:mx-PITCH*0.34,y1:my,x2:mx+PITCH*0.34,y2:my,stroke:'#1a0f08','stroke-width':3});});}
+else{for(var sc=1;sc<=cols;sc++){var ta=xy(sc,1);E('rect',{x:ta[0]-PITCH*0.32,y:ta[1]-PITCH*0.42,width:PITCH*0.64,height:(rows-1)*PITCH+PITCH*0.84,rx:PITCH*0.3,fill:'rgba(206,140,80,.45)',stroke:'rgba(150,90,45,.7)','stroke-width':1});}}}
+if(_meshlike){var cutsV={};(D.trackCuts||[]).forEach(function(cc){if(cc&&cc.length>=2&&cc[0]&&cc[0].length>=2&&cc[1]&&cc[1].length>=2){cutsV[key(cc[0])+'|'+key(cc[1])]=1;cutsV[key(cc[1])+'|'+key(cc[0])]=1;}});
+boardLinks(cols,rows,D.grid,cutsV).forEach(function(seg){for(var i=1;i<seg.length;i++){var a=xy(seg[i-1][0],seg[i-1][1]),b=xy(seg[i][0],seg[i][1]);E('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'rgba(206,140,80,.5)','stroke-width':2.4,'stroke-linecap':'round','pointer-events':'none'});}});}
+if(_bt!=='perf'){(D.trackCuts||[]).forEach(function(cc){if(!(cc&&cc.length>=2&&cc[0]&&cc[0].length>=2&&cc[1]&&cc[1].length>=2))return;var a=xy(cc[0][0],cc[0][1]),b=xy(cc[1][0],cc[1][1]),mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,horiz=cc[0][1]===cc[1][1];
+if(horiz)E('line',{x1:mx,y1:my-PITCH*0.34,x2:mx,y2:my+PITCH*0.34,stroke:'#ff5d5d','stroke-width':3});else E('line',{x1:mx-PITCH*0.34,y1:my,x2:mx+PITCH*0.34,y2:my,stroke:'#ff5d5d','stroke-width':3});});}
 if(PHOTO.img&&PHOTO.op>0){var psc=PHOTO.fit*PHOTO.mul/100*ZOOM,pw=PHOTO.img.naturalWidth*psc,phh=PHOTO.img.naturalHeight*psc;
 var ppx=OX+PHOTO.x*PITCH,ppy=OY+PHOTO.y*PITCH;
 var ptr='translate('+ppx+' '+ppy+') rotate('+(PHOTO.rot90+PHOTO.rotF)+' '+(pw/2)+' '+(phh/2)+')'+(PHOTO.flip?' translate('+pw+' 0) scale(-1 1)':'');
@@ -932,8 +949,9 @@ if(MIRROR)return;
 if(PHOTO.img&&PHOTO.drag){drag={t:'photo',s:pt,ox:PHOTO.x,oy:PHOTO.y};return;}
 if(mode==='bridge'){for(i=0;i<D.padBridges.length;i++){var b=D.padBridges[i];if(b._px&&segd(pt[0],pt[1],b._px[0][0],b._px[0][1],b._px[1][0],b._px[1][1])<8){snap();D.padBridges.splice(i,1);render();return;}}
 var h=nearHole(pt[0],pt[1]);if(h)drag={t:'bridge',a:h,cur:pt};return;}
-if(mode==='cut'){if(D.grid.type!=='strip')return;var ax=D.grid.stripAxis||'row',best=null;
-for(var cc=1;cc<=cols;cc++)for(var rr=1;rr<=rows;rr++){var nb=ax==='row'?[cc+1,rr]:[cc,rr+1];if(nb[0]>cols||nb[1]>rows)continue;var ma=xy(cc,rr),mb=xy(nb[0],nb[1]),mid=[(ma[0]+mb[0])/2,(ma[1]+mb[1])/2],dd=Math.hypot(pt[0]-mid[0],pt[1]-mid[1]);if(dd<PITCH*0.45&&(!best||dd<best.d))best={d:dd,a:[cc,rr],b:nb};}
+if(mode==='cut'){var _ct=D.grid.type;if(_ct!=='strip'&&_ct!=='mesh'&&_ct!=='breadboard')return;
+var dirs=(_ct==='strip')?[((D.grid.stripAxis||'row')==='row')?[1,0]:[0,1]]:[[1,0],[0,1]];var best=null;
+for(var cc=1;cc<=cols;cc++)for(var rr=1;rr<=rows;rr++){for(var di=0;di<dirs.length;di++){var nb=[cc+dirs[di][0],rr+dirs[di][1]];if(nb[0]>cols||nb[1]>rows)continue;var ma=xy(cc,rr),mb=xy(nb[0],nb[1]),mid=[(ma[0]+mb[0])/2,(ma[1]+mb[1])/2],dd=Math.hypot(pt[0]-mid[0],pt[1]-mid[1]);if(dd<PITCH*0.45&&(!best||dd<best.d))best={d:dd,a:[cc,rr],b:nb};}}
 if(best){snap();D.trackCuts=D.trackCuts||[];var ix=-1;for(var ci=0;ci<D.trackCuts.length;ci++){var tc=D.trackCuts[ci],s1=tc[0][0]+','+tc[0][1]+'|'+tc[1][0]+','+tc[1][1],s2=tc[1][0]+','+tc[1][1]+'|'+tc[0][0]+','+tc[0][1],me=best.a[0]+','+best.a[1]+'|'+best.b[0]+','+best.b[1];if(s1===me||s2===me)ix=ci;}
 if(ix>=0)D.trackCuts.splice(ix,1);else D.trackCuts.push([best.a,best.b]);render();auditSoon();}return;}
 if(mode==='block'){var h2=nearHole(pt[0],pt[1]);if(h2){if(occupiedOther(h2[0],h2[1],null,null))return;snap();var bi=blockedIdx(h2[0],h2[1]);if(bi>=0)D.blockedHoles.splice(bi,1);else D.blockedHoles.push([h2[0],h2[1]]);render();}return;}
@@ -1404,6 +1422,25 @@ D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.
 var out=[];Object.keys(hn).forEach(function(kk){var p2=kk.split(',').map(Number);
 [[1,0],[0,1]].forEach(function(d){var q=[p2[0]+d[0],p2[1]+d[1]],qn=hn[key(q)];
 if(qn&&hn[kk]&&qn!==hn[kk])out.push([p2,q,hn[kk],qn]);});});return out;}
+function autoMeshCuts(){
+// hole -> net (leads + part-lead geometry + wire endpoints + bridgeTo)
+var hn={};Object.keys(D.leads).forEach(function(k){if(D.leads[k].net)hn[key(D.leads[k].at)]=D.leads[k].net;});
+D.parts.forEach(function(p){partLeads(p).forEach(function(L2){var n=D.leads[L2.name]?D.leads[L2.name].net:null;if(n&&hn[key(L2.pos)]===undefined)hn[key(L2.pos)]=n;});});
+D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){var h=e.direct?e.pad:e.hole;if(hn[key(h)]===undefined)hn[key(h)]=w.net;if(!e.direct&&e.bridgeTo&&hn[key(e.bridgeTo)]===undefined)hn[key(e.bridgeTo)]=w.net;});});
+// multi-source BFS: assign every hole to the nearest net (deterministic: sorted seeds, fixed nbr order, lex-min tie-break)
+var dist={},netof={},q=[],qi=0;
+Object.keys(hn).sort().forEach(function(kk){dist[kk]=0;netof[kk]=hn[kk];q.push(kk);});
+while(qi<q.length){var kk=q[qi++],pp=kk.split(',').map(Number);
+[[pp[0]+1,pp[1]],[pp[0]-1,pp[1]],[pp[0],pp[1]+1],[pp[0],pp[1]-1]].forEach(function(nb){if(nb[0]<1||nb[0]>cols||nb[1]<1||nb[1]>rows)return;var nk=key(nb);
+if(dist[nk]===undefined){dist[nk]=dist[kk]+1;netof[nk]=netof[kk];q.push(nk);}else if(dist[nk]===dist[kk]+1&&netof[kk]<netof[nk])netof[nk]=netof[kk];});}
+// cut every right/down mesh edge between holes assigned to different nets
+var cuts=[],lines=[];function lab(h){return h[0]+String.fromCharCode(64+h[1]);}
+for(var r=1;r<=rows;r++)for(var c=1;c<=cols;c++){[[c+1,r],[c,r+1]].forEach(function(nb){if(nb[0]>cols||nb[1]>rows)return;
+if(netof[key([c,r])]!==netof[key(nb)]){cuts.push([[c,r],nb]);lines.push('- [ ] '+lab([c,r])+' — '+lab(nb)+'  ('+(netof[key([c,r])]||L('空','free'))+' | '+(netof[key(nb)]||L('空','free'))+')');}});}
+var text='# '+L('必要カット一覧','Required cut list')+' — '+(props[curI]?props[curI].name:'')+'\n\n'+
+L('十字/格子基板の銅橋を切ってネットを分離する。各行＝隣接2穴の間の銅橋を1本カット。','Cut the copper bridges of a cross/grid board to isolate nets. Each line = one bridge between two adjacent holes.')+'\n'+
+L('穴名＝列番号+行アルファベット（例 6B）。','Hole = column + row letter (e.g. 6B).')+'\n\n'+L('合計','Total')+': '+cuts.length+'\n\n'+lines.join('\n')+'\n';
+return {cuts:cuts,text:text};}
 function beepList(){var lm=leadMap(),byNet={},cm=connMap();
 Object.keys(lm).forEach(function(k){var o=lm[k];if(o.net)(byNet[o.net]=byNet[o.net]||[]).push({k:k,name:o.name,pos:k.split(',').map(Number)});});
 var L=function(ja,en){return LANG==='en'?en:ja;};
@@ -1519,7 +1556,8 @@ var CMDS=[
 {n:'モード: 穴ブロック',k:'mode block 4',f:function(){setMode('block');}},
 {n:'モード: テスター（導通プローブ）',k:'mode probe tester 5',f:function(){setMode('probe');}},
 {n:'モード: カット（ストリップ基板）',k:'mode cut strip track 6',f:function(){setMode('cut');}},
-{n:'基板種別を切替（ユニバーサル⇄ストリップ）',k:'board type strip perf veroboard toggle',f:function(){snap();D.grid.type=(D.grid.type==='strip')?'perf':'strip';if(D.grid.type==='strip'&&!D.grid.stripAxis)D.grid.stripAxis='row';render();auditSoon();}},
+{n:'基板種別を切替（独立ランド/ストリップ/十字配線/ブレッドボード/連ランド）',k:'board type strip perf mesh cross juuji breadboard cluster veroboard cycle',f:function(){snap();var order=['perf','strip','mesh','breadboard','cluster'],g=D.grid;g.type=order[(order.indexOf(g.type||'perf')+1)%order.length];if(g.type==='strip'&&!g.stripAxis)g.stripAxis='row';if(g.type==='breadboard'){if(!g.segLen)g.segLen=5;if(!g.railRows)g.railRows=[1,g.rows];}if(g.type==='cluster'){if(!g.clusterSize)g.clusterSize=2;if(!g.clusterAxis)g.clusterAxis='row';}showHelp(tr('基板種別')+': '+g.type);render();auditSoon();}},
+{n:'十字/格子基板: 必要なカットを自動生成＋一覧（ネット分離）',k:'mesh cross auto cut isolate required cuts juuji jidou',f:function(){var g=D.grid;if(g.type!=='mesh'){showHelp(tr('カット自動生成は十字/格子（mesh）基板のみ。先に基板種別を切替えてください。'));return;}snap();var r=autoMeshCuts();D.trackCuts=r.cuts;var t=r.text;document.getElementById('pw-out').value=t;try{navigator.clipboard&&navigator.clipboard.writeText(t);}catch(e){}try{var bl=new Blob([t],{type:'text/markdown'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='required_cuts.md';a.click();}catch(e){}render();auditSoon();showHelp(trf('必要カット {0} 本を生成（盤面に表示・テキスト欄・.md）。これを実機で切ればネットが分離します。',r.cuts.length));}},
 {n:'ストリップ向き切替（行⇄列）',k:'strip axis row col',f:function(){if(D.grid.type!=='strip')return;snap();D.grid.stripAxis=(D.grid.stripAxis==='col')?'row':'col';render();auditSoon();}},
 {n:'導通チェックリスト生成',k:'beep continuity checklist',f:function(){document.getElementById('pw-beep').click();}},
 {n:'ズーム イン',k:'zoom in',f:function(){document.getElementById('z-in').click();}},

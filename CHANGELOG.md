@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.6.6] — 2026-06-21
+
+### Added
+- **Non-isolated board topologies — `grid.type` now models the board's own copper.**
+  perfwire previously assumed isolated pads (`perf`) or strips (`strip`). A real
+  failure — a board that "won't power on" because it was built on a **十字配線
+  (cross-wired) universal board** whose every hole is bonded to its 4 neighbors —
+  exposed the gap: the substrate shorted V3V3 to GND (and every other net) and the
+  isolated-pad model could not see it. The stripboard segment primitive is
+  generalized into one `board_links` / `boardLinks` generator that feeds the **same**
+  ERC union-find, so a design routed assuming isolation is caught by `netMerge`
+  (hard NG) when the board copper shorts its nets. New `grid.type` values:
+  `mesh` (十字/格子, ships as one net — cut to isolate), `breadboard` (column
+  segments + power-rail strips), `cluster` (2/3連ランド bonded groups), and
+  `custom` (explicit `boardLinks` edge list). `perf`/`strip` unchanged.
+- **Editor support for cross-wired boards.** The board-type command cycles
+  `perf → strip → mesh → breadboard → cluster`; the renderer draws the intrinsic
+  copper bridges (and cut marks); **cut mode (key 6)** now toggles a cut on any of
+  the 4 mesh edges (not just the strip axis); and a new command
+  **auto-generates the required-cut list** that isolates every net (region-grow,
+  cut the boundaries) — applied to the board, written to the export box, and
+  downloaded as a `.md` checklist for cutting the physical board.
+
+### Fixed
+- The strip-only ERC union block and render path are now general (`board_links`
+  dispatch); `stripShorts` is still emitted for the segment-bounded types
+  (`strip`/`breadboard`/`cluster`) and the whole-mesh case rides on `netMerge`.
+
 ## [0.6.5] — 2026-06-19
 
 ### Added
