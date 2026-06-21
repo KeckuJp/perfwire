@@ -247,6 +247,84 @@ def strip_segments(cols, rows, axis, cutset):
                 segs.append(seg)
     return segs
 
+
+def board_links(cols, rows, grid, cutset):
+    """基板素地の固有導通セグメント（list-of-segments＝strip と同じ primitive）。grid.type で基板種別を分岐。
+    各セグメント = 連続して pairwise-union される穴の並び。isolation は cutset（trackCuts）で減算的に切る。
+    perf=独立ランド（結線なし）/ strip=ストリップ / mesh=十字配線（全穴4近傍）/ breadboard=ブレッドボード配線 /
+    cluster=2連3連ランド（固定・カット不可）/ custom=明示エッジ列（grid.boardLinks）。"""
+    t = grid.get("type", "perf")
+    if t == "strip":
+        return strip_segments(cols, rows, grid.get("stripAxis", "row"), cutset)
+    if t == "mesh":
+        # 十字配線: 各穴が上下左右に銅箔結線。右と下のエッジを各2穴セグメントで全列挙（重複なし・対角なし）。
+        segs = []
+        for r in range(1, rows + 1):
+            for c in range(1, cols + 1):
+                for nb in ((c + 1, r), (c, r + 1)):
+                    if nb[0] <= cols and nb[1] <= rows and frozenset(((c, r), nb)) not in cutset:
+                        segs.append([(c, r), nb])
+        return segs
+    if t == "breadboard":
+        # ブレッドボード配線: 中央フィールド=縦 segLen 穴セグメント、上下端 railRows=横一列の電源レール strip。
+        seg_len = grid.get("segLen") or 5  # 0/None は既定 5（JS の `||5` と一致）
+        rail_rows = set(grid.get("railRows", [1, rows]))
+        segs = []
+        for c in range(1, cols + 1):
+            seg = []
+            for r in range(1, rows + 1):
+                if r in rail_rows:
+                    if seg:
+                        segs.append(seg)
+                        seg = []
+                    continue
+                if len(seg) >= seg_len or (seg and frozenset(((c, r - 1), (c, r))) in cutset):
+                    segs.append(seg)
+                    seg = []
+                seg.append((c, r))
+            if seg:
+                segs.append(seg)
+        for rr in sorted(rail_rows):
+            if 1 <= rr <= rows:
+                seg = [(1, rr)]
+                for c in range(2, cols + 1):
+                    if frozenset(((c - 1, rr), (c, rr))) in cutset:
+                        segs.append(seg)
+                        seg = []
+                    seg.append((c, rr))
+                if seg:
+                    segs.append(seg)
+        return segs
+    if t == "cluster":
+        # 2連/3連ランド: 横（or縦）clusterSize 穴の固定マイクログループにタイル分割（cut 不可＝cutset 無視）。
+        size = max(2, grid.get("clusterSize", 2))
+        segs = []
+        if grid.get("clusterAxis", "row") == "col":
+            for c in range(1, cols + 1):
+                for r0 in range(1, rows + 1, size):
+                    seg = [(c, r) for r in range(r0, min(r0 + size, rows + 1))]
+                    if len(seg) >= 2:
+                        segs.append(seg)
+        else:
+            for r in range(1, rows + 1):
+                for c0 in range(1, cols + 1, size):
+                    seg = [(c, r) for c in range(c0, min(c0 + size, cols + 1))]
+                    if len(seg) >= 2:
+                        segs.append(seg)
+        return segs
+    if t == "custom":
+        segs = []
+        for ln in grid.get("boardLinks", []):
+            if not (isinstance(ln, (list, tuple)) and len(ln) >= 2
+                    and isinstance(ln[0], (list, tuple)) and len(ln[0]) >= 2
+                    and isinstance(ln[1], (list, tuple)) and len(ln[1]) >= 2):
+                continue  # 不正エッジは黙ってスキップ（traceback 防止）
+            a, b = tuple(ln[0]), tuple(ln[1])
+            if frozenset((a, b)) not in cutset:
+                segs.append([a, b])
+        return segs
+    return []  # perf / 未知 = 独立ランド（固有結線なし）
+
 def _solve_reff(e_sorted, comp, node_names, src, ref):
     """縮約ノーダル・ラプラシアンで src-ref 間の実効抵抗 R_eff を解く（1A 注入・ref 接地・ピボット無し）。
     SPD（連結抵抗網の接地ラプラシアンは対称・狭義対角優位）なのでピボット不要で安定＝両エンジン ビット一致。
@@ -351,17 +429,25 @@ def erc_audit(bd, net_of_hole, pad_bridges, wires, cfg):
         lds0 = p0.get("leads")
         if lds0 and len(lds0) >= 2:
             u(tuple(lds0[0]), tuple(lds0[1]))
-    # ストリップボード: 同一ストリップ（cut で分割した連続穴）は銅箔で連結。セグメント内を union し、
-    # 同セグメントに異ネットのリードが乗っていれば確実なショート（要 track cut）= stripShorts。
+    # 基板素地の固有導通: 非独立ランド基板（strip/mesh=十字配線/breadboard/cluster/custom）は穴どうしが
+    # 銅箔で結線済み。board_links が返すセグメント内を union ＝設計が独立ランド前提でも素地が短絡させていれば
+    # netMerge が拾う（十字配線の未カット盤→全ネット併合＝HARD NG）。isolation は trackCuts で減算。
+    # セグメントが有限の名前付き銅箔ラン（strip/breadboard/cluster）なら同セグメント異ネットを stripShorts、
+    # mesh/custom は2穴エッジ単位なので per-segment short は出さず netMerge に委譲。
     grid = bd.state.get("grid", {})
-    strip_shorts = []
-    if grid.get("type") == "strip":
-        cutset = set()
-        for cc in bd.state.get("trackCuts", []):
+    btype = grid.get("type", "perf")
+    cutset = set()
+    for cc in bd.state.get("trackCuts", []):
+        # 不正形状の trackCuts（[[c,r],[c,r]] でない）は黙ってスキップ＝監査を traceback で止めない（validate_state が報告）
+        if (isinstance(cc, (list, tuple)) and len(cc) >= 2
+                and isinstance(cc[0], (list, tuple)) and len(cc[0]) >= 2
+                and isinstance(cc[1], (list, tuple)) and len(cc[1]) >= 2):
             cutset.add(frozenset((tuple(cc[0]), tuple(cc[1]))))
-        for seg in strip_segments(bd.cols, bd.rows, grid.get("stripAxis", "row"), cutset):
-            for i in range(1, len(seg)):
-                u(seg[i - 1], seg[i])
+    strip_shorts = []
+    for seg in board_links(bd.cols, bd.rows, grid, cutset):
+        for i in range(1, len(seg)):
+            u(seg[i - 1], seg[i])
+        if btype in ("strip", "breadboard", "cluster"):
             nets_on = sorted({node_net.get(h) for h in seg if node_net.get(h)})
             if len(nets_on) >= 2:
                 strip_shorts.append({"segment": [list(seg[0]), list(seg[-1])], "nets": nets_on})
@@ -1420,6 +1506,15 @@ def validate_state(state):
                 err("grid_dim", "grid.%s must be a positive integer (got %r)" % (k, v), "grid." + k)
         if g.get("type") == "strip" and g.get("stripAxis") not in ("row", "col"):
             warn("strip_axis", "strip board without stripAxis 'row'|'col'; strip connectivity/short checks may be inert", "grid.stripAxis")
+        if g.get("type") == "custom" and not isinstance(g.get("boardLinks"), list):
+            warn("custom_no_links", "custom board without a 'boardLinks' edge list; no intrinsic copper is modeled", "grid.boardLinks")
+        for i, ln in enumerate(g.get("boardLinks") or []):
+            if not (isinstance(ln, (list, tuple)) and len(ln) == 2 and _is_coord(ln[0]) and _is_coord(ln[1])):
+                err("board_link_shape", "grid.boardLinks[%d] must be [[col,row],[col,row]] (got %r)" % (i, ln), "grid.boardLinks")
+    # trackCuts — 不正形状は erc_audit が安全にスキップするが、traceback でなく fixable diagnostic として lint で報告
+    for i, cc in enumerate(state.get("trackCuts") or []):
+        if not (isinstance(cc, (list, tuple)) and len(cc) == 2 and _is_coord(cc[0]) and _is_coord(cc[1])):
+            err("track_cut_shape", "trackCuts[%d] must be [[col,row],[col,row]] (got %r)" % (i, cc), "trackCuts")
     # leads — 致命的なのは型のみ。中身の不整合は warn（ERC が拾う）
     leads = state.get("leads")
     if leads is None:

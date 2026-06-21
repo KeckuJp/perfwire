@@ -23,6 +23,7 @@ function grab(re, label) {
 const DEFCFG_SRC = grab(/var DEFCFG=[\s\S]*?\]\};/, 'DEFCFG');
 const ERC_SRC = grab(/function ercAudit\(\)\{[\s\S]*?bridgeDangle:bdang\};\}/, 'ercAudit');
 const STRIP_SRC = grab(/function stripSegs\([\s\S]*?return segs;\}/, 'stripSegs');
+const BOARDLINKS_SRC = grab(/function boardLinks\([\s\S]*?return \[\];\}/, 'boardLinks');
 
 function key(p) { return p[0] + ',' + p[1]; }
 function cheb(a, b) { return Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1])); }
@@ -39,9 +40,10 @@ const CFG = DEFCFG;
 function clsOf(net) { for (const c in CFG.classes) if (CFG.classes[c].nets.indexOf(net) >= 0) return c; return null; }
 function cdef(net) { const c = clsOf(net); return c ? CFG.classes[c] : { maxWire: 99, adjPen: 1, keepAway: [], keepHoles: 0 }; }
 const stripSegs = new Function('key', STRIP_SRC + '\nreturn stripSegs;')(key);
+const boardLinks = new Function('key', 'stripSegs', BOARDLINKS_SRC + '\nreturn boardLinks;')(key, stripSegs);
 function runJS(D) {
-  const names = ['D', 'CFG', 'DEFCFG', 'key', 'cheb', 'clsOf', 'cdef', 'partLeads', 'cols', 'rows', 'stripSegs'];
-  const vals = [D, CFG, DEFCFG, key, cheb, clsOf, cdef, partLeads, D.grid.cols, D.grid.rows, stripSegs];
+  const names = ['D', 'CFG', 'DEFCFG', 'key', 'cheb', 'clsOf', 'cdef', 'partLeads', 'cols', 'rows', 'stripSegs', 'boardLinks'];
+  const vals = [D, CFG, DEFCFG, key, cheb, clsOf, cdef, partLeads, D.grid.cols, D.grid.rows, stripSegs, boardLinks];
   return new Function(...names, ERC_SRC.replace(/^function ercAudit\(\)\{/, '').replace(/\}$/, ''))(...vals);
 }
 
@@ -110,6 +112,27 @@ const EFFSHORT = {
   ],
   padBridges: [], wires: [], blockedHoles: [], trackCuts: [],
 };
+// cross-wired (十字配線/mesh) board: every hole bonded to its 4 neighbors -> the WHOLE grid is one net,
+// so a design routed assuming isolation shorts V3V3 to GND through the substrate. As-shipped (no cuts)
+// netMerge must fire; with a cut-ring isolating the V3V3 island, it must clear. Proves intrinsic-link
+// union + subtractive cut model, in BOTH engines (boardLinks runs identically).
+const MESH = (cuts) => ({
+  grid: { cols: 4, rows: 4, type: 'mesh' }, netColors: { V3V3: '#f00', GND: '#000' },
+  leads: { 'P.v': { net: 'V3V3', at: [1, 1] }, 'P.g': { net: 'GND', at: [4, 4] } },
+  parts: [{ id: 'P', kind: 'r', leads: [[1, 1], [4, 4]], leadNames: ['P.v', 'P.g'] }],
+  padBridges: [], wires: [], blockedHoles: [], trackCuts: cuts,
+});
+// a ring of cuts isolating the [1,1] V3V3 hole from the rest of the mesh -> V3V3/GND no longer common
+const MESH_ISLAND = MESH([[[1, 1], [2, 1]], [[1, 1], [1, 2]]]);
+// breadboard-pattern: top/bottom rows are continuous power-rail strips; V+ and GND land on the two rails
+// -> the rails short them (netMerge) while the center column segments stay distinct.
+const BREADBOARD = {
+  grid: { cols: 5, rows: 4, type: 'breadboard', segLen: 2, railRows: [1, 4] }, netColors: { V3V3: '#f00', GND: '#000', SIG: '#0a0' },
+  leads: { 'A.v': { net: 'V3V3', at: [1, 1] }, 'A.g': { net: 'GND', at: [5, 1] }, 'B.s': { net: 'SIG', at: [2, 2] } },
+  parts: [{ id: 'A', kind: 'r', leads: [[1, 1], [5, 1]], leadNames: ['A.v', 'A.g'] },
+          { id: 'B', kind: 'r', leads: [[2, 2], [2, 3]], leadNames: ['B.s', 'B.s2'] }],
+  padBridges: [], wires: [], blockedHoles: [], trackCuts: [],
+};
 // Config-agreement: the two threshold files (editor DEFCFG camelCase vs solver
 // config.example.json snake_case) must encode the SAME EE limits, or a gate-affecting
 // field like wire-length could drift between the engines while ercAudit parity stays green.
@@ -164,11 +187,17 @@ const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'client-hardware_t
 // evaluates the as-given wiring), so they only match on fully-wired inputs (the sample proposals).
 // The synthetic strip fixtures carry no jumpers -> skip those two fields for them.
 const WIRING_DEP = ['openNets', 'powerReach', 'netMerge', 'bridgeDangle'];
+// substrate-short fixtures: netMerge comes purely from intrinsic board-links (no wires), so it is
+// computed identically by both engines and MUST be compared (and proven non-empty) -> keep netMerge OUT of skip.
+const WIRING_DEP_NOMERGE = ['openNets', 'powerReach', 'bridgeDangle'];
 const cases = sample.proposals.map(p => ({ name: p.name, state: p.state, skip: [] }))
   .concat([{ name: 'strip:short', state: STRIP([]), skip: WIRING_DEP },
            { name: 'strip:cut', state: STRIP([[[3, 1], [4, 1]]]), skip: WIRING_DEP },
            { name: 'value:over-power+bypass+pinconflict', state: VALUE, skip: WIRING_DEP },
-           { name: 'effshort:series-rail', state: EFFSHORT, skip: WIRING_DEP }]);
+           { name: 'effshort:series-rail', state: EFFSHORT, skip: WIRING_DEP },
+           { name: 'mesh:uncut-short', state: MESH([]), skip: WIRING_DEP_NOMERGE },
+           { name: 'mesh:cut-island', state: MESH_ISLAND, skip: WIRING_DEP_NOMERGE },
+           { name: 'breadboard:rail-short', state: BREADBOARD, skip: WIRING_DEP_NOMERGE }]);
 // fixture-completeness: these gate-affecting fields are easy to ship "always empty" (they need
 // value/role/rail inputs). Require at least one case to exercise each on the non-empty path,
 // so a regression that silently zeroes them out can't pass the golden test.
@@ -189,6 +218,11 @@ for (const prop of cases) {
       failures.push(`${prop.name} :: ${f}\n    JS    = ${a}\n    PY    = ${b}`);
   }
   for (const f of MUST_COVER) if ((ee[f] || []).length > 0) coverage[f]++;
+  // substrate-short direction: an uncut mesh board must merge nets; a cut-isolated one must not.
+  if (prop.name === 'mesh:uncut-short' && !((ee.netMerge || []).length > 0))
+    failures.push('mesh:uncut-short :: expected ee.netMerge non-empty (uncut 十字 board should short nets) but got []');
+  if (prop.name === 'mesh:cut-island' && (ee.netMerge || []).length > 0)
+    failures.push(`mesh:cut-island :: expected ee.netMerge empty (cut ring isolates V3V3) but got ${JSON.stringify(ee.netMerge)}`);
 }
 const uncovered = MUST_COVER.filter(f => coverage[f] === 0);
 const covFails = uncovered.map(f => `fixture-coverage :: no case exercises ee.${f} on the non-empty path`);
