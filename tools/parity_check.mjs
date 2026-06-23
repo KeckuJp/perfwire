@@ -12,7 +12,15 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = dirname(fileURLToPath(import.meta.url)).replace(/[\\/]tools$/, '');
 const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
-const PY = process.env.PERFWIRE_PYTHON || 'python';
+function resolvePy() {  // pick a Python that actually runs; on Windows `python`/`python3` may be the MS Store stub
+  for (const c of [process.env.PERFWIRE_PYTHON, 'python3', 'python'].filter(Boolean)) {
+    try { execFileSync(c, ['-c', 'import sys'], { stdio: 'ignore' }); return c; } catch { /* try next */ }
+  }
+  console.error('parity_check: no working Python 3 found. Set PERFWIRE_PYTHON to a real interpreter ' +
+    '(on Windows `python`/`python3` may be the Microsoft Store stub — use a full path, e.g. PERFWIRE_PYTHON=C:/path/to/python.exe).');
+  process.exit(1);
+}
+const PY = resolvePy();
 
 function grab(re, label) {
   const m = html.match(re);
