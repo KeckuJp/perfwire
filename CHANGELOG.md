@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.7] — 2026-06-23
+
+### Fixed
+- **Plugin-consume robustness — the bundled skill now works when perfwire is installed as a Claude Code plugin** (cwd = the user's own project, scripts in `~/.claude/plugins/cache/…`), not only in the clone-and-open path. `SKILL.md` previously invoked `solver.py` / `tools/*.py` / `config.example.json` / `index.html` by bare cwd-relative paths, which fail for an installed-plugin consumer (`$CLAUDE_PLUGIN_ROOT` is **not** exported to the Bash tool — only inline-substituted in manifests/hooks). SKILL.md now has a "前提: PLUGIN_ROOT" step that discovers the plugin root (newest installed version by mtime, `.in_use`-preferred, with a clone-and-open fallback and an actionable "not installed" message) and drives every bundled call through an absolute path.
+- **A degraded EE audit no longer reports `fabReady: true`.** When no config is loaded (genuinely missing / mistyped `--config`), the core EE checks run empty; the solver now sets `ee.degraded: true` and forces `ee.fabReady: false` (and `stats.fabReady`), so an agent cannot tell a beginner "safe to solder" on an unaudited board. The `DEGRADED` stderr warning is unchanged; SKILL.md §4 instructs the agent to distrust `fabReady` when degraded. (Parity-safe: the browser always carries a populated config, so this only affects the config-less CLI path.)
+- **`tools/make_link.py` / `tools/read_link.py` force UTF-8 stdout**, so a piped/redirected deep-link or state JSON is not mangled under a non-UTF-8 Windows locale.
+
+### Added
+- **CI gate #7 `tools/consume_smoke.py`** — copies the bundled payload to a throwaway "cache" dir outside the repo, runs the documented commands from a separate "consumer" cwd by absolute path, and asserts wires>0, a non-degraded audit, `--config` parity, and a deep-link round-trip. It also lints `SKILL.md` so a bundled-script invocation can never regress to the cwd-relative form.
+
+### Notes
+- `README.md` plugin section clarifies that the marketplace/plugin path needs repo **read access** (the repo is private), that third-party marketplaces don't auto-update (the install block always runs `/plugin marketplace update perfwire`), and adds a Windows `python3`-stub / "can't open solver.py" troubleshooting note.
+
 ## [0.6.6] — 2026-06-21
 
 ### Added

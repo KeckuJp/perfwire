@@ -31,6 +31,9 @@ jobs:
       - name: Python solver smoke test (all sample proposals)
         run: python tools/ci_smoke.py
 
+      - name: Plugin-consume smoke (installed-cache cwd-independence + SKILL doc lint)
+        run: python tools/consume_smoke.py
+
       - name: JS<->Python ERC parity (golden test)
         run: node tools/parity_check.mjs
         env:
