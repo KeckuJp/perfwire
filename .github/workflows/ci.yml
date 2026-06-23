@@ -39,6 +39,9 @@ jobs:
         env:
           PERFWIRE_PYTHON: python
 
+      - name: Install Chrome (so the headless geometry-parity gate actually runs in CI)
+        uses: browser-actions/setup-chrome@v1
+
       - name: JS<->Python full-ee parity incl. geometry (headless, skips if no Chrome)
         run: node tools/parity_headless.mjs
         env:

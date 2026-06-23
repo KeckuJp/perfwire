@@ -11,7 +11,15 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { deflateRawSync } from 'node:zlib';
 
 const ROOT = dirname(fileURLToPath(import.meta.url)).replace(/[\\/]tools$/, '');
-const PY = process.env.PERFWIRE_PYTHON || 'python';
+function resolvePy() {  // pick a Python that actually runs; on Windows `python`/`python3` may be the MS Store stub
+  for (const c of [process.env.PERFWIRE_PYTHON, 'python3', 'python'].filter(Boolean)) {
+    try { execFileSync(c, ['-c', 'import sys'], { stdio: 'ignore' }); return c; } catch { /* try next */ }
+  }
+  console.error('parity_headless: no working Python 3 found. Set PERFWIRE_PYTHON to a real interpreter ' +
+    '(on Windows `python`/`python3` may be the Microsoft Store stub — use a full path, e.g. PERFWIRE_PYTHON=C:/path/to/python.exe).');
+  process.exit(1);
+}
+const PY = resolvePy();
 const CHROME_CANDIDATES = [process.env.CHROME, 'google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser',
   'C:/Program Files/Google/Chrome/Application/chrome.exe', 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'].filter(Boolean);
 

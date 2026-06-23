@@ -125,8 +125,9 @@ Files: `examples/client-hardware_tap_buffer.json` (sample project, 2 proposals),
 - `tools/check_manifests.mjs` — validates `.claude-plugin/plugin.json` + `marketplace.json` (required fields, marketplace description, version agreement, and that the skill exists at the path `plugin.json` points to).
 - `tools/i18n_check.mjs` — coverage gate: every runtime message (`showHelp` / `alert` / `confirm` / `prompt`) must route its Japanese through `tr()`/`trf()` with a matching dictionary entry, so an EN user can never see a raw-Japanese toast — and a new unwrapped message literal fails CI.
 - `tools/ci_smoke.py` — runs `solver.py` on every sample proposal and asserts a schema-complete, fully-wired output.
+- `tools/consume_smoke.py` — proves the plugin works when **installed** (copies the bundled payload to a throwaway cache dir and runs the documented commands from a separate consumer cwd by absolute path: wires>0, a non-degraded audit, `--config` parity, deep-link round-trip), and lints `SKILL.md` against cwd-relative bundled-script calls.
 - `tools/parity_check.mjs` — golden test that the in-browser ERC audit (extracted from `index.html`) and `solver.py` agree on every gate-affecting field for each sample proposal (locks the two engines and the two config files against drift). Includes synthetic stripboard and value-aware fixtures, plus a fixture-completeness check that asserts the value/role/rail-dependent fields are exercised on the non-empty path (not just shipped always-empty).
-- `tools/parity_headless.mjs` — loads each sample into the real editor headlessly and compares its full computed `ee` (including the geometry fields: wire length, decoupling distance, pad joints, body overlaps, grounding) to `solver.py`. Skips if no headless Chrome is available.
+- `tools/parity_headless.mjs` — loads each sample into the real editor headlessly and compares its full computed `ee` (including the geometry fields: wire length, decoupling distance, pad joints, body overlaps, grounding) to `solver.py`. CI installs Chrome (`browser-actions/setup-chrome`) so it runs there; it skips gracefully where no Chrome is found.
 
 ## Background
 

@@ -2,3 +2,8 @@
 *.log
 node_modules/
 __pycache__/
+
+# Local Claude Code settings — never commit a per-machine plugin/marketplace enable into
+# this product repo (keeps internal/dev-only marketplace references out of the public plugin).
+.claude/settings.json
+.claude/settings.local.json
