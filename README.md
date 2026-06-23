@@ -41,14 +41,21 @@ agent:  貼られたリンクを read_link.py で盤面に復元 → 再監査 �
 
 When the agent builds the link with `make_link.py out.json --task "…what to do…"`, the editor shows a **Claude Code bar** across the top on arrival: the agent's instruction (*Instruction from Claude: …*), a three-step loop reminder (*Claude sends → you edit → hand back*), and a **Return to Claude Code** button that copies the board as a link to paste back. The bar appears only for boards opened from a `#z=` link, so it guides the Claude-Code beginner without getting in a standalone user's way (the first-run welcome is intentionally skipped for shared links, so this bar is their orientation).
 
-**Alternative — install as a plugin** (the repo doubles as its own single-plugin marketplace). Needs git auth for this private repo (`gh auth login`, or an SSH key in your agent):
+**Alternative — install as a plugin** (the repo doubles as its own single-plugin marketplace). **Access:** while this repo is private, installing requires repo **read access** — a collaborator authenticated via `gh auth login` / an SSH key (and a `GH_TOKEN` of scope `repo` for background updates). A non-collaborator's own GitHub auth does **not** grant access; external users must be granted access, or the MIT-licensed repo made public (after which both this and the clone-and-open path work for anyone).
 
 ```
+# add the marketplace, then ALWAYS refresh it — third-party marketplaces don't auto-update,
+# so one added in an earlier session serves a stale version until you pull:
 /plugin marketplace add YusukeAraiKecku/perfwire
+/plugin marketplace update perfwire
 /plugin install perfwire@perfwire
 ```
 
 The plugin bundles the same skill (namespaced `perfwire:perfwire`; `plugin.json` points its `skills` path at `.claude/skills/`, so there is one copy, not two). For background auto-update of an installed private plugin, export `GH_TOKEN` (scope `repo`) — otherwise updates silently fail.
+
+When consumed this way the bundled `solver.py` / `tools/*.py` / `config.example.json` / `index.html` live in the plugin cache (`~/.claude/plugins/cache/…`), **not** your project, while your working directory is your own repo. The skill therefore locates them by an absolute plugin-root path and runs them from any cwd — there is no reliance on `$CLAUDE_PLUGIN_ROOT` (it is not exported to the Bash tool, only inline-substituted in manifests/hooks). Third-party marketplaces do not auto-refresh, so the install block above always runs `/plugin marketplace update perfwire` (otherwise you get the version cached at add-time).
+
+> **Troubleshooting (plugin install):** if the agent hits `Python was not found` (the Windows Store stub — the real interpreter is `python`) or `can't open file 'solver.py'`, it ran a bundled script from the wrong folder. The scripts live under `~/.claude/plugins/cache/…/perfwire/<version>/`, not your project; the skill's first step resolves that absolute path, so just re-ask Claude (it re-reads the skill and locates the plugin). If it persists, `/plugin marketplace update perfwire` then reinstall to refresh a stale cached skill.
 
 > **Solver note:** use `python3` on macOS/Linux, `python` on Windows; `solver.py` is standard-library only (no install). `config.example.json` is the single threshold file and the solver's default `--config`, so a bare `solver.py board.json` already loads it; pass `--config <file>` only to point at a tuned copy. If no config is found the solver prints a `WARNING … EE audit DEGRADED` to stderr (the built-in `DEF_CFG` has empty net-classes/decoupling, so decoupling-distance and wire-length checks run empty) — it never degrades silently. To hand a board to the human pre-loaded, generate a deep link with `python3 tools/make_link.py out.json` and have them open the printed `index.html#z=…` URL.
 

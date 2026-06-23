@@ -41,6 +41,7 @@ def load_cfg(path):
                 else:
                     a[k] = v
         merge(cfg, user)
+        cfg["_degraded"] = False
     else:
         # No config file -> fall back to the bare DEF_CFG, whose net_classes/decoupling
         # are empty. That silently turns OFF the core EE checks (decoupling distance,
@@ -52,6 +53,7 @@ def load_cfg(path):
             "DEF_CFG has empty net_classes/decoupling, so decoupling-distance, "
             "wire-length, keep-away, polarity and power-reach checks run empty. "
             "Pass --config config.example.json.\n" % why)
+        cfg["_degraded"] = True
     return cfg
 
 def neighbors(p):
@@ -1356,7 +1358,11 @@ def solve(state, cfg, propose=False):
     out["wires"] = wires
     out["warnings"] = warnings
     out["cautions"] = cautions
-    ee["fabReady"] = ee_ng == 0
+    degraded = bool(cfg.get("_degraded"))
+    ee["degraded"] = degraded
+    # A degraded (config-less) run executed the core EE checks empty — never advertise fab-ready,
+    # even when ee_ng==0, or the agent could tell a beginner "safe to solder" on an unaudited board.
+    ee["fabReady"] = ee_ng == 0 and not degraded
     ee["fixes"] = fix_suggestions(ee)
     out["ee"] = ee
     out["stats"] = {"bridges": len(pad_bridges) + sum(1 for w in wires for e in (w["a"], w["b"]) if not e["direct"]),
@@ -1365,7 +1371,8 @@ def solve(state, cfg, propose=False):
                     "cautions": len(cautions),
                     "eeNg": ee_ng,
                     "eeWarn": ee_warn,
-                    "fabReady": ee_ng == 0}
+                    "degraded": degraded,
+                    "fabReady": ee_ng == 0 and not degraded}
     return out
 
 def _guard_candidates(state, hiz_net):
@@ -1703,7 +1710,7 @@ if __name__ == "__main__":
         result = solve(state, cfg, propose=propose)
     print(("PROPOSE" if propose else "ALLOCATE"), json.dumps(result["stats"], ensure_ascii=False))
     e = result["ee"]
-    print(" fabReady:", e["fabReady"])
+    print(" fabReady:", e["fabReady"], "(DEGRADED: no config loaded — core EE audit ran empty)" if e.get("degraded") else "")
     print(" EE decoupling:", json.dumps(e["decoupling"], ensure_ascii=False))
     bad = [x for x in e["wireLength"] if not x["ok"]]
     print(" EE wire-length NG:", json.dumps(bad, ensure_ascii=False))

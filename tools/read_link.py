@@ -60,6 +60,10 @@ def decode_deeplink(text):
 
 
 def main():
+    try:  # force UTF-8 stdout so non-ASCII state JSON isn't mangled when piped/redirected under a non-UTF-8 locale (Windows cp932)
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
     ap = argparse.ArgumentParser(description="Decode a perfwire #z= deep-link into flat state JSON.")
     ap.add_argument("link", nargs="?", help="URL / #z=… fragment / bare payload (else read --in or stdin)")
     ap.add_argument("--in", dest="infile", help="read the link from a file instead of the argument")

@@ -34,6 +34,10 @@ def perfwire_deeplink(state, base_url="index.html"):
 
 
 def main():
+    try:  # force UTF-8 stdout so a redirected/piped link isn't mangled under a non-UTF-8 locale (e.g. Windows cp932)
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
     ap = argparse.ArgumentParser(description="Make a perfwire #z= deep-link from a flat state JSON.")
     ap.add_argument("state", help="flat exportJSON / solver out.json")
     ap.add_argument("--base", default="index.html", help="base URL (default: index.html)")
