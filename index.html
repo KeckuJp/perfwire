@@ -833,14 +833,14 @@ else{warn++;if(LY.bridges){var pp=xy(e.pad[0],e.pad[1]);E('line',{x1:hp[0],y1:hp
 if(LY.wires)D.wires.forEach(function(w){var col=D.netColors[w.net]||'#999';var pa=w.a.direct?xy(w.a.pad[0],w.a.pad[1]):xy(w.a.hole[0],w.a.hole[1]);var pb=w.b.direct?xy(w.b.pad[0],w.b.pad[1]):xy(w.b.hole[0],w.b.hole[1]);
 E('path',{d:'M'+pa[0]+','+pa[1]+' Q'+((pa[0]+pb[0])/2)+','+((pa[1]+pb[1])/2-14)+' '+pb[0]+','+pb[1],stroke:col,'stroke-width':widW(w.net),fill:'none',opacity:dimW(w.net)});});
 if(LY.parts)D.parts.forEach(function(p){
-if(p.kind==='ic'){var horiz=p.pins['1'][1]===p.pins['2'][1];
+if(p.kind==='ic'){var _pk=Object.keys(p.pins);var horiz=_pk.length>1?p.pins[_pk[0]][1]===p.pins[_pk[1]][1]:true;
 var ps=Object.keys(p.pins).map(function(k){return p.pins[k];}),mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
 ps.forEach(function(q){var v=xy(q[0],q[1]);mnx=Math.min(mnx,v[0]);mxx=Math.max(mxx,v[0]);mny=Math.min(mny,v[1]);mxy=Math.max(mxy,v[1]);});
 var bx,by,bw,bh;
-if(horiz){bx=mnx-8;bw=mxx-mnx+16;by=mny+9;bh=mxy-mny-18;}else{bx=mnx+9;bw=mxx-mnx-18;by=mny-8;bh=mxy-mny+16;}
+if(horiz){bx=mnx-8;bw=mxx-mnx+16;var _cr=mxy-mny;if(_cr<22){by=mny-11;bh=22;}else{by=mny+9;bh=_cr-18;}}else{by=mny-8;bh=mxy-mny+16;var _cc=mxx-mnx;if(_cc<22){bx=mnx-11;bw=22;}else{bx=mnx+9;bw=_cc-18;}}
 p._body=[bx,by,bw,bh];p._seg=null;
 E('rect',{x:bx,y:by,width:bw,height:bh,rx:4,fill:'#16181c',opacity:0.92,stroke:inSel(p)?'#5edcff':'#000','stroke-width':inSel(p)?2.5:1});
-if(p.pins&&p.pins['1']){var p1v=xy(p.pins['1'][0],p.pins['1'][1]);E('circle',{cx:p1v[0],cy:p1v[1],r:3.2,fill:'#ff5d5d',stroke:'#fff','stroke-width':0.8,'pointer-events':'none'});}/* pin-1 orientation marker */
+if(_pk[0]){var p1v=xy(p.pins[_pk[0]][0],p.pins[_pk[0]][1]);E('circle',{cx:p1v[0],cy:p1v[1],r:3.2,fill:'#ff5d5d',stroke:'#fff','stroke-width':0.8,'pointer-events':'none'});}/* pin-1 orientation marker */
 if(p.locked)E('rect',{x:bx+3,y:by+3,width:8,height:8,rx:2,fill:'#fff',stroke:'#333'});
 if(LY.labels){T(bx+bw/2-9,by+bh/2+4,p.label,{'font-size':12});
 Object.keys(p.pins).forEach(function(k){var q=p.pins[k],v=xy(q[0],q[1]);T(v[0]+(horiz?-3:(v[0]<(mnx+mxx)/2?-15:9)),v[1]+(horiz?(v[1]>by?15:-8):4),k,{'font-size':10,fill:'#ffd24d'});});}
