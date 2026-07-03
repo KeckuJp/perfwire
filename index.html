@@ -395,7 +395,9 @@ var JE={
 '使えない穴をクリックで×指定／解除。再計算が避けます。':'Click holes to mark/unmark them unusable; the solver avoids them.',
 '2つの穴を順にクリック → 計画上の導通/非導通と接続グループを表示。実機のテスター当てと突き合わせる。':'Click two holes in turn to see plan connectivity and the connected group. Cross-check against a real multimeter.',
 'ストリップ基板用: ストリップ上の隣接2穴の間をクリックで track cut を追加/削除。異ネットが同ストリップに乗る短絡を切って分離する。':'Stripboard only: click between two adjacent holes on a strip to add/remove a track cut, separating different nets that share one strip.',
-'JSONが不正です: {0}':'Invalid JSON: {0}','KiCADインポート失敗: {0}':'KiCAD import failed: {0}','このブラウザは圧縮API（CompressionStream）に未対応です':'This browser does not support the compression API (CompressionStream).',
+'KiCADインポート失敗: {0}':'KiCAD import failed: {0}','このブラウザは圧縮API（CompressionStream）に未対応です':'This browser does not support the compression API (CompressionStream).',
+'JSONを読み取れませんでした。閉じ括弧の過不足や、貼り付け範囲が欠けていないか確認してください（「書き出し」で再エクスポートするのが確実です）。':'Couldn\'t parse this JSON. Check for missing/extra closing brackets or a truncated paste (re-exporting via "Export" is the safest fix).',
+'詳細: {0}':'Details: {0}',
 '導通チェックリストを生成しました（テキスト欄・クリップボード・.md ダウンロード）。':'Continuity checklist generated (text box, clipboard, and .md download).',
 'KiCAD: 部品 {0} 点を仮配置しました。{1}「配置を再提案」→ 必要ならドラッグ調整、で計画を作れます。':'KiCAD: tentatively placed {0} part(s). {1}Use Re-place & route, then drag to adjust, to build the plan.','未対応スキップ: {0}。':'Skipped (unsupported): {0}. ',
 '共有URLをコピーしました（約{0}KB）。このリンクを開いた人に同じ盤面が再現されます。Claude Code に貼り付ければ read_link.py で復元することもできます。':'Share URL copied (~{0} KB). Anyone who opens this link sees the same board. You can also paste it into Claude Code, which decodes it via read_link.py.',
@@ -409,6 +411,11 @@ var JE={
 '{0} を追加しました。ドラッグで配置し、下の欄でネットを割り当ててください。':'Added {0}. Drag to position it, then assign nets in the panel below.',
 '{0} を「{1}」クラスにしました。監査と再配置の基準が変わります。':'Set {0} to class "{1}". Audit and re-placement criteria change accordingly.',
 'JSON 取込: {0} 件の指摘（error {1}）— {2}':'Imported JSON: {0} issue(s) (errors {1}) — {2}',
+'このJSONはperfwireの盤面データとして認識できませんでした（grid/parts/leads/wiresなどのキーが見つかりません）。書き出したJSONをそのまま貼り付けているか確認してください。':'This JSON wasn\'t recognized as perfwire board data (no grid/parts/leads/wires keys found). Check that you pasted an exported JSON as-is.',
+'{0} 件の案を取り込みました。':'Imported {0} proposal(s).',
+'取込 {0}':'Imported {0}',
+'{0} 個の部品・{1} 本の配線を読み込みました。':'Loaded {0} part(s) and {1} wire(s).',
+'設定（重み/物理寸法など）を取り込みました。盤面は変更していません。':'Imported settings (weights/physical dimensions, etc). The board itself is unchanged.',
 '列 <b>{0}</b> 行 <b>{1}</b>':'Col <b>{0}</b> Row <b>{1}</b>','ネット <b>{0}</b>（{1}）':'Net <b>{0}</b> ({1})','被覆線端子 <b>{0}</b>':'Jumper wire end <b>{0}</b>','空き穴':'Empty hole',
 '✓ 完了':'✓ done','コピー済み':'Copied',' ロック中':' locked','監査エラー: {0}':'Audit error: {0}',
 '導通 ✓ {0}':'Continuity ✓ {0}','非導通 ⚠ 同ネット {0} が計画上未接続':'No continuity ⚠ same net {0} not connected in plan','非導通 ✗ {0} / {1}':'No continuity ✗ {0} / {1}','空き':'empty',
@@ -1131,12 +1138,22 @@ var g=d.grid;if(!g||typeof g!=='object')E('grid_missing');else{['cols','rows'].f
 var L=d.leads;if(L&&typeof L==='object'){Object.keys(L).forEach(function(nm){var v=L[nm];if(!v||typeof v!=='object'){E('lead_shape');return;}if(!v.net)W('lead_no_net');if(v.at!==undefined&&!isCoord(v.at))E('lead_at');});}else if(L!==undefined)E('leads_type');
 var P=d.parts,seen={};if(Array.isArray(P)){P.forEach(function(p){if(!p||typeof p!=='object'){E('part_shape');return;}if(!p.id)E('part_no_id');else seen[p.id]=(seen[p.id]||0)+1;var k=p.kind;if(['ic','r','film','disc','elec'].indexOf(k)<0)W('part_kind');else if(k==='ic'){if(!(p.pins&&typeof p.pins==='object'&&Object.keys(p.pins).length))W('ic_pins');else Object.keys(p.pins).forEach(function(pin){if(!isCoord(p.pins[pin]))E('ic_pin_coord');});}else if(!(Array.isArray(p.leads)&&p.leads.length>=2))W('part_leads');else p.leads.slice(0,2).forEach(function(c){if(!isCoord(c))E('part_lead_coord');});});Object.keys(seen).forEach(function(id){if(seen[id]>1)W('dup_id');});}else if(P!==undefined)E('parts_type');
 return out;}
-function importObj(d2){snap();['grid','blockedHoles','leads','parts','padBridges','wires','netColors','trackCuts'].forEach(function(k){if(d2[k])D[k]=d2[k];});
+function importObj(d2){
+var knownKeys=['grid','blockedHoles','leads','parts','padBridges','wires','netColors','trackCuts'];
+var matched=knownKeys.filter(function(k){return !!d2[k];});
+var hasCfg=!!(d2.cfg&&d2.cfg.weights&&d2.cfg.physical);
+if(!d2.proposals&&!matched.length&&!hasCfg){
+alert(tr('このJSONはperfwireの盤面データとして認識できませんでした（grid/parts/leads/wiresなどのキーが見つかりません）。書き出したJSONをそのまま貼り付けているか確認してください。'));
+return;}
+snap();matched.forEach(function(k){D[k]=d2[k];});
 var lt=lintState(D);if(lt.length){var ec=lt.filter(function(x){return x.level==='error';}).length;showHelp(trf('JSON 取込: {0} 件の指摘（error {1}）— {2}',lt.length,ec,lt.map(function(x){return x.code;}).join(', ')));}
-if(d2.proposals){props=d2.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null,origin:p.origin||'import'};});curI=0;refreshSel();loadProp(0);auditNow();return;}
-if(d2.cfg&&d2.cfg.weights&&d2.cfg.physical)CFG=d2.cfg;
-if(props[curI]){props[curI].origin='import';props[curI].edited=false;}
-cols=D.grid.cols;rows=D.grid.rows;buildSliders();buildNetClasses();refreshSel();updatePropHint();render();auditNow();}
+if(d2.proposals){props=d2.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null,origin:p.origin||'import'};});curI=0;refreshSel();loadProp(0);auditNow();
+showHelp(trf('{0} 件の案を取り込みました。',props.length));return;}
+if(hasCfg)CFG=d2.cfg;
+if(props[curI]&&matched.length){props[curI].origin='import';props[curI].edited=false;props[curI].name=uniqName(trf('取込 {0}',new Date().toLocaleTimeString()));}
+cols=D.grid.cols;rows=D.grid.rows;buildSliders();buildNetClasses();buildLegend();refreshSel();updatePropHint();render();auditNow();
+if(matched.length)showHelp(trf('{0} 個の部品・{1} 本の配線を読み込みました。',D.parts.length,D.wires.length));
+else showHelp(tr('設定（重み/物理寸法など）を取り込みました。盤面は変更していません。'));}
 function saveLS(){try{var st={v:APPVER,curI:curI,cfg:CFG,names:props.map(function(p){return p.name;}),
 states:props.map(function(p){return p.cur||p.orig;}),
 meta:props.map(function(p){return{origin:p.origin||'saved',edited:!!p.edited,init:(typeof p.initIdx==='number')?p.initIdx:undefined};})};
@@ -1231,7 +1248,7 @@ document.getElementById('pw-copy').onclick=function(){var b=this;document.getEle
 document.getElementById('pw-share').onclick=shareURL;
 document.getElementById('pw-print').onclick=printView;
 document.getElementById('pw-export').onclick=function(){var j=exportJSON();document.getElementById('pw-out').value=j;if(navigator.clipboard)navigator.clipboard.writeText(j);var bl=new Blob([j],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='perfwire_export.json';a.click();showHelp(tr('盤面を書き出しました — クリップボードにコピー＋Downloads に perfwire_export.json を保存。Claude Code に貼り付けるか、このファイルを読んでもらえば監査できます。'));};
-document.getElementById('pw-import').onclick=function(){try{importObj(JSON.parse(document.getElementById('pw-out').value));}catch(e2){alert(trf('JSONが不正です: {0}',e2.message));}};
+document.getElementById('pw-import').onclick=function(){try{importObj(JSON.parse(document.getElementById('pw-out').value));}catch(e2){alert(tr('JSONを読み取れませんでした。閉じ括弧の過不足や、貼り付け範囲が欠けていないか確認してください（「書き出し」で再エクスポートするのが確実です）。')+'\n\n'+trf('詳細: {0}',e2.message));}};
 document.getElementById('pw-beep').onclick=function(){var t=beepList();document.getElementById('pw-out').value=t;
 if(navigator.clipboard)navigator.clipboard.writeText(t);
 var bl=new Blob([t],{type:'text/markdown'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='continuity_checklist.md';a.click();
@@ -1308,7 +1325,7 @@ curI=props.length-1;refreshSel();loadProp(curI);auditNow();
 showHelp(trf('KiCAD: 部品 {0} 点を仮配置しました。{1}「配置を再提案」→ 必要ならドラッグ調整、で計画を作れます。',parts.length,skipped.length?trf('未対応スキップ: {0}。',skipped.join(', ')):''));}
 function handleFileText(t){t=String(t).replace(/^\uFEFF/,'');
 if(/^\s*\(export/.test(t)){try{importKicad(t);}catch(e2){alert(trf('KiCADインポート失敗: {0}',e2.message));}return;}
-try{importObj(JSON.parse(t));}catch(e2){alert(trf('JSONが不正です: {0}',e2.message));}}
+try{importObj(JSON.parse(t));}catch(e2){alert(tr('JSONを読み取れませんでした。閉じ括弧の過不足や、貼り付け範囲が欠けていないか確認してください（「書き出し」で再エクスポートするのが確実です）。')+'\n\n'+trf('詳細: {0}',e2.message));}}
 function b64enc(buf){var u8=new Uint8Array(buf),s='';for(var i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');}
 function b64dec(s){s=s.replace(/-/g,'+').replace(/_/g,'/');while(s.length%4)s+='=';var bin=atob(s),u8=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);return u8.buffer;}
 function shareURL(){if(!window.CompressionStream){alert(tr('このブラウザは圧縮API（CompressionStream）に未対応です'));return;}
