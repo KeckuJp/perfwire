@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.8] — 2026-07-01
+
+### Fixed
+- **IC/module bodies now render for named-pin and single-row/single-column parts** (they used to silently disappear). The editor's part-draw loop indexed pins by the literal keys `'1'`/`'2'` to decide orientation, so a part whose `pins` are keyed by NAME (`VCC`/`GND`/`SDA`/`GPIO18_SCK`/`E`-`B`-`C`/…) — how MCU dev-boards, sensor breakouts and connectors are naturally modeled — threw and **aborted the entire parts layer, leaving a board of just wires with no visible components** (while `solver.py` still reported `fabReady`). It now takes the first two pins by insertion order (pin-key-agnostic). Separately, a single-row / single-column multi-pin part (pin header / single-edge module) computed a **negative** body cross-dimension, emitted as a `<rect>` with negative width/height that SVG does not paint; the body thickness is now clamped to a visible minimum. Multi-row DIPs are unchanged and still render correctly in **both** landscape and portrait. Found by headless (Chrome `--dump-dom` + screenshot) rendering verification. (Rendering-only; parity-safe — no `ee`/ERC/`solver.py`/parity-path change.)
+
+### Added
+- **SKILL.md §4b "build-type physical-caution checklist"** — a part-triggered guidance table the agent must fold into the plain-language audit summary, because these recurring implementation pitfalls are not visible from board geometry / `ee` alone (even a clean `fabReady` board can omit them). Covers: inductive-load coils (relay/solenoid/motor → drive via transistor + **flyback diode with correct orientation** + **separate the switching return from signal/sensor ground at a single star point**); motor drivers / H-bridges (split VM vs logic supply, don't float nSLEEP/EN, star ground); RF / solar / outdoor power (**reverse-flow/reverse-polarity Schottky with correct orientation**, **antenna/RF keep-away**, supply decoupling); **SSR/relay switching AC mains** (refuse the mains layout + redirect to a certified isolated module, and warn that an **SSR still leaks when commanded off so the load stays partly live** — kill power at the breaker before servicing); Li-ion/LiPo charging (charge-management IC required, electrolytic polarity); 5V-sensor-into-3.3V-GPIO (never direct — divider/level-shifter, and correct the user if they assume direct is fine). All advisory; never claim a board is safe to power. (Parity-safe: docs-only, no change to `ee`/ERC math, `solver.py`, or the parity paths.)
+
 ## [0.6.7] — 2026-06-23
 
 ### Fixed
