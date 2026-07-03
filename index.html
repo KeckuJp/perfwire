@@ -40,7 +40,6 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 #pw-iso{display:none;width:100%;height:100%;cursor:grab}
 #pw-iso:active{cursor:grabbing}
 #ztools{position:absolute;top:12px;right:16px;display:flex;gap:6px;z-index:5}
-#ztools #z-iso.on{background:var(--acc2);color:#04141c}
 #ztools button{backdrop-filter:blur(10px);background:rgba(18,22,27,.7)}
 #ztools button.on{background:linear-gradient(135deg,#11a8e0,#0c7fb3);color:#06222e;font-weight:600}
 #status{padding:6px 16px;background:rgba(18,22,27,.72);backdrop-filter:blur(14px);border-top:1px solid var(--bd);font:12px Consolas,monospace;color:var(--mut);display:flex;gap:10px;flex-wrap:wrap}
@@ -1726,8 +1725,11 @@ function nearHoleIso(x,y){var g=iunproj(x,y,0),c=Math.round(g[0]),r=Math.round(g
 function isoPt(e){var r=isoCv.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top];}
 function isoQuantizeS(s){/* 2*S*DPRが偶数pxになるよう丸める＝穴タイルの幅・高さとも常に厳密整数。
   ズーム操作は連続的に見えるがステップは1/DPR px単位＝知覚不能。CanvasPattern.setTransformでの
-  分数周期補正より単純で、実装ミスの余地が無い（敵対的レビュー指摘A-1への対応）。 */
- var tw=Math.max(2,Math.round(2*Math.max(1.2,s)*DPR/2)*2);return tw/(2*DPR);}
+  分数周期補正より単純で、実装ミスの余地が無い（敵対的レビュー指摘A-1への対応）。
+  [1.2,160]にクランプ: 2D の ZOOM が[0.5,2.4]に制限されているのと同様、ここを通さず
+  ISO.S を直接掛け続けるズームイン/アウト操作(isoZoomStep・Ctrl+ホイール)が上限なしに
+  暴走し盤面が実質見えなくなるのを防ぐ（独立レビュー指摘）。 */
+ var tw=Math.max(2,Math.round(2*Math.max(1.2,Math.min(160,s))*DPR/2)*2);return tw/(2*DPR);}
 function isoPartHeight(p,PF){switch(p.kind){
  case 'elec':return Math.max(6,(PF.dia||6.5)*1.15);
  case 'disc':return Math.max(3,(PF.bodyLen||5)*0.6);
@@ -1739,7 +1741,7 @@ function shade(hex,f){var n=parseInt(hex.slice(1),16);
  return 'rgb('+Math.round(((n>>16)&255)*f)+','+Math.round(((n>>8)&255)*f)+','+Math.round((n&255)*f)+')';}
 function quad(ctx,a,b,c,d,fill){ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);
  ctx.lineTo(c[0],c[1]);ctx.lineTo(d[0],d[1]);ctx.closePath();ctx.fillStyle=fill;ctx.fill();}
-function makeK(){return{S:ISO.S,proj:iproj,
+function makeK(){return{S:ISO.S,proj:iproj,labels:LY.labels,
  immX:function(v){return v*isoPXMM();},immZ:function(v){return v*isoMMZ();},
  sc:Math.max(0.6,Math.min(1.6,ISO.S/30)),
  txt:function(ctx,x,y,s,fill,size){ctx.font='700 '+(size||11)+'px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
@@ -1781,8 +1783,8 @@ function isoFit(){var W=(cols-1)+(rows-1)||1,cw=isoCv.clientWidth||900,ch=isoCv.
 
 /* --- BAKE層(基材＋穴パターン＋strip/mesh銅箔＋ラベル＋blocked×＋trackCuts) --- */
 var ISO_TILE={key:'',pattern:null};
-function isoHolePattern(){var key=ISO.S+'|'+DPR;
- if(ISO_TILE.key===key)return ISO_TILE.pattern;
+function isoHolePattern(){var ck=ISO.S+'|'+DPR;/* 変数名ck: グローバル key() 関数を隠さないため */
+ if(ISO_TILE.key===ck)return ISO_TILE.pattern;
  var tw=Math.max(2,Math.round(2*ISO.S*DPR)),th=Math.max(1,Math.round(tw/2));
  var t=document.createElement('canvas');t.width=tw;t.height=th;var c=t.getContext('2d');
  function hole(x,y){if(ISO.S>=7){var rx=ISO.S*0.26*DPR,ry=rx*0.5;
@@ -1791,7 +1793,7 @@ function isoHolePattern(){var key=ISO.S+'|'+DPR;
   c.beginPath();c.ellipse(x,y,rx*0.45,ry*0.45,0,0,6.2832);c.fillStyle='#3c463c';c.fill();}
  else{c.beginPath();c.ellipse(x,y,Math.max(0.8,ISO.S*0.22)*DPR,Math.max(0.4,ISO.S*0.11)*DPR,0,0,6.2832);c.fillStyle='#b9c6b9';c.fill();}}
  if(ISO.S>=3){hole(tw/2,th/2);[[0,0],[tw,0],[0,th],[tw,th]].forEach(function(q){hole(q[0],q[1]);});}
- ISO_TILE={key:key,pattern:isoCtx.createPattern(t,'repeat')};return ISO_TILE.pattern;}
+ ISO_TILE={key:ck,pattern:isoCtx.createPattern(t,'repeat')};return ISO_TILE.pattern;}
 function isoBakeExtent(){var maxHz=0;D.parts.forEach(function(p){var h=isoPartHeight(p,physFor(p));if(h>maxHz)maxHz=h;});
  var zTop=maxHz+8,corners=[iproj(1,1,0),iproj(cols,1,0),iproj(1,rows,0),iproj(cols,rows,0),
   iproj(1,1,zTop),iproj(cols,1,zTop),iproj(1,rows,zTop),iproj(cols,rows,zTop)];
@@ -1802,11 +1804,14 @@ function isoBakeExtent(){var maxHz=0;D.parts.forEach(function(p){var h=isoPartHe
  var ox=anchor[0]-tw*Math.ceil((anchor[0]-minX)/tw),oy=anchor[1]-th*Math.ceil((anchor[1]-minY)/th);
  return {ox:ox,oy:oy,w:Math.min(4064,maxX-ox),h:Math.min(4064,maxY-oy)};}
 function isoEnsureBake(){var bt=D.grid.type||'perf';
- var key=[curI,ISOREV,cols,rows,bt,D.grid.stripAxis,ISO.S,MIRROR?1:0,LY.blocked?1:0,
-  (D.blockedHoles||[]).map(key0).join(';'),(D.trackCuts||[]).map(function(cc){return key0(cc[0])+'-'+key0(cc[1]);}).join(';'),
+ /* ローカル変数名を ck とし、既存の key() 関数(点→"c,r"文字列)を隠さないようにする。
+    直前まで ck という別名の代わりに key を使っており、同名のグローバル key() を覆い隠して
+    map(key)/key(...)がその未代入中のローカル変数(undefined)を呼ぼうとして例外になっていた。 */
+ var ck=[curI,ISOREV,cols,rows,bt,D.grid.stripAxis,ISO.S,MIRROR?1:0,LY.blocked?1:0,
+  (D.blockedHoles||[]).map(key).join(';'),(D.trackCuts||[]).map(function(cc){return key(cc[0])+'-'+key(cc[1]);}).join(';'),
   LANG].join('|');
- if(ISO.bakeKey===key)return;
- ISO.bakeKey=key;var ext=isoBakeExtent();ISO.bakeAtOX=ext.ox;ISO.bakeAtOY=ext.oy;ISO.bakeCssW=ext.w;ISO.bakeCssH=ext.h;
+ if(ISO.bakeKey===ck)return;
+ ISO.bakeKey=ck;var ext=isoBakeExtent();ISO.bakeAtOX=ext.ox;ISO.bakeAtOY=ext.oy;ISO.bakeCssW=ext.w;ISO.bakeCssH=ext.h;
  var bc=document.createElement('canvas');bc.width=Math.max(1,Math.round(ext.w*DPR));bc.height=Math.max(1,Math.round(ext.h*DPR));
  var bx=bc.getContext('2d');bx.setTransform(DPR,0,0,DPR,0,0);bx.translate(-ext.ox,-ext.oy);
  /* 基板スラブ（天面＋厚み） */
@@ -1822,7 +1827,7 @@ function isoEnsureBake(){var bt=D.grid.type||'perf';
  if(bt==='strip'){var ax=D.grid.stripAxis||'row';bx.strokeStyle='rgba(206,140,80,.5)';bx.lineWidth=Math.max(1,ISO.S*0.16);
   if(ax==='row'){for(var sr=1;sr<=rows;sr++){var a=iproj(1,sr,1.6),b=iproj(cols,sr,1.6);bx.beginPath();bx.moveTo(a[0],a[1]);bx.lineTo(b[0],b[1]);bx.stroke();}}
   else{for(var sc=1;sc<=cols;sc++){var a2=iproj(sc,1,1.6),b2=iproj(sc,rows,1.6);bx.beginPath();bx.moveTo(a2[0],a2[1]);bx.lineTo(b2[0],b2[1]);bx.stroke();}}}
- if(bt==='mesh'||bt==='breadboard'||bt==='cluster'||bt==='custom'){var cutsV={};(D.trackCuts||[]).forEach(function(cc){if(cc&&cc[0]&&cc[1]){cutsV[key0(cc[0])+'|'+key0(cc[1])]=1;cutsV[key0(cc[1])+'|'+key0(cc[0])]=1;}});
+ if(bt==='mesh'||bt==='breadboard'||bt==='cluster'||bt==='custom'){var cutsV={};(D.trackCuts||[]).forEach(function(cc){if(cc&&cc[0]&&cc[1]){cutsV[key(cc[0])+'|'+key(cc[1])]=1;cutsV[key(cc[1])+'|'+key(cc[0])]=1;}});
   bx.strokeStyle='rgba(206,140,80,.5)';bx.lineWidth=Math.max(1,ISO.S*0.1);
   boardLinks(cols,rows,D.grid,cutsV).forEach(function(seg){for(var i=1;i<seg.length;i++){var a=iproj(seg[i-1][0],seg[i-1][1],1.6),b=iproj(seg[i][0],seg[i][1],1.6);bx.beginPath();bx.moveTo(a[0],a[1]);bx.lineTo(b[0],b[1]);bx.stroke();}});}
  /* 穴パターン（天面のみに塗る＝天面パス再構築後にclip） */
@@ -1845,16 +1850,23 @@ function isoEnsureBake(){var bt=D.grid.type||'perf';
   for(var r2=1;r2<=rows;r2++){if(r2!==1&&r2%lblStep!==0)continue;var lq=iproj(1,r2,1.6),lq2=[lq[0]-ISO.S*0.85,lq[1]];
    bx.font='10px Consolas,monospace';bx.fillStyle='#8b97a3';bx.textAlign='center';bx.fillText(String.fromCharCode(64+r2),lq2[0],lq2[1]+3);}}
  ISO.bake=bc;}
-function key0(p){return p[0]+','+p[1];}
 
 /* --- 動的層: 部品・ワイヤ・ブリッジ・端子のプリミティブ生成と奥行きソート --- */
-function isoFootTop(g){/* 部品ID → {d:接地セルの奥行き, topZ:高さ} 。ワイヤがこれを跨ぐ判定に使う(B-1対応) */
- var out={};D.parts.forEach(function(p){var PF=physFor(p),h=isoPartHeight(p,PF),d;
+function isoFootTop(g){/* byPart: 部品ID→{d,topZ}（部品プリミティブ用）。byCell: 占有セル→{d,topZ}
+  （ワイヤが跨ぐ判定用、B-1対応）。中点セルを直接引けるO(1)ハッシュにすることで、
+  「跨ぐ可能性のある部品を総当たりし、たまたま常に真になる条件で引き上げる」という
+  誤った近似(旧実装のcheb(mid,mid)===0=自分自身との距離=恒真、が実質ノーオペレーションだった)
+  を避け、設計どおり「弦の中点が実際にその部品の設置セルの上にあるか」で判定する。 */
+ var byPart={},byCell={};D.parts.forEach(function(p){var PF=physFor(p),h=isoPartHeight(p,PF),cells,d;
   if(p.kind==='ic'){var ks=Object.keys(p.pins),xs=ks.map(function(k){return p.pins[k][0];}),ys=ks.map(function(k){return p.pins[k][1];});
-   d=uv([Math.max.apply(null,xs),Math.max.apply(null,ys)]);}
-  else{var f=g.foots[p.id],cells=(f?f.cells:[]).concat([p.leads[0],p.leads[1]]);
+   var x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys);
+   cells=[];for(var cc=x0;cc<=x1;cc++)for(var rr=y0;rr<=y1;rr++)cells.push([cc,rr]);
+   d=uv([x1,y1]);}
+  else{var f=g.foots[p.id];cells=(f?f.cells:[]).concat([p.leads[0],p.leads[1]]);
    d=cells.reduce(function(m,c){return Math.max(m,uv(c));},-1e9);}
-  out[p.id]={d:d,topZ:h};});return out;}
+  byPart[p.id]={d:d,topZ:h};
+  cells.forEach(function(c){var k=key(c);if(!byCell[k]||byCell[k].topZ<h)byCell[k]={d:d,topZ:h};});});
+ return {byPart:byPart,byCell:byCell};}
 function isoWirePrims(w,footTop,out){var col=D.netColors[w.net]||'#999';
  var pa=w.a.direct?w.a.pad:w.a.hole,pb=w.b.direct?w.b.pad:w.b.hole;
  var Lmm=dist(pa,pb)*CFG.pitch,apex=Math.min(9,Math.max(3,2.5+0.3*Lmm));
@@ -1863,9 +1875,8 @@ function isoWirePrims(w,footTop,out){var col=D.netColors[w.net]||'#999';
   pts.push({g:[pa[0]+(pb[0]-pa[0])*t,pa[1]+(pb[1]-pa[1])*t],z:4*apex*t*(1-t)});}
  for(i=0;i<NS;i++)(function(q0,q1){
   var mid=[(q0.g[0]+q1.g[0])/2,(q0.g[1]+q1.g[1])/2],midZ=(q0.z+q1.z)/2,d=Math.max(uv(q0.g),uv(q1.g));
-  Object.keys(footTop).forEach(function(pid){var ft=footTop[pid];if(midZ>ft.topZ*0.3&&Math.round(mid[0])>=1&&Math.round(mid[1])>=1)
-   {/* 跨ぐ可能性のある部品より奥行きキーで先に負けている場合は部品側へ引き上げる（B-1対応の簡易版） */
-    if(d<ft.d && cheb(mid,mid)===0 && uv(mid)<=ft.d && uv(mid)>=ft.d-6)d=Math.max(d,ft.d);}});
+  var ft=footTop.byCell[key([Math.round(mid[0]),Math.round(mid[1])])];
+  if(ft&&midZ>ft.topZ)d=Math.max(d,ft.d);/* 中点セルの真上を部品が占有し、弧の高さがその天面を超えるなら部品側へ引き上げる（B-1対応） */
   out.push({d:d,layer:2,net:w.net,
    draw:function(ctx,K){var s0=K.proj(q0.g[0],q0.g[1],q0.z),s1=K.proj(q1.g[0],q1.g[1],q1.z);
     ctx.globalAlpha=hoverNet&&w.net!==hoverNet?0.10:0.95;
@@ -1890,7 +1901,7 @@ function buildIsoList(){var g=geom(),out=[],footTop=isoFootTop(g),_allow=singleL
  /* ワイヤ本体 */
  if(LY.wires)D.wires.forEach(function(w){isoWirePrims(w,footTop,out);});
  /* 部品 */
- if(LY.parts)D.parts.forEach(function(p){var drawer=ISO_DRAW[p.kind];if(!drawer)return;var PF=physFor(p),ft=footTop[p.id];
+ if(LY.parts)D.parts.forEach(function(p){var drawer=ISO_DRAW[p.kind];if(!drawer)return;var PF=physFor(p),ft=footTop.byPart[p.id];
   var sel=inSel(p);
   out.push({d:ft.d,layer:1,p:p,bbox:isoPartBBox(p),
    draw:function(ctx,K){drawer(ctx,p,PF,K,sel);}});});
@@ -1907,7 +1918,7 @@ function buildIsoList(){var g=geom(),out=[],footTop=isoFootTop(g),_allow=singleL
      if(e.direct){ctx.beginPath();ctx.ellipse(v[0],v[1],rx*0.4,ry*0.4,0,0,6.2832);ctx.fillStyle=col;ctx.fill();}
      ctx.globalAlpha=1;}});});});}
  /* caution × (異ネット隣接) */
- if(LY.caut){var hn={};Object.keys(g.leadPos).forEach(function(k){});var lm2=leadMap();
+ if(LY.caut){var lm2=leadMap();
   var hn2={};Object.keys(lm2).forEach(function(k){hn2[k]=lm2[k].net;});
   D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn2[key(e.hole)]=w.net;});});
   Object.keys(hn2).forEach(function(kk){var p2=kk.split(',').map(Number);[[1,0],[0,1]].forEach(function(dd){
@@ -1951,14 +1962,14 @@ var ISO_DRAW={
   ctx.fillStyle='rgba(201,210,221,.30)';ctx.fillRect(base[0]+rx*0.45,top[1],Math.max(1,rx*0.28),base[1]-top[1]);
   if(sel){ctx.setLineDash([5,4]);ctx.strokeStyle='#5edcff';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(base[0],base[1],rx*1.15,ry*1.15,0,0,6.2832);ctx.stroke();ctx.setLineDash([]);}
   var pl=(p.plus===1)?b:a,pv=K.proj(pl[0],pl[1],H+2);K.txt(ctx,pv[0],pv[1],'+','#ff7b7b',12);
-  if(p.label)K.txt(ctx,top[0],top[1]-ry-6,p.label,'#dce3ea',10);},
+  if(K.labels&&p.label)K.txt(ctx,top[0],top[1]-ry-6,p.label,'#dce3ea',10);},
  disc:function(ctx,p,PF,K,sel){var a=p.leads[0],b=p.leads[1],dia=PF.bodyLen||5,zc=Math.max(3,dia*0.6);
   ctx.strokeStyle='#cfd8df';ctx.lineWidth=Math.max(1.2,K.immX(0.5));ctx.lineCap='round';
   [a,b].forEach(function(q){var h=K.proj(q[0],q[1],0),t=K.proj(q[0],q[1],zc);ctx.beginPath();ctx.moveTo(h[0],h[1]);ctx.lineTo(t[0],t[1]);ctx.stroke();});
   var m=K.proj((a[0]+b[0])/2,(a[1]+b[1])/2,zc),R=Math.max(3,K.immX(dia/2));
   ctx.beginPath();ctx.ellipse(m[0],m[1],R,R*0.8,0,0,6.2832);ctx.fillStyle='#b5651d';ctx.fill();ctx.strokeStyle='#7e4612';ctx.lineWidth=1.3;ctx.stroke();
   if(sel){ctx.setLineDash([5,4]);ctx.strokeStyle='#5edcff';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(m[0],m[1],R*1.2,R*0.96,0,0,6.2832);ctx.stroke();ctx.setLineDash([]);}
-  if(p.label)K.txt(ctx,m[0],m[1]-R-6,p.label,'#dce3ea',10);},
+  if(K.labels&&p.label)K.txt(ctx,m[0],m[1]-R-6,p.label,'#dce3ea',10);},
  film:function(ctx,p,PF,K,sel){var a=p.leads[0],b=p.leads[1],bl=PF.bodyLen||10,bw=PF.bodyWid||4.5,H=bw*1.8,z0=0.8;
   var gp=1/CFG.pitch,dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,px=-uy,py=ux;
   var m=[(a[0]+b[0])/2,(a[1]+b[1])/2],hl=bl/2*gp,hw=bw/2*gp;
@@ -1974,7 +1985,7 @@ var ISO_DRAW={
   quad(ctx,T[0],T[1],T[2],T[3],'#f2d22e');ctx.strokeStyle='#a88d0e';ctx.lineWidth=1.2;ctx.stroke();
   if(sel){ctx.setLineDash([5,4]);ctx.strokeStyle='#5edcff';ctx.lineWidth=2;
    ctx.beginPath();ctx.moveTo(T[0][0],T[0][1]);ctx.lineTo(T[1][0],T[1][1]);ctx.lineTo(T[2][0],T[2][1]);ctx.lineTo(T[3][0],T[3][1]);ctx.closePath();ctx.stroke();ctx.setLineDash([]);}
-  if(p.label)K.txt(ctx,(T[0][0]+T[2][0])/2,(T[0][1]+T[2][1])/2-8,p.label,'#5a4a0a',10);},
+  if(K.labels&&p.label)K.txt(ctx,(T[0][0]+T[2][0])/2,(T[0][1]+T[2][1])/2-8,p.label,'#5a4a0a',10);},
  r:function(ctx,p,PF,K,sel){var a=p.leads[0],b=p.leads[1],standing=!!p.standing||dist(a,b)<2.05;
   if(standing){var rw=Math.max(3,K.immX((PF.bodyWid||2.5)/2)),H=(PF.bodyLen||6.5),
    base=K.proj(a[0],a[1],1),top=K.proj(a[0],a[1],1+H);
@@ -1990,7 +2001,7 @@ var ISO_DRAW={
    ctx.strokeStyle='#9a7748';ctx.lineWidth=1.8;ctx.beginPath();ctx.moveTo(top[0],top[1]);
    ctx.quadraticCurveTo(ret[0],ret[1],hb2[0],hb2[1]);ctx.stroke();
    if(sel){ctx.setLineDash([5,4]);ctx.strokeStyle='#5edcff';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(base[0],base[1],rw*1.2,rw*0.6,0,0,6.2832);ctx.stroke();ctx.setLineDash([]);}
-   if(p.label)K.txt(ctx,top[0],top[1]-8,p.label,'#dce3ea',10);return;}
+   if(K.labels&&p.label)K.txt(ctx,top[0],top[1]-8,p.label,'#dce3ea',10);return;}
   var bl=PF.bodyLen||6.5,bw=PF.bodyWid||2.5,zA=bw/2+0.6,gp=1/CFG.pitch;
   var dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,m=[(a[0]+b[0])/2,(a[1]+b[1])/2];
   var A=K.proj(m[0]-ux*bl/2*gp,m[1]-uy*bl/2*gp,zA),B2=K.proj(m[0]+ux*bl/2*gp,m[1]+uy*bl/2*gp,zA);
@@ -2008,7 +2019,7 @@ var ISO_DRAW={
    ctx.strokeStyle=bd[1];ctx.lineWidth=Math.max(1.5,rr*0.5);ctx.lineCap='butt';
    ctx.beginPath();ctx.moveTo(cx-nx*rr*0.96,cy-ny*rr*0.96);ctx.lineTo(cx+nx*rr*0.96,cy+ny*rr*0.96);ctx.stroke();});
   if(sel){ctx.setLineDash([5,4]);ctx.strokeStyle='#5edcff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B2[0],B2[1]);ctx.stroke();ctx.setLineDash([]);}
-  if(p.label)K.txt(ctx,mid[0],mid[1]-rr-8,p.label,'#dce3ea',10);},
+  if(K.labels&&p.label)K.txt(ctx,mid[0],mid[1]-rr-8,p.label,'#dce3ea',10);},
  ic:function(ctx,p,PF,K,sel){var ks=Object.keys(p.pins);if(!ks.length)return;
   var xs=ks.map(function(k){return p.pins[k][0];}),ys=ks.map(function(k){return p.pins[k][1];});
   var x0=Math.min.apply(null,xs)-0.3,x1=Math.max.apply(null,xs)+0.3,y0=Math.min.apply(null,ys)-0.3,y1=Math.max.apply(null,ys)+0.3,zB=1.3,zT=4.5;
@@ -2024,7 +2035,7 @@ var ISO_DRAW={
   var p1=p.pins[ks[0]],pv=K.proj(p1[0],p1[1],zT);
   ctx.beginPath();ctx.ellipse(pv[0],pv[1],3.2,1.6,0,0,6.2832);ctx.fillStyle='#ff5d5d';ctx.fill();
   if(p.locked){var lp=K.proj(x0+0.3,y0+0.3,zT);ctx.fillStyle='#fff';ctx.fillRect(lp[0]-4,lp[1]-4,8,8);}
-  var lbl=(p.family?p.family+' ':'')+(p.label||'');K.txt(ctx,(T[0][0]+T[2][0])/2,(T[0][1]+T[2][1])/2+4,lbl,'#fff',11);}};
+  if(K.labels){var lbl=(p.family?p.family+' ':'')+(p.label||'');K.txt(ctx,(T[0][0]+T[2][0])/2,(T[0][1]+T[2][1])/2+4,lbl,'#fff',11);}}};
 
 /* --- 統合: renderIso / compose / invalidate / pick / hover --- */
 function isoRevKey(){return [curI,ISOREV,LY.parts,LY.labels,LY.wires,LY.bridges,LY.ends,LY.caut,LY.blocked,MIRROR].join('|');}
@@ -2038,7 +2049,7 @@ function isoCompose(){var ctx=isoCtx,cw=isoCv.clientWidth,ch=isoCv.clientHeight;
  if(ISO.bake)ctx.drawImage(ISO.bake,ISO.bakeAtOX,ISO.bakeAtOY,ISO.bakeCssW,ISO.bakeCssH);
  var K=makeK();for(var i=0;i<ISO.list.length;i++)ISO.list[i].draw(ctx,K);}
 var isoDirty=false;
-function isoInvalidate(){if(isoDirty)return;isoDirty=true;requestAnimationFrame(function(){isoDirty=false;if(ISO.on)isoCompose();});}
+function isoInvalidate(){if(isoDirty)return;isoDirty=true;requestAnimationFrame(function(){isoDirty=false;if(ISO.on){isoCompose();isoStatus();}});}
 function isoHover(ev){var pt=isoPt(ev),best=null,bestD=8;
  D.wires.forEach(function(w){var pa=w.a.direct?w.a.pad:w.a.hole,pb=w.b.direct?w.b.pad:w.b.hole;
   var sa=iproj(pa[0],pa[1],2),sb=iproj(pb[0],pb[1],2);
