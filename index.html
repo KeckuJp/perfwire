@@ -173,7 +173,7 @@ svg{display:block;margin:16px auto}
 <div class="hint">JSON貼り付け→インポート、またはファイルをドロップ。編集・設定は自動保存。</div>
 <textarea id="pw-out" placeholder="エクスポート/インポート用JSON"></textarea>
 <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">
-<button id="pw-copy">コピー</button><button id="pw-import">インポート</button><button id="pw-beep">導通リスト</button><button id="pw-packet">ビルドパケット</button><button id="pw-print">印刷 1:1</button><button id="pw-sample">サンプル復元</button><button id="pw-clearls">保存データ消去</button>
+<button id="pw-copy">コピー</button><button id="pw-import">インポート</button><button id="pw-beep">導通リスト</button><button id="pw-packet">ビルドパケット</button><button id="pw-print">印刷 1:1</button><button id="pw-newblank" title="新しい空の基板を案として追加します">新規（空の基板）</button><button id="pw-sample">サンプル復元</button><button id="pw-clearls">保存データ消去</button>
 </div>
 </details>
 </aside>
@@ -282,7 +282,7 @@ var JE={
 '3Dビュー 切替':'Toggle 3D view',
 'モード':'Mode','({0}-{1}キー)':'(keys {0}-{1})','レイヤー':'Layers','写真下絵':'Photo underlay','しきい値':'Thresholds','部品':'Parts','監査':'Audit','— ライブ更新':'— live','データ':'Data',
 '端子':'Ends','ブリッジ':'Bridges','穴×':'Block','テスター':'Probe',
-'ロック切替':'Toggle lock','案をリセット':'Reset proposal','設定を既定値に戻す':'Reset config to defaults','コピー':'Copy','インポート':'Import','導通リスト':'Continuity list','印刷 1:1':'Print 1:1','サンプル復元':'Restore sample','保存データ消去':'Clear saved data',
+'ロック切替':'Toggle lock','案をリセット':'Reset proposal','設定を既定値に戻す':'Reset config to defaults','コピー':'Copy','インポート':'Import','導通リスト':'Continuity list','印刷 1:1':'Print 1:1','新規（空の基板）':'New (blank board)','新しい空の基板を案として追加します':'Adds a new blank board as a proposal','サンプル復元':'Restore sample','保存データ消去':'Clear saved data',
 '保存データを消去してリロードします。今の編集内容は失われ、元に戻せません。続けますか？':'This clears saved data and reloads. Your current edits will be lost and cannot be undone. Continue?',
 '写真を読み込み…':'Load photo…','消去':'Clear','90°回転':'Rotate 90°','この部品を削除':'Delete this part','＋ 追加':'+ Add',
 '← 前':'← Prev','✓ 完了して次へ':'✓ Done & next','次 →':'Next →','終了':'Exit','裏面ビュー':'Mirror view','裏面':'Back',
@@ -1286,6 +1286,7 @@ dl(new Blob([md],{type:'text/markdown'}),'build_packet.md');
 svgPng(function(png){if(png)dl(png,'board.png');});
 showHelp(tr('ビルドパケット（BOM＋切断長＋ブリッジ＋基板PNG）を出力しました。'));};
 document.getElementById('pw-sample').onclick=function(){props=INIT.proposals.map(function(p,i){return{name:p.name,orig:p.state,cur:null,origin:p.origin||'saved',initIdx:i};});curI=0;refreshSel();loadProp(0);auditNow();};
+document.getElementById('pw-newblank').onclick=newBlankBoard;
 document.getElementById('pw-clearls').onclick=function(){if(!confirm(tr('保存データを消去してリロードします。今の編集内容は失われ、元に戻せません。続けますか？')))return;try{localStorage.removeItem(LSKEY);}catch(e){}location.reload();};
 document.getElementById('pw-open').onclick=function(){document.getElementById('pw-file').click();};
 document.getElementById('pw-file').onchange=function(){var f=this.files[0];if(!f)return;var rd=new FileReader();rd.onload=function(){handleFileText(rd.result);};rd.readAsText(f);this.value='';};
@@ -1769,6 +1770,7 @@ var CMDS=[
 {n:'印刷（1:1原寸 — 実基板に重ねて検品。裏面は「裏面」ONで）',k:'print scale paper',f:function(){printView();}},
 {n:'ファイルを開く（JSON / KiCAD .net）',k:'open import kicad',f:function(){document.getElementById('pw-open').click();}},
 {n:'サンプル復元',k:'sample reset',f:function(){document.getElementById('pw-sample').click();}},
+{n:'新規（空の基板）',k:'new blank board file empty start over',f:newBlankBoard},
 {n:'案の名前を変更',k:'rename proposal',f:renameProp},
 {n:'案を削除',k:'delete remove proposal',f:delProp},
 {n:'モード: 選択／移動',k:'mode move select',key:'1',mode:'move',f:function(){setMode('move');}},
@@ -2439,13 +2441,15 @@ w.style.display='flex';var _b=document.getElementById('wc-start');if(_b)_b.focus
 function dismissWelcome(){var w=document.getElementById('welcome');if(w)w.style.display='none';try{localStorage.setItem(LSKEY+'_seen','1');}catch(e){}}
 document.getElementById('wc-start').onclick=function(){var vi=0;for(var vk=0;vk<props.length;vk++)if(props[vk].origin==='verified'){vi=vk;break;}
 loadProp(vi);var s=document.getElementById('pw-prop');if(s)s.value=vi;auditNow();dismissWelcome();};
-document.getElementById('wc-blank').onclick=function(){var pe=props[curI]&&props[curI].edited;snap();if(props[curI])props[curI].edited=pe;
+/* welcomeの一発勝負だった「空の基板から始める」を、いつでも呼べる関数として独立化（新規ボタン・CMDSから共通利用）。 */
+function newBlankBoard(){var pe=props[curI]&&props[curI].edited;snap();if(props[curI])props[curI].edited=pe;
 var st={version:1,grid:{cols:20,rows:15},netColors:{},leads:{},parts:[],padBridges:[],wires:[],blockedHoles:[]};
 props.push({name:uniqName(tr('空の基板')),orig:st,cur:null,origin:'blank'});curI=props.length-1;refreshSel();loadProp(curI);
 var P=CFG.profiles||{};if(P.easy){var w=P.easy.weights||{};for(var f in w)CFG.weights[f]=w[f];buildSliders();}
 var sel=document.getElementById('pw-profile');if(sel){sel.value='easy';showProfileDesc('easy');}
-saveLS();auditNow();dismissWelcome();
-showHelp(tr('空の基板から開始します。左下の「部品を追加」で部品を置いてください。'));};
+saveLS();auditNow();
+showHelp(tr('空の基板から開始します。左下の「部品を追加」で部品を置いてください。'));}
+document.getElementById('wc-blank').onclick=function(){newBlankBoard();dismissWelcome();};
 document.getElementById('wc-skip').onclick=dismissWelcome;
 function maybeWelcome(){var seen=null;try{seen=localStorage.getItem(LSKEY+'_seen');}catch(e){}
 if(/^#z=/.test(location.hash||'')){try{localStorage.setItem(LSKEY+'_seen','1');}catch(e){}return;}/* don't hijack a shared #z= board on first visit, and don't ask again on a later reload (e.g. language switch) once the hash has been consumed */
