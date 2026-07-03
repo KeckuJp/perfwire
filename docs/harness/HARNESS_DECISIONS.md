@@ -4,8 +4,10 @@
 
 - Baseline: minimal harness, frontend-app profile
 - Applied date: 2026-06-23
+- Last reviewed: 2026-07-03 (manual drift re-audit; no upstream changes required adoption — see D008/D009)
 - Project risk: R2 (customer-facing) + physical-build safety overlay
-- Project type: frontend-app (single-file browser editor) + Python stdlib CLI
+- Project type: frontend-app (single-file browser editor) + Python stdlib CLI — a deliberate
+  hybrid, not a single external category (see D008)
 
 ## Decisions
 
@@ -79,6 +81,35 @@ Reason:
   the plugin cache without install. Adding a third-party dependency requires explicit human
   approval (recorded as a protected operation).
 
+### D008: Project type is a deliberate hybrid, not a single category
+
+Reason:
+- "frontend-app + Python stdlib CLI" doesn't map cleanly to a conventional single-purpose
+  category: the browser half (`index.html`) has no framework, no build step, no package
+  manager and no component library, while the CLI half (`solver.py`) is a stdlib-only
+  script, not a server.
+- Recorded explicitly so a future reviewer doesn't assume this is a conventional
+  framework-based frontend app and misapply framework-shaped tooling assumptions
+  (bundlers, component kernels, design-token systems, UI-quality review tooling built for
+  a component framework) that don't fit a hand-maintained single file.
+
+### D009: Diagnostic-review tooling (diff-size auditor, skill-quality loop) considered and deferred
+
+Reason (re-audited 2026-07-03; recorded so the absence reads as a decision, not an oversight):
+- Two classes of optional diagnostic tooling were evaluated: a diff-size/complexity review
+  agent, and a skill-quality measurement loop (`/improve-skill`-style) for
+  `.claude/skills/perfwire/SKILL.md`.
+- Both are declined for now under the same D002 standard (add a control only with a
+  concrete, recurring, otherwise-undetectable signal) — neither has a demonstrated
+  recurring failure behind it yet.
+- Both would also require committing a `.claude/settings.json` and/or enabling a
+  marketplace plugin in it, which conflicts with this repo's existing policy (see
+  `.gitignore`) of never committing a per-machine plugin/marketplace enable into the public
+  product repo.
+- Revisit if: (a) a diff becomes hard to review in practice (not hypothetically), or
+  (b) the tooling can be adopted without committing a settings file (e.g. prose-only
+  guidance, or an opt-in path via the gitignored `.claude/settings.local.json`).
+
 ## Verification commands
 
 ```bash
@@ -105,3 +136,7 @@ PERFWIRE_PYTHON=python node tools/parity_headless.mjs   # skips if no Chrome
   revisit trigger.)
 - Should an eval/benchmark harness be built to measure plan/audit quality, or do the 7
   computational gates suffice? (Tracked in HARNESS_HEALTH.md.)
+- If a first hook is ever added: anchor its `command` script path with the
+  `$CLAUDE_PROJECT_DIR` environment variable Claude Code provides, not a bare relative
+  path — hook commands run through a shell whose cwd is not guaranteed to be the project
+  root, so a relative path can resolve against the wrong directory.
