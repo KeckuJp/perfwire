@@ -191,7 +191,7 @@ svg{display:block;margin:16px auto}
 <svg id="pw-svg" style="touch-action:none" role="img" aria-label="基板配線図"></svg>
 <canvas id="pw-iso" style="display:none;touch-action:none" aria-label="基板3Dビュー"></canvas>
 </div>
-<footer id="status"><span class="chip" id="st-mode"></span><span class="chip" id="st-pos">—</span><span class="chip" id="st-net" style="display:none"></span><span class="chip" id="st-stats"></span></footer>
+<footer id="status"><span class="chip" id="st-mode"></span><span class="chip" id="st-pos">—</span><span class="chip" id="st-net" style="display:none"></span><span class="chip" id="st-stats"></span><span class="chip" id="st-lasttoast" style="display:inline-block;max-width:26vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle"></span></footer>
 </main>
 </div>
 <div id="toast" aria-live="polite"></div>
@@ -415,6 +415,7 @@ var JE={
 '案をリセットしました。移動{0}・部品+{1}−{2}・線+{3}−{4}。':'Proposal reset. Moved {0} · parts +{1}−{2} · wires +{3}−{4}.',
 '案をリセットしました（変更はありませんでした）。':'Proposal reset (there was nothing to change).',
 '配置を再提案しました。移動{0}・線+{1}−{2}。':'Re-placed. Moved {0} · wires +{1}−{2}.',
+'最後の通知: ':'Last notification: ','クリックで閉じる':'Click to dismiss',
 ' ロック済み {0} 個は動かしていません。':' {0} locked part(s) were left untouched.',
 'このJSONはperfwireの盤面データとして認識できませんでした（grid/parts/leads/wiresなどのキーが見つかりません）。書き出したJSONをそのまま貼り付けているか確認してください。':'This JSON wasn\'t recognized as perfwire board data (no grid/parts/leads/wires keys found). Check that you pasted an exported JSON as-is.',
 '{0} 件の案を取り込みました。':'Imported {0} proposal(s).',
@@ -816,13 +817,13 @@ if(fixes.length)rows.push('<div class="aud-row aud-fixes"><span class="aud-k">'+
 var h=noteLine+rows.join('');
 try{var ed=document.getElementById('eedump');if(ed)ed.textContent=JSON.stringify({wireLength:GEE.wireLength,decoupling:GEE.decoupling,padJoints:GEE.padJoints,bodyOverlaps:GEE.bodyOverlaps,grounding:topo.grounding,openNets:erc.openNets,singleLeadNets:erc.singleLeadNets,unconnectedLeads:erc.unconnectedLeads,duplicateIds:erc.duplicateIds,unclassifiedNets:erc.unclassifiedNets,polarity:erc.polarity,powerReach:erc.powerReach,floatingPowerPins:erc.floatingPowerPins,multipleDrivers:erc.multipleDrivers,undrivenNets:erc.undrivenNets,stripShorts:erc.stripShorts,resistorPower:erc.resistorPower,decouplingValueWarn:erc.decouplingValueWarn,pinConflicts:erc.pinConflicts,netMerge:erc.netMerge,bridgeDangle:erc.bridgeDangle,fabReady:ngs===0});}catch(e){}
 var el=document.getElementById('audit');var ast=auditState();/* #eedump was just written above; classify hard vs the accepted soft wire-length margin so the verdict matches the guide */
-var vOK='<div class="vd vok">'+tr('✓ 組んで大丈夫です（赤いNGなし・実物で極性/向きは要確認）')+'</div>',vNG='<div class="vd vng">'+trf('✗ 先に直してください（NG {0}件）',ngsHard||ngs)+'</div>';
+var vOK='<div class="vd vok" role="status">'+tr('✓ 組んで大丈夫です（赤いNGなし・実物で極性/向きは要確認）')+'</div>',vNG='<div class="vd vng" role="status">'+trf('✗ 先に直してください（NG {0}件）',ngsHard||ngs)+'</div>';
 /* otherWarn = 他に表示中の warn 項目（ERC=eb・還流トポロジ・レイアウト品質）の件数。soft(配線長のみ)判定でも
    これらが非ゼロなら「指摘は配線長のみ」は事実と食い違う（監査で発見された矛盾）ので文言を動的に切替える。 */
 var otherWarn=eb.length+topo.grounding.filter(function(gr){return gr.daisyReturn;}).length+(_ci?1:0);
 /* 部品ゼロの盤面は eedump.fabReady（parity対象・不変）上は「NGなし」で真だが、検証対象が無いだけの空虚な真＝合格バナーは出さない */
-var vd=(!D.parts.length)?'<div class="vd vinfo">'+tr('部品がありません。左の「部品を追加」から始めてください。')+'</div>'
-:ast.fabReady?vOK:ast.hard?vNG:ast.soft?(otherWarn?'<div class="vd vwr">'+trf('△ 配線長に加えて他に{0}件の注意点があります。下の詳細を確認のうえ、組んで大丈夫です',otherWarn)+'</div>':'<div class="vd vwr">'+tr('△ 指摘は配線長のみ（既知の許容範囲）。組んで大丈夫です')+'</div>'):(ngs?vNG:vOK);
+var vd=(!D.parts.length)?'<div class="vd vinfo" role="status">'+tr('部品がありません。左の「部品を追加」から始めてください。')+'</div>'
+:ast.fabReady?vOK:ast.hard?vNG:ast.soft?(otherWarn?'<div class="vd vwr" role="status">'+trf('△ 配線長に加えて他に{0}件の注意点があります。下の詳細を確認のうえ、組んで大丈夫です',otherWarn)+'</div>':'<div class="vd vwr" role="status">'+tr('△ 指摘は配線長のみ（既知の許容範囲）。組んで大丈夫です')+'</div>'):(ngs?vNG:vOK);
 el.innerHTML=vd+h;
 el.querySelectorAll('button[data-fixpwr]').forEach(function(b){b.onclick=function(){
 addExtTerminal(decodeURIComponent(b.getAttribute('data-fixpwr')));};});
@@ -2287,9 +2288,16 @@ var helpEl=null;
    旧実装は両方を #sliderhelp に出していたため、「Claude Code に戻す」等の確認が左パネル中段に埋もれて見えなかった。 */
 function sliderHelp(t){if(!helpEl)helpEl=document.getElementById('sliderhelp');if(helpEl)helpEl.textContent=t;}
 var _toastT=null;
-function toast(t){var el=document.getElementById('toast');if(!el){sliderHelp(t);return;}el.textContent=t;
-el.style.cssText='position:fixed;left:50%;top:56px;transform:translateX(-50%);z-index:9000;max-width:min(560px,94vw);padding:10px 16px;background:#0d2447;color:#eaf2ff;border:1px solid rgba(56,132,255,.65);border-radius:9px;box-shadow:0 8px 26px rgba(0,0,0,.5);font-size:12.5px;line-height:1.55;pointer-events:none;opacity:1;transition:opacity .35s';
-if(_toastT)clearTimeout(_toastT);_toastT=setTimeout(function(){el.style.opacity='0';},4400);}
+/* トーストは4.4秒で自動消滅する一本足の通知チャネルだった（pause不可・再表示不可・唯一の結果通知）。
+   ホバーで一時停止＋クリックで即消去＋直近の内容をフッターに残す、の3点で「消えたら二度と見られない」を無くす。 */
+function toast(t){var el=document.getElementById('toast');if(!el){sliderHelp(t);return;}el.textContent=t;el.title=tr('クリックで閉じる');
+el.style.cssText='position:fixed;left:50%;top:56px;transform:translateX(-50%);z-index:9000;max-width:min(560px,94vw);padding:10px 16px;background:#0d2447;color:#eaf2ff;border:1px solid rgba(56,132,255,.65);border-radius:9px;box-shadow:0 8px 26px rgba(0,0,0,.5);font-size:12.5px;line-height:1.55;pointer-events:auto;cursor:pointer;opacity:1;transition:opacity .35s';
+function schedule(){if(_toastT)clearTimeout(_toastT);_toastT=setTimeout(function(){el.style.opacity='0';},4400);}
+el.onmouseenter=function(){if(_toastT)clearTimeout(_toastT);};
+el.onmouseleave=schedule;
+el.onclick=function(){if(_toastT)clearTimeout(_toastT);el.style.opacity='0';};
+schedule();
+var lt=document.getElementById('st-lasttoast');if(lt){lt.textContent=tr('最後の通知: ')+t;lt.title=t;}}
 function showHelp(t){toast(t);}
 function slider(box,o){o.label=tr(o.label);o.desc=tr(o.desc);if(o.ends)o.ends=[tr(o.ends[0]),tr(o.ends[1])];
 var lab=document.createElement('div');lab.className='sld';
