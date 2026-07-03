@@ -37,6 +37,8 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 #canvas{flex:1;overflow:auto;position:relative}
 #canvas::-webkit-scrollbar{width:10px;height:10px}
 #canvas::-webkit-scrollbar-thumb{background:rgba(255,255,255,.10);border-radius:5px}
+#pw-iso{display:none;width:100%;height:100%;cursor:grab}
+#pw-iso:active{cursor:grabbing}
 #ztools{position:absolute;top:12px;right:16px;display:flex;gap:6px;z-index:5}
 #ztools button{backdrop-filter:blur(10px);background:rgba(18,22,27,.7)}
 #ztools button.on{background:linear-gradient(135deg,#11a8e0,#0c7fb3);color:#06222e;font-weight:600}
@@ -70,7 +72,7 @@ summary{cursor:pointer;font-size:13px;font-weight:600}
 .note{color:var(--acc);border-bottom:1px dashed rgba(94,220,255,.3);display:block;margin-bottom:3px;padding-bottom:3px}
 textarea{width:100%;height:62px;background:rgba(0,0,0,.35);color:var(--tx);border:1px solid var(--bd);border-radius:8px;font:11px Consolas,monospace;padding:6px}
 aside input[type=text]{background:#171c22;color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:5px 8px;font-size:12.5px;width:100%;margin:2px 0}
-@media print{header,aside,#status,#ztools,#guide,#prog,#cpov,#pw-flow,#welcome{display:none!important}body{background:#fff!important}.layout{display:block}main{display:block}#canvas{overflow:visible;position:static}svg{margin:0}}
+@media print{header,aside,#status,#ztools,#guide,#prog,#cpov,#pw-flow,#welcome,#pw-iso{display:none!important}body{background:#fff!important}.layout{display:block}main{display:block}#canvas{overflow:visible;position:static}svg{margin:0}}
 .hint{font-size:11.5px;color:var(--mut);line-height:1.55;margin:5px 0}
 .netrow{display:flex;align-items:center;gap:7px;font-size:12px;margin:3px 0}
 .netrow .dot{width:10px;height:10px;border-radius:3px;flex:none}
@@ -173,7 +175,7 @@ svg{display:block;margin:16px auto}
 <div id="pw-flow"></div>
 <div id="sel-bar" style="display:none;align-items:center;gap:8px;padding:5px 10px;margin:0 0 5px;background:rgba(94,220,255,.1);border:1px solid rgba(94,220,255,.4);border-radius:8px;flex-wrap:wrap"></div>
 <div id="canvas">
-<div id="ztools"><button id="z-mirror" title="裏面から見た図に左右反転（はんだ面）。表示とテスターのみ、編集はロック">裏面</button><button id="z-out">−</button><button id="z-fit">100%</button><button id="z-in">＋</button></div>
+<div id="ztools"><button id="z-mirror" title="裏面から見た図に左右反転（はんだ面）。表示とテスターのみ、編集はロック">裏面</button><button id="z-iso" title="盤面を斜め上から見る3Dビュー（閲覧専用・編集は2Dに戻って行います）">3D</button><button id="z-out">−</button><button id="z-fit">100%</button><button id="z-in">＋</button></div>
 <div id="guide" role="dialog" aria-label="Work guide">
 <div class="gtitle" id="g-count"></div>
 <div class="gbody" id="g-text"></div>
@@ -181,6 +183,7 @@ svg{display:block;margin:16px auto}
 <div class="grow"><button id="g-prev">← 前</button><button id="g-done" class="primary">✓ 完了して次へ</button><button id="g-next">次 →</button><span class="spacer"></span><label class="tgl" style="margin:0"><input type="checkbox" id="g-mirror">裏面ビュー</label><button id="g-close">終了</button></div>
 </div>
 <svg id="pw-svg" style="touch-action:none" role="img" aria-label="perfboard wiring diagram"></svg>
+<canvas id="pw-iso" style="display:none;touch-action:none" aria-label="perfboard 3D view"></canvas>
 </div>
 <footer id="status"><span class="chip" id="st-pos">—</span><span class="chip" id="st-net" style="display:none"></span><span class="chip" id="st-stats"></span></footer>
 </main>
@@ -253,6 +256,9 @@ var JE={
 '高Z入力を短く、入出力を強く分離、デカップリング近接。オペアンプ/オーディオ/センサなど発振・ノイズに弱い回路向け':'Short high-Z inputs, strong input/output separation, tight decoupling. For op-amp / audio / sensor circuits prone to oscillation and noise',
 'ブリッジ多用で銅線最少、立て実装可、密でも可。小さい基板に詰めたい上級者向け':'Bridge-heavy for fewest jumpers, standing mounts allowed, density accepted. For experienced builders fitting a small board',
 '配線を再計算':'Rewire','配置を再提案':'Re-place & route','案として保存':'Save as proposal','作業ガイド':'Work guide','元に戻す':'Undo','開く…':'Open…','書き出し':'Export','URL共有':'Share URL',
+'盤面を斜め上から見る3Dビュー（閲覧専用・編集は2Dに戻って行います）':'3D view of the board from above (view-only — go back to 2D to edit)',
+'3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。編集は2Dに戻って行います。':'3D view: a view-only isometric overview. Click to select, drag to pan, Ctrl+wheel to zoom. Go back to 2D to edit.',
+'3Dビュー 切替':'Toggle 3D view',
 'モード':'Mode','(1-6キー)':'(keys 1-6)','レイヤー':'Layers','写真下絵':'Photo underlay','しきい値':'Thresholds','部品':'Parts','監査':'Audit','— ライブ更新':'— live','データ':'Data',
 '端子':'Ends','ブリッジ':'Bridges','穴×':'Block','テスター':'Probe',
 'ロック切替':'Toggle lock','案をリセット':'Reset proposal','設定を既定値に戻す':'Reset config to defaults','コピー':'Copy','インポート':'Import','導通リスト':'Continuity list','印刷 1:1':'Print 1:1','サンプル復元':'Restore sample','保存データ消去':'Clear saved data',
@@ -389,6 +395,12 @@ var touches={},pinch0=null;
 var PHOTO={img:null,x:-0.67,y:-0.67,mul:100,rot90:0,rotF:0,op:55,flip:false,drag:false,fit:1};
 var GUIDE={on:false,steps:[],i:0,done:{}};
 var MIRROR=false;
+/* === 3Dビュー(等角/isometric)状態。§設計は index.html 内 renderIso() 一式のコメントを参照。
+   ISOREV = 「D の中身が変わった」の代理カウンタ（snap/undo/importObj/loadPropでbump）。
+   選択/ホバーだけの変化ではbumpしない＝isoの部品リスト再構築をrender()毎でなく内容変化時だけに絞る。 */
+var ISO={on:false,S:0,ox:0,oy:0,bake:null,bakeKey:'',bakeCssW:0,bakeCssH:0,bakeAtOX:0,bakeAtOY:0,
+         list:null,listKey:'',listRev:-1,pan0:null,moved:false};
+var ISOREV=0,isoCv=null,isoCtx=null,DPR=window.devicePixelRatio||1;
 var probeA=null,probeRes=null;
 var DIFF={on:false,base:null,name:''};
 var HINT={move:'部品も端子も同じ操作でドラッグ移動（モード切替なし）。クリックで選択／Shift＋クリックで複数選択／空きをドラッグで範囲選択／選択をドラッグでまとめて移動。L＝ロック、Del＝削除、Esc＝解除。',end:'リング＝銅線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。',part:'本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。',bridge:'隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。',block:'使えない穴をクリックで×指定／解除。再計算が避けます。',probe:'2つの穴を順にクリック → 計画上の導通/非導通と接続グループを表示。実機のテスター当てと突き合わせる。',cut:'ストリップ基板用: ストリップ上の隣接2穴の間をクリックで track cut を追加/削除。異ネットが同ストリップに乗る短絡を切って分離する。'};
@@ -819,6 +831,7 @@ if(over)E('circle',{cx:v[0],cy:v[1],r:PITCH*0.4,fill:'none',stroke:'#ff5d5d','st
 function vizPreview(fn){tempViz=fn;render();clearTimeout(vizTimer);vizTimer=setTimeout(function(){tempViz=null;render();},1600);}
 function render(){
 if(!D)return;
+if(ISO.on){renderIso();return;}
 PITCH=BASE*ZOOM;
 while(svg.firstChild)svg.removeChild(svg.firstChild);
 var W2=OX+(cols-1)*PITCH+34,H2=OY+(rows-1)*PITCH+34,c,r;
@@ -923,7 +936,7 @@ stStats.innerHTML=tr('被覆線')+' <b>'+D.wires.length+'</b> ('+tr('直付')+' 
 stStats.title=ds?tr('比較の見方: 移動=位置が変わった部品の数／部品・線・橋はそれぞれ「+追加数−削除数」'):'';
 if(selPart!==palLast){palLast=selPart;buildPalEdit();}
 saveLS();}
-function loadProp(i){if(GUIDE.on)guideEnd();if(DIFF.on){DIFF.on=false;DIFF.base=null;var db=document.getElementById('pw-diff');if(db)db.textContent=tr('比較');}curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];
+function loadProp(i){if(GUIDE.on)guideEnd();if(DIFF.on){DIFF.on=false;DIFF.base=null;var db=document.getElementById('pw-diff');if(db)db.textContent=tr('比較');}curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];ISOREV++;
 if(D.parts)D.parts=D.parts.filter(function(p){return p.kind==='ic'?(p.pins&&typeof p.pins==='object'&&Object.keys(p.pins).length):(Array.isArray(p.leads)&&p.leads.length>=2);});
 cols=D.grid.cols;rows=D.grid.rows;selPart=null;selSet=[];syncSelBar();drag=null;hoverNet=null;calcNote='';if(!D.wires||!D.wires.length){try{connect();calcNote=tr('自動結線: 空の配線を補完（被覆線')+' '+D.wires.length+tr('本）');}catch(e){}}buildNetClasses();buildLegend();updatePropHint();render();}
 function getPt(e){var r=svg.getBoundingClientRect(),sx=(svg.width.baseVal.value||r.width)/r.width;return[(e.clientX-r.left)*sx,(e.clientY-r.top)*sx];}
@@ -935,7 +948,7 @@ if(e.bridgeTo&&adj(e.hole,e.bridgeTo)){for(i=0;i<ns.length;i++)if(ns[i][0]===e.b
 if(!ok){var best=null;ns.forEach(function(n){if(adj(e.hole,n)){var d2=Math.hypot(n[0]-e.pad[0],n[1]-e.pad[1]);if(!best||d2<best[0])best=[d2,n];}});e.bridgeTo=best?deep(best[1]):null;}}
 function afterMove(p){var names={};partLeads(p).forEach(function(L){names[L.name]=L.pos;if(D.leads[L.name])D.leads[L.name].at=deep(L.pos);});
 D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(names[e.tap])e.pad=deep(names[e.tap]);revalidate(e,w);});});}
-function snap(){undoStack.push({i:curI,s:deep(D)});if(undoStack.length>40)undoStack.shift();}
+function snap(){undoStack.push({i:curI,s:deep(D)});if(undoStack.length>40)undoStack.shift();ISOREV++;}
 function undo(){var u=undoStack.pop();if(!u)return;curI=u.i;props[curI].cur=u.s;document.getElementById('pw-prop').value=curI;loadProp(curI);auditNow();}
 /* === 選択駆動の直接操作モデル（モードレス「移動」の中核） ===
    selSet = 選択中の部品。単一/複数を統一。盤上アクションバー＋キー(L=ロック, Del=削除, Esc=解除)で操作＝左パネル不要。 */
@@ -1043,7 +1056,7 @@ else{var x0=Math.min(drag.s[0],pt[0]),x1=Math.max(drag.s[0],pt[0]),y0=Math.min(d
 var hit=D.parts.filter(function(p){var c=partLeads(p).map(function(L){return xy(L.pos[0],L.pos[1]);}),cx=c.reduce(function(s,v){return s+v[0];},0)/c.length,cy=c.reduce(function(s,v){return s+v[1];},0)/c.length;return cx>=x0&&cx<=x1&&cy>=y0&&cy<=y1;});
 if(drag.add){hit.forEach(function(p){if(selSet.indexOf(p)<0)selSet.push(p);});}else{selSet=hit;}selPart=selSet.length?selSet[selSet.length-1]:null;syncSelBar();}
 drag=null;render();return;}});
-document.getElementById('canvas').addEventListener('wheel',function(e){if(!e.ctrlKey)return;e.preventDefault();
+document.getElementById('canvas').addEventListener('wheel',function(e){if(ISO.on||!e.ctrlKey)return;e.preventDefault();
 ZOOM=Math.min(2.4,Math.max(0.5,ZOOM*(e.deltaY<0?1.1:1/1.1)));render();},{passive:false});
 function exportJSON(){return JSON.stringify({proposal:props[curI].name,grid:D.grid,blockedHoles:D.blockedHoles,leads:D.leads,parts:D.parts,padBridges:D.padBridges,wires:D.wires,netColors:D.netColors,trackCuts:D.trackCuts||[],cfg:CFG},function(k,v){return (typeof k==='string'&&k.charAt(0)==='_')?undefined:v;});}
 // perfwire lint（エディタ側ミラー）: solver.py validate_state と同じ契約を JS で検証。
@@ -1068,7 +1081,7 @@ if(CFG.partOv)Object.keys(CFG.partOv).forEach(function(id){['bodyLen','bend','ma
 if(st.states)st.states.forEach(function(s,i){if(s){if(!props[i])props[i]={name:(st.names&&st.names[i])||(tr('案')+i),orig:s,cur:null};props[i].cur=s;if(st.names&&st.names[i])props[i].name=st.names[i];}});
 if(typeof st.curI==='number'&&props[st.curI])curI=st.curI;}catch(e){}}
 function refreshSel(){var sel=document.getElementById('pw-prop');sel.innerHTML='';props.forEach(function(p,i){var o=document.createElement('option');o.value=i;o.textContent=p.name;sel.appendChild(o);});sel.value=curI;}
-function setMode(m){mode=m;['move','bridge','block','probe','cut'].forEach(function(k){document.getElementById('m-'+k).className=(k===m)?'on':'';});
+function setMode(m){if(ISO.on&&m!=='move')setIso(false);mode=m;['move','bridge','block','probe','cut'].forEach(function(k){document.getElementById('m-'+k).className=(k===m)?'on':'';});
 if(m!=='probe'){probeA=null;probeRes=null;}
 document.getElementById('modehint').textContent=tr(HINT[m]);render();}
 document.getElementById('m-move').onclick=function(){setMode('move');};
@@ -1227,7 +1240,7 @@ curI=props.length-1;refreshSel();loadProp(curI);auditNow();
 showCCBar(typeof d2.task==='string'?d2.task:'');
 try{history.replaceState(null,'',location.pathname+location.search);}catch(e){location.hash='';}
 showHelp(tr('URLの盤面を新しい案として追加しました（既存の編集は保持されています）。'));}).catch(function(){});}
-function printView(){var oldOp=PHOTO.op;PHOTO.op=0;render();
+function printView(){if(ISO.on)setIso(false);var oldOp=PHOTO.op;PHOTO.op=0;render();
 var W=svg.width.baseVal.value,H=svg.height.baseVal.value;
 svg.setAttribute('viewBox','0 0 '+W+' '+H);
 svg.style.width=(W*2.54/PITCH)+'mm';svg.style.height=(H*2.54/PITCH)+'mm';
@@ -1535,13 +1548,13 @@ var dn=0;GUIDE.steps.forEach(function(st){if(GUIDE.done[st.sig])dn++;});
 var phMap={intro:'はじめに',parts:'部品',bridges:'ブリッジ',wires:'被覆線',verify:'確認'},phName=phMap[s.phase||'']||'';
 document.getElementById('g-count').textContent=tr('作業ガイド')+' · '+(phName?tr(phName)+' · ':'')+tr('手順')+' '+(GUIDE.i+1)+' / '+GUIDE.steps.length+'  '+tr('完了')+' '+dn+(GUIDE.done[s.sig]?'  ✓'+tr('この手順は済'):'');
 document.getElementById('g-text').textContent=stepText(s);var gh=document.getElementById('g-hint');if(gh)gh.textContent=(s.t==='part'||s.t==='bridge'||s.t==='wire')?tr('▶ 盤面で光っている穴がこの手順の場所です'):'';render();scrollToStep(s);}
-function guideStart(){GUIDE.steps=buildSteps();if(!GUIDE.steps.length)return;
+function guideStart(){if(ISO.on)setIso(false);GUIDE.steps=buildSteps();if(!GUIDE.steps.length)return;
 try{GUIDE.done=JSON.parse(localStorage.getItem(LSKEY+'_guide_'+curI)||'{}');}catch(e){GUIDE.done={};}
 GUIDE.on=true;GUIDE.i=0;
 while(GUIDE.i<GUIDE.steps.length-1&&GUIDE.done[GUIDE.steps[GUIDE.i].sig])GUIDE.i++;
 if(auditState().hard)showHelp(tr('監査にNG（極性・接続・短絡）があります。はんだ付け前に左の監査パネルで直してください。'));
 document.getElementById('guide').style.display='block';guideShow();}
-function setMirror(v){MIRROR=v;document.getElementById('z-mirror').className=v?'on':'';
+function setMirror(v){if(v&&ISO.on)setIso(false);MIRROR=v;document.getElementById('z-mirror').className=v?'on':'';
 var gm=document.getElementById('g-mirror');if(gm)gm.checked=v;
 if(v)showHelp(tr('裏面ビュー: はんだ面から見た左右反転表示。テスターモードは使用可、編集はロックされます。'));
 render();}
@@ -1556,9 +1569,9 @@ document.getElementById('g-prev').onclick=function(){GUIDE.i=Math.max(0,GUIDE.i-
 document.getElementById('g-next').onclick=function(){GUIDE.i=Math.min(GUIDE.steps.length-1,GUIDE.i+1);guideShow();};
 document.getElementById('g-done').onclick=gDone;
 document.getElementById('g-mirror').onchange=function(){setMirror(this.checked);};
-document.getElementById('z-in').onclick=function(){ZOOM=Math.min(2.4,ZOOM*1.2);render();};
-document.getElementById('z-out').onclick=function(){ZOOM=Math.max(0.5,ZOOM/1.2);render();};
-document.getElementById('z-fit').onclick=function(){ZOOM=1;render();};
+document.getElementById('z-in').onclick=function(){if(ISO.on){isoZoomStep(1.2);return;}ZOOM=Math.min(2.4,ZOOM*1.2);render();};
+document.getElementById('z-out').onclick=function(){if(ISO.on){isoZoomStep(1/1.2);return;}ZOOM=Math.max(0.5,ZOOM/1.2);render();};
+document.getElementById('z-fit').onclick=function(){if(ISO.on){ISO.S=0;render();return;}ZOOM=1;render();};
 var CMDS=[
 {n:'配線を再計算',k:'recalc rewire',f:doRewire},
 {n:'配置を再提案',k:'propose place',f:doPropose},
@@ -1583,6 +1596,7 @@ var CMDS=[
 {n:'ズーム イン',k:'zoom in',f:function(){document.getElementById('z-in').click();}},
 {n:'ズーム アウト',k:'zoom out',f:function(){document.getElementById('z-out').click();}},
 {n:'ズーム 100%',k:'zoom fit',f:function(){document.getElementById('z-fit').click();}},
+{n:'3Dビュー 切替',k:'iso 3d view',f:function(){setIso(!ISO.on);}},
 {n:'レイヤー: 実寸法 切替',k:'layer footprint',f:function(){LY.foot=!LY.foot;render();}},
 {n:'レイヤー: 被覆線 切替',k:'layer wires',f:function(){LY.wires=!LY.wires;render();}},
 {n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}},
@@ -1623,6 +1637,7 @@ if(e.key==='Enter'||e.key===' '){e.preventDefault();gDone();return;}
 if(e.key==='Escape'){guideEnd();return;}}
 if(e.ctrlKey&&e.key.toLowerCase()==='z'){e.preventDefault();undo();return;}
 if(e.key==='1')setMode('move');if(e.key==='2')setMode('bridge');if(e.key==='3')setMode('block');if(e.key==='4')setMode('probe');if(e.key==='5')setMode('cut');
+if(ISO.on){if(e.key==='Escape'){selClear();render();}return;}/* 閲覧専用: ロック/削除キーは無効（Esc=選択解除・Ctrl+Zは上のundoで既に許可済み） */
 if(e.key.toLowerCase()==='l'){e.preventDefault();lockSel();}
 if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();delSel();}
 if(e.key==='Escape'){selClear();render();}});
@@ -1684,6 +1699,385 @@ var c={pitch:pitch,PX:PX,W:W,H:H,baseY:baseY,x0:x0,holes:holes,ground:'<rect x="
 var defs='<defs><linearGradient id="ppcyl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ecd2a8"/><stop offset="0.45" stop-color="#d9b38c"/><stop offset="1" stop-color="#9c7642"/></linearGradient><linearGradient id="ppcan" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3a4452"/><stop offset="0.4" stop-color="#1a2230"/><stop offset="1" stop-color="#0a0e14"/></linearGradient></defs>';
 var drawer=PHYS_PREVIEW[kind]||PHYS_PREVIEW.r;
 el.innerHTML='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block">'+defs+drawer(part,PF,c)+'</svg>';}
+/* ============================================================================
+   3Dビュー(等角/isometric)実装。Canvas 2D・ディメトリック(ヨー45°/仰角30°)・
+   固定カメラ・閲覧専用。設計はWorkflow(Fable設計→敵対的レビュー、2026-07-03)で
+   射影数式・奥行きソート・性能設計を確定済み。render()先頭の1行分岐(ISO.on時に
+   renderIso()へ委譲)以外、既存の2D描画コードには一切手を入れない＝完全並行実装。
+   ee/ERC計算(D の読み取りのみ・書き込みはselPart/selSet/hoverNetのみ)には触れ
+   ないためparity安全。
+   v1の既知の非対応(コード上の判断・CHANGELOG記載): 回転カメラ・裏面3D・
+   probe/photo/GUIDE/DIFF/vizPreviewの3D表示・編集操作・タッチピンチズーム・
+   隣接部品同士(例: IC脇の電解コンデンサ)の奥行き逆転がまれに起こりうる
+   (単純代表点ソートの既知の限界。閲覧モードとして許容)。
+   ========================================================================= */
+var VZ=0.8660254;/* cos30° */
+function uv(g){return (MIRROR?cols-g[0]:g[0]-1)+(g[1]-1);}/* グリッド座標→奥行きソートキー(u+v) */
+function isoPXMM(){return ISO.S*Math.SQRT2/CFG.pitch;}/* 地面 px/mm（画面x方向の特異値） */
+function isoMMZ(){return isoPXMM()*VZ;}/* 鉛直 px/mm */
+function iproj(c,r,z){var u=MIRROR?cols-c:c-1,v=r-1;
+ return [ISO.ox+(u-v)*ISO.S, ISO.oy+(u+v)*ISO.S*0.5-(z||0)*isoMMZ()];}
+function iunproj(x,y,z){var y2=y-ISO.oy+(z||0)*isoMMZ(),x2=x-ISO.ox;
+ var a=x2/ISO.S,b=2*y2/ISO.S,u=(a+b)/2,v=(b-a)/2;
+ return [MIRROR?cols-u:u+1,v+1];}
+function nearHoleIso(x,y){var g=iunproj(x,y,0),c=Math.round(g[0]),r=Math.round(g[1]);
+ if(!inb(c,r))return null;var p=iproj(c,r,0);return Math.hypot(x-p[0],y-p[1])<ISO.S*0.5?[c,r]:null;}
+function isoPt(e){var r=isoCv.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top];}
+function isoQuantizeS(s){/* 2*S*DPRが偶数pxになるよう丸める＝穴タイルの幅・高さとも常に厳密整数。
+  ズーム操作は連続的に見えるがステップは1/DPR px単位＝知覚不能。CanvasPattern.setTransformでの
+  分数周期補正より単純で、実装ミスの余地が無い（敵対的レビュー指摘A-1への対応）。
+  [1.2,160]にクランプ: 2D の ZOOM が[0.5,2.4]に制限されているのと同様、ここを通さず
+  ISO.S を直接掛け続けるズームイン/アウト操作(isoZoomStep・Ctrl+ホイール)が上限なしに
+  暴走し盤面が実質見えなくなるのを防ぐ（独立レビュー指摘）。 */
+ var tw=Math.max(2,Math.round(2*Math.max(1.2,Math.min(160,s))*DPR/2)*2);return tw/(2*DPR);}
+function isoPartHeight(p,PF){switch(p.kind){
+ case 'elec':return Math.max(6,(PF.dia||6.5)*1.15);
+ case 'disc':return Math.max(3,(PF.bodyLen||5)*0.6);
+ case 'film':return 0.8+(PF.bodyWid||4.5)*1.8;
+ case 'r':return (p.standing||dist(p.leads[0],p.leads[1])<2.05)?(1+(PF.bodyLen||6.5)):((PF.bodyWid||2.5)/2+0.6);
+ case 'ic':return 4.5;
+ default:return 6;}}
+function shade(hex,f){var n=parseInt(hex.slice(1),16);
+ return 'rgb('+Math.round(((n>>16)&255)*f)+','+Math.round(((n>>8)&255)*f)+','+Math.round((n&255)*f)+')';}
+function quad(ctx,a,b,c,d,fill){ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);
+ ctx.lineTo(c[0],c[1]);ctx.lineTo(d[0],d[1]);ctx.closePath();ctx.fillStyle=fill;ctx.fill();}
+function makeK(){return{S:ISO.S,proj:iproj,labels:LY.labels,
+ immX:function(v){return v*isoPXMM();},immZ:function(v){return v*isoMMZ();},
+ sc:Math.max(0.6,Math.min(1.6,ISO.S/30)),
+ txt:function(ctx,x,y,s,fill,size){ctx.font='700 '+(size||11)+'px "Segoe UI",system-ui,sans-serif';ctx.textAlign='center';
+  ctx.lineWidth=3;ctx.strokeStyle='rgba(0,0,0,.65)';ctx.strokeText(s,x,y);
+  ctx.fillStyle=fill||'#fff';ctx.fillText(s,x,y);}};}
+
+/* --- canvas 準備・fit ------------------------------------------------- */
+function isoBindEvents(){
+ isoCv.addEventListener('pointerdown',function(ev){
+  ISO.pan0=[ev.clientX,ev.clientY,ISO.ox,ISO.oy];ISO.moved=false;try{isoCv.setPointerCapture(ev.pointerId);}catch(e){}});
+ isoCv.addEventListener('pointermove',function(ev){
+  if(ISO.pan0){ISO.ox=ISO.pan0[2]+(ev.clientX-ISO.pan0[0]);ISO.oy=ISO.pan0[3]+(ev.clientY-ISO.pan0[1]);
+   if(Math.hypot(ev.clientX-ISO.pan0[0],ev.clientY-ISO.pan0[1])>5)ISO.moved=true;
+   isoEnsureBake();isoInvalidate();return;}
+  isoHover(ev);});
+ isoCv.addEventListener('pointerup',function(ev){var wasPan=ISO.moved;ISO.pan0=null;ISO.moved=false;
+  if(wasPan)return;
+  isoPick(ev);});
+ isoCv.addEventListener('pointerleave',function(){if(hoverNet){hoverNet=null;isoInvalidate();}});
+ isoCv.addEventListener('wheel',function(e){if(!e.ctrlKey){return;}e.preventDefault();e.stopPropagation();
+  var pt=isoPt(e),g=iunproj(pt[0],pt[1],0),u=MIRROR?cols-g[0]:g[0]-1,v=g[1]-1;
+  ISO.S=isoQuantizeS(ISO.S*(e.deltaY<0?1.1:1/1.1));
+  ISO.ox=pt[0]-(u-v)*ISO.S;ISO.oy=pt[1]-(u+v)*ISO.S*0.5;
+  isoEnsureBake();isoInvalidate();},{passive:false});
+}
+function ensureIsoCanvas(){if(!isoCv){isoCv=document.getElementById('pw-iso');isoCtx=isoCv.getContext('2d');isoBindEvents();}
+ var cw=Math.max(1,isoCv.clientWidth),ch=Math.max(1,isoCv.clientHeight);
+ var w=Math.max(1,Math.round(cw*DPR)),h=Math.max(1,Math.round(ch*DPR));
+ if(isoCv.width!==w||isoCv.height!==h){isoCv.width=w;isoCv.height=h;}
+ isoCtx.setTransform(DPR,0,0,DPR,0,0);}
+function isoZoomStep(f){var cw=isoCv.clientWidth/2,ch=isoCv.clientHeight/2;
+ var g=iunproj(cw,ch,0),u=MIRROR?cols-g[0]:g[0]-1,v=g[1]-1;
+ ISO.S=isoQuantizeS(ISO.S*f);ISO.ox=cw-(u-v)*ISO.S;ISO.oy=ch-(u+v)*ISO.S*0.5;
+ isoEnsureBake();isoInvalidate();}
+function isoFit(){var W=(cols-1)+(rows-1)||1,cw=isoCv.clientWidth||900,ch=isoCv.clientHeight||600;
+ ISO.S=isoQuantizeS(Math.max(1.5,Math.min(cw*0.88/W,ch*0.88*2/W,40)));
+ var ac=((cols-1)-(rows-1))/2,bc=W/2;
+ ISO.ox=cw/2-ac*ISO.S;ISO.oy=ch/2-bc*ISO.S*0.5+isoMMZ()*3;}
+
+/* --- BAKE層(基材＋穴パターン＋strip/mesh銅箔＋ラベル＋blocked×＋trackCuts) --- */
+var ISO_TILE={key:'',pattern:null};
+function isoHolePattern(){var ck=ISO.S+'|'+DPR;/* 変数名ck: グローバル key() 関数を隠さないため */
+ if(ISO_TILE.key===ck)return ISO_TILE.pattern;
+ var tw=Math.max(2,Math.round(2*ISO.S*DPR)),th=Math.max(1,Math.round(tw/2));
+ var t=document.createElement('canvas');t.width=tw;t.height=th;var c=t.getContext('2d');
+ function hole(x,y){if(ISO.S>=7){var rx=ISO.S*0.26*DPR,ry=rx*0.5;
+  c.beginPath();c.ellipse(x,y,rx,ry,0,0,6.2832);c.fillStyle='#c8d2c8';c.fill();
+  c.strokeStyle='#6e826e';c.lineWidth=Math.max(1,DPR);c.stroke();
+  c.beginPath();c.ellipse(x,y,rx*0.45,ry*0.45,0,0,6.2832);c.fillStyle='#3c463c';c.fill();}
+ else{c.beginPath();c.ellipse(x,y,Math.max(0.8,ISO.S*0.22)*DPR,Math.max(0.4,ISO.S*0.11)*DPR,0,0,6.2832);c.fillStyle='#b9c6b9';c.fill();}}
+ if(ISO.S>=3){hole(tw/2,th/2);[[0,0],[tw,0],[0,th],[tw,th]].forEach(function(q){hole(q[0],q[1]);});}
+ ISO_TILE={key:ck,pattern:isoCtx.createPattern(t,'repeat')};return ISO_TILE.pattern;}
+function isoBakeExtent(){var maxHz=0;D.parts.forEach(function(p){var h=isoPartHeight(p,physFor(p));if(h>maxHz)maxHz=h;});
+ var zTop=maxHz+8,corners=[iproj(1,1,0),iproj(cols,1,0),iproj(1,rows,0),iproj(cols,rows,0),
+  iproj(1,1,zTop),iproj(cols,1,zTop),iproj(1,rows,zTop),iproj(cols,rows,zTop)];
+ var xs=corners.map(function(p){return p[0];}),ys=corners.map(function(p){return p[1];});
+ var pad=ISO.S*1.4,minX=Math.min.apply(null,xs)-pad,maxX=Math.max.apply(null,xs)+pad;
+ var minY=Math.min.apply(null,ys)-pad-26,maxY=Math.max.apply(null,ys)+pad;
+ var anchor=iproj(1,1,0),tw=2*ISO.S,th=ISO.S;/* 位相合わせ: bake原点をタイル周期の整数倍だけ anchor からずらす */
+ var ox=anchor[0]-tw*Math.ceil((anchor[0]-minX)/tw),oy=anchor[1]-th*Math.ceil((anchor[1]-minY)/th);
+ return {ox:ox,oy:oy,w:Math.min(4064,maxX-ox),h:Math.min(4064,maxY-oy)};}
+function isoEnsureBake(){var bt=D.grid.type||'perf';
+ /* ローカル変数名を ck とし、既存の key() 関数(点→"c,r"文字列)を隠さないようにする。
+    直前まで ck という別名の代わりに key を使っており、同名のグローバル key() を覆い隠して
+    map(key)/key(...)がその未代入中のローカル変数(undefined)を呼ぼうとして例外になっていた。 */
+ var ck=[curI,ISOREV,cols,rows,bt,D.grid.stripAxis,ISO.S,MIRROR?1:0,LY.blocked?1:0,
+  (D.blockedHoles||[]).map(key).join(';'),(D.trackCuts||[]).map(function(cc){return key(cc[0])+'-'+key(cc[1]);}).join(';'),
+  LANG].join('|');
+ if(ISO.bakeKey===ck)return;
+ ISO.bakeKey=ck;var ext=isoBakeExtent();ISO.bakeAtOX=ext.ox;ISO.bakeAtOY=ext.oy;ISO.bakeCssW=ext.w;ISO.bakeCssH=ext.h;
+ var bc=document.createElement('canvas');bc.width=Math.max(1,Math.round(ext.w*DPR));bc.height=Math.max(1,Math.round(ext.h*DPR));
+ var bx=bc.getContext('2d');bx.setTransform(DPR,0,0,DPR,0,0);bx.translate(-ext.ox,-ext.oy);
+ /* 基板スラブ（天面＋厚み） */
+ var slabTop=[iproj(1,1,1.6),iproj(cols,1,1.6),iproj(cols,rows,1.6),iproj(1,rows,1.6)];
+ var slabBot=[iproj(1,1,0),iproj(cols,1,0),iproj(cols,rows,0),iproj(1,rows,0)];
+ var slabCol=bt==='strip'?'#3a2a1c':((bt==='mesh'||bt==='breadboard'||bt==='cluster'||bt==='custom')?'#402b1a':'#2c6e46');
+ quad(bx,slabTop[3],slabTop[2],slabBot[2],slabBot[3],shade(slabCol,0.6));/* +v 側面 */
+ quad(bx,slabTop[2],slabTop[1],slabBot[1],slabBot[2],shade(slabCol,0.78));/* +u 側面 */
+ bx.beginPath();bx.moveTo(slabTop[0][0],slabTop[0][1]);bx.lineTo(slabTop[1][0],slabTop[1][1]);
+ bx.lineTo(slabTop[2][0],slabTop[2][1]);bx.lineTo(slabTop[3][0],slabTop[3][1]);bx.closePath();
+ bx.fillStyle=slabCol;bx.fill();
+ /* strip/meshの銅箔（簡易: stripは行/列帯、mesh系はboardLinksの線分） */
+ if(bt==='strip'){var ax=D.grid.stripAxis||'row';bx.strokeStyle='rgba(206,140,80,.5)';bx.lineWidth=Math.max(1,ISO.S*0.16);
+  if(ax==='row'){for(var sr=1;sr<=rows;sr++){var a=iproj(1,sr,1.6),b=iproj(cols,sr,1.6);bx.beginPath();bx.moveTo(a[0],a[1]);bx.lineTo(b[0],b[1]);bx.stroke();}}
+  else{for(var sc=1;sc<=cols;sc++){var a2=iproj(sc,1,1.6),b2=iproj(sc,rows,1.6);bx.beginPath();bx.moveTo(a2[0],a2[1]);bx.lineTo(b2[0],b2[1]);bx.stroke();}}}
+ if(bt==='mesh'||bt==='breadboard'||bt==='cluster'||bt==='custom'){var cutsV={};(D.trackCuts||[]).forEach(function(cc){if(cc&&cc[0]&&cc[1]){cutsV[key(cc[0])+'|'+key(cc[1])]=1;cutsV[key(cc[1])+'|'+key(cc[0])]=1;}});
+  bx.strokeStyle='rgba(206,140,80,.5)';bx.lineWidth=Math.max(1,ISO.S*0.1);
+  boardLinks(cols,rows,D.grid,cutsV).forEach(function(seg){for(var i=1;i<seg.length;i++){var a=iproj(seg[i-1][0],seg[i-1][1],1.6),b=iproj(seg[i][0],seg[i][1],1.6);bx.beginPath();bx.moveTo(a[0],a[1]);bx.lineTo(b[0],b[1]);bx.stroke();}});}
+ /* 穴パターン（天面のみに塗る＝天面パス再構築後にclip） */
+ bx.save();bx.beginPath();bx.moveTo(slabTop[0][0],slabTop[0][1]);bx.lineTo(slabTop[1][0],slabTop[1][1]);
+ bx.lineTo(slabTop[2][0],slabTop[2][1]);bx.lineTo(slabTop[3][0],slabTop[3][1]);bx.closePath();bx.clip();
+ bx.fillStyle=isoHolePattern();bx.fillRect(ext.ox,ext.oy,ext.w,ext.h);
+ bx.restore();
+ /* trackCuts（切断マーク） */
+ (D.trackCuts||[]).forEach(function(cc){if(!(cc&&cc[0]&&cc[1]))return;var a=iproj(cc[0][0],cc[0][1],1.6),b=iproj(cc[1][0],cc[1][1],1.6);
+  var mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,horiz=cc[0][1]===cc[1][1];bx.strokeStyle='#ff5d5d';bx.lineWidth=Math.max(1.5,ISO.S*0.1);
+  bx.beginPath();if(horiz){bx.moveTo(mx,my-ISO.S*0.34);bx.lineTo(mx,my+ISO.S*0.34);}else{bx.moveTo(mx-ISO.S*0.34,my);bx.lineTo(mx+ISO.S*0.34,my);}bx.stroke();});
+ /* blocked穴 */
+ if(LY.blocked)(D.blockedHoles||[]).forEach(function(b){var v=iproj(b[0],b[1],1.62);bx.fillStyle='rgba(30,30,34,.92)';bx.strokeStyle='#555';bx.lineWidth=1;
+  var s=Math.max(6,ISO.S*0.28);bx.beginPath();bx.rect(v[0]-s/2,v[1]-s/2,s,s);bx.fill();bx.stroke();
+  bx.font='700 '+Math.max(8,s*0.8)+'px sans-serif';bx.fillStyle='#ff8080';bx.textAlign='center';bx.fillText('×',v[0],v[1]+s*0.35);});
+ /* 列/行ラベル */
+ if(ISO.S>=6){var lblStep=ISO.S>=14?1:5;
+  for(var c2=1;c2<=cols;c2++){if(c2!==1&&c2%lblStep!==0)continue;var lp=iproj(c2,1,1.6),lp2=[lp[0],lp[1]-ISO.S*0.55];
+   bx.font='10px Consolas,monospace';bx.fillStyle='#8b97a3';bx.textAlign='center';bx.fillText(String(c2),lp2[0],lp2[1]);}
+  for(var r2=1;r2<=rows;r2++){if(r2!==1&&r2%lblStep!==0)continue;var lq=iproj(1,r2,1.6),lq2=[lq[0]-ISO.S*0.85,lq[1]];
+   bx.font='10px Consolas,monospace';bx.fillStyle='#8b97a3';bx.textAlign='center';bx.fillText(String.fromCharCode(64+r2),lq2[0],lq2[1]+3);}}
+ ISO.bake=bc;}
+
+/* --- 動的層: 部品・ワイヤ・ブリッジ・端子のプリミティブ生成と奥行きソート --- */
+function isoFootTop(g){/* byPart: 部品ID→{d,topZ}（部品プリミティブ用）。byCell: 占有セル→{d,topZ}
+  （ワイヤが跨ぐ判定用、B-1対応）。中点セルを直接引けるO(1)ハッシュにすることで、
+  「跨ぐ可能性のある部品を総当たりし、たまたま常に真になる条件で引き上げる」という
+  誤った近似(旧実装のcheb(mid,mid)===0=自分自身との距離=恒真、が実質ノーオペレーションだった)
+  を避け、設計どおり「弦の中点が実際にその部品の設置セルの上にあるか」で判定する。 */
+ var byPart={},byCell={};D.parts.forEach(function(p){var PF=physFor(p),h=isoPartHeight(p,PF),cells,d;
+  if(p.kind==='ic'){var ks=Object.keys(p.pins),xs=ks.map(function(k){return p.pins[k][0];}),ys=ks.map(function(k){return p.pins[k][1];});
+   var x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys);
+   cells=[];for(var cc=x0;cc<=x1;cc++)for(var rr=y0;rr<=y1;rr++)cells.push([cc,rr]);
+   d=uv([x1,y1]);}
+  else{var f=g.foots[p.id];cells=(f?f.cells:[]).concat([p.leads[0],p.leads[1]]);
+   d=cells.reduce(function(m,c){return Math.max(m,uv(c));},-1e9);}
+  byPart[p.id]={d:d,topZ:h};
+  cells.forEach(function(c){var k=key(c);if(!byCell[k]||byCell[k].topZ<h)byCell[k]={d:d,topZ:h};});});
+ return {byPart:byPart,byCell:byCell};}
+function isoWirePrims(w,footTop,out){var col=D.netColors[w.net]||'#999';
+ var pa=w.a.direct?w.a.pad:w.a.hole,pb=w.b.direct?w.b.pad:w.b.hole;
+ var Lmm=dist(pa,pb)*CFG.pitch,apex=Math.min(9,Math.max(3,2.5+0.3*Lmm));
+ var NS=(ISO.S<6)?2:Math.min(24,Math.max(2,Math.ceil(cheb(pa,pb))));
+ var pts=[];for(var i=0;i<=NS;i++){var t=i/NS;
+  pts.push({g:[pa[0]+(pb[0]-pa[0])*t,pa[1]+(pb[1]-pa[1])*t],z:4*apex*t*(1-t)});}
+ for(i=0;i<NS;i++)(function(q0,q1){
+  var mid=[(q0.g[0]+q1.g[0])/2,(q0.g[1]+q1.g[1])/2],midZ=(q0.z+q1.z)/2,d=Math.max(uv(q0.g),uv(q1.g));
+  var ft=footTop.byCell[key([Math.round(mid[0]),Math.round(mid[1])])];
+  if(ft&&midZ>ft.topZ)d=Math.max(d,ft.d);/* 中点セルの真上を部品が占有し、弧の高さがその天面を超えるなら部品側へ引き上げる（B-1対応） */
+  out.push({d:d,layer:2,net:w.net,
+   draw:function(ctx,K){var s0=K.proj(q0.g[0],q0.g[1],q0.z),s1=K.proj(q1.g[0],q1.g[1],q1.z);
+    ctx.globalAlpha=hoverNet&&w.net!==hoverNet?0.10:0.95;
+    ctx.strokeStyle=col;ctx.lineWidth=(hoverNet===w.net?4.2:2.6)*K.sc;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(s0[0],s0[1]);ctx.lineTo(s1[0],s1[1]);ctx.stroke();ctx.globalAlpha=1;}});
+ })(pts[i],pts[i+1]);}
+function buildIsoList(){var g=geom(),out=[],footTop=isoFootTop(g),_allow=singleLeadAllowSet();
+ /* padBridges（実装済みはんだブリッジ） */
+ if(LY.bridges)D.padBridges.forEach(function(b){var d=Math.max(uv(b[0]),uv(b[1]));
+  out.push({d:d,layer:0,draw:function(ctx,K){var a=K.proj(b[0][0],b[0][1],0),q=K.proj(b[1][0],b[1][1],0);
+   ctx.strokeStyle='#0a3a1e';ctx.lineWidth=7*K.sc*0.7;ctx.lineCap='round';ctx.globalAlpha=hoverNet?0.35:1;
+   ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(q[0],q[1]);ctx.stroke();ctx.globalAlpha=1;}});});
+ /* 配線端のブリッジ自動追従（緑）／宙ぶらりん警告（赤破線） */
+ D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)return;
+  if(e.bridgeTo&&adj(e.hole,e.bridgeTo)){if(LY.bridges){var d=Math.max(uv(e.hole),uv(e.bridgeTo));
+   out.push({d:d,layer:0,draw:function(ctx,K){var a=K.proj(e.hole[0],e.hole[1],0),b=K.proj(e.bridgeTo[0],e.bridgeTo[1],0);
+    ctx.strokeStyle='#0a3a1e';ctx.lineWidth=6*K.sc;ctx.lineCap='round';ctx.globalAlpha=hoverNet&&w.net!==hoverNet?0.25:1;
+    ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();ctx.globalAlpha=1;}});}}
+  else if(LY.bridges){var d2=uv(e.hole);out.push({d:d2,layer:0,draw:function(ctx,K){var hp=K.proj(e.hole[0],e.hole[1],0),pp=K.proj(e.pad[0],e.pad[1],0);
+   ctx.strokeStyle='#ff5d5d';ctx.lineWidth=3*K.sc;ctx.setLineDash([4,3]);
+   ctx.beginPath();ctx.moveTo(hp[0],hp[1]);ctx.lineTo(pp[0],pp[1]);ctx.stroke();ctx.setLineDash([]);}});}});});
+ /* ワイヤ本体 */
+ if(LY.wires)D.wires.forEach(function(w){isoWirePrims(w,footTop,out);});
+ /* 部品 */
+ if(LY.parts)D.parts.forEach(function(p){var drawer=ISO_DRAW[p.kind];if(!drawer)return;var PF=physFor(p),ft=footTop.byPart[p.id];
+  var sel=inSel(p);
+  out.push({d:ft.d,layer:1,p:p,bbox:isoPartBBox(p),
+   draw:function(ctx,K){drawer(ctx,p,PF,K,sel);}});});
+ /* 端子リング＋外部端子タグ */
+ if(LY.ends){var lm=g.leadPos;Object.keys(D.leads).forEach(function(nm){var Lx=D.leads[nm];if(!Lx||!Lx.at)return;
+  var net=Lx.net,col=D.netColors[net]||'#999',dim=hoverNet&&net!==hoverNet?0.25:1,isExt=nm.slice(0,2)==='W.';
+  if(isExt){out.push({d:uv(Lx.at)+0.02,layer:3,draw:function(ctx,K){isoExtTerminal(ctx,K,Lx.at,col,dim,nm.slice(2));}});}
+  else if(_allow[net]){out.push({d:uv(Lx.at)+0.02,layer:3,draw:function(ctx,K){isoExtTerminal(ctx,K,Lx.at,col,dim,net);}});}});
+  D.wires.forEach(function(w){var col=D.netColors[w.net]||'#999',dim=hoverNet&&w.net!==hoverNet?0.3:1;
+   [w.a,w.b].forEach(function(e){var pos=e.direct?e.pad:e.hole,d=uv(pos)+0.01;
+    out.push({d:d,layer:3,draw:function(ctx,K){var v=K.proj(pos[0],pos[1],0),rx=Math.max(3,7.5*K.sc),ry=rx*0.5;
+     ctx.globalAlpha=dim;ctx.beginPath();ctx.ellipse(v[0],v[1],rx,ry,0,0,6.2832);ctx.fillStyle='#fff';ctx.fill();
+     ctx.strokeStyle=col;ctx.lineWidth=3*K.sc;ctx.stroke();
+     if(e.direct){ctx.beginPath();ctx.ellipse(v[0],v[1],rx*0.4,ry*0.4,0,0,6.2832);ctx.fillStyle=col;ctx.fill();}
+     ctx.globalAlpha=1;}});});});}
+ /* caution × (異ネット隣接) */
+ if(LY.caut){var lm2=leadMap();
+  var hn2={};Object.keys(lm2).forEach(function(k){hn2[k]=lm2[k].net;});
+  D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn2[key(e.hole)]=w.net;});});
+  Object.keys(hn2).forEach(function(kk){var p2=kk.split(',').map(Number);[[1,0],[0,1]].forEach(function(dd){
+   var q=key([p2[0]+dd[0],p2[1]+dd[1]]);if(hn2[q]&&hn2[q]!==hn2[kk]){var d=uv(p2)+0.03;
+    out.push({d:d,layer:4,draw:function(ctx,K){var a=K.proj(p2[0],p2[1],0),b=K.proj(p2[0]+dd[0],p2[1]+dd[1],0);
+     K.txt(ctx,(a[0]+b[0])/2,(a[1]+b[1])/2+4,'×','#ff5d5d',12);}});}});});}
+ out.sort(function(a,b){return (a.d-b.d)||(a.layer-b.layer);});
+ return out;}
+function isoPartBBox(p){/* ピック用: 現在の投影でのbbox。パン/ズーム後も呼び出し時に再投影(D-2対応) */
+ var pts;if(p.kind==='ic'){var ks=Object.keys(p.pins),xs=ks.map(function(k){return p.pins[k][0];}),ys=ks.map(function(k){return p.pins[k][1];});
+  var x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys),h=4.5;
+  pts=[[x0,y0,0],[x1,y0,0],[x1,y1,0],[x0,y1,0],[x0,y0,h],[x1,y0,h],[x1,y1,h],[x0,y1,h]];}
+ else{var a=p.leads[0],b=p.leads[1],h2=isoPartHeight(p,physFor(p));pts=[[a[0],a[1],0],[b[0],b[1],0],[a[0],a[1],h2],[b[0],b[1],h2]];}
+ return pts;}
+function isoBBoxHit(p,x,y){var pts=isoPartBBox(p).map(function(q){return iproj(q[0],q[1],q[2]);});
+ var xs=pts.map(function(v){return v[0];}),ys=pts.map(function(v){return v[1];});
+ var pad=6;return x>=Math.min.apply(null,xs)-pad&&x<=Math.max.apply(null,xs)+pad&&y>=Math.min.apply(null,ys)-pad&&y<=Math.max.apply(null,ys)+pad;}
+function isoExtTerminal(ctx,K,at,col,dim,label){var v=K.proj(at[0],at[1],0.3);
+ var toEdge=[Math.min(at[0]-1,cols-at[0]),Math.min(at[1]-1,rows-at[1])],dir=toEdge[0]<toEdge[1]?[at[0]-1<cols-at[0]?-1:1,0]:[0,at[1]-1<rows-at[1]?-1:1];
+ var tip=K.proj(at[0]+dir[0]*1.6,at[1]+dir[1]*1.6,0.3);
+ ctx.globalAlpha=dim;ctx.strokeStyle='#fff';ctx.lineWidth=4.2;ctx.lineCap='round';
+ ctx.beginPath();ctx.moveTo(v[0],v[1]);ctx.lineTo(tip[0],tip[1]);ctx.stroke();
+ ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.beginPath();ctx.moveTo(v[0],v[1]);ctx.lineTo(tip[0],tip[1]);ctx.stroke();
+ ctx.fillStyle=col;ctx.beginPath();ctx.arc(tip[0],tip[1],3,0,6.2832);ctx.fill();
+ if(K.S>=10){ctx.font='9px "Segoe UI",system-ui,sans-serif';ctx.textAlign=dir[0]<0?'right':(dir[0]>0?'left':'center');
+  ctx.fillStyle='#dce3ea';ctx.fillText(label,tip[0]+dir[0]*4,tip[1]+dir[1]*4+3);}
+ ctx.globalAlpha=1;}
+
+/* --- ISO_DRAW: kind別3D描画（PHYS_PREVIEWの視覚言語を盤面全体に拡張） --- */
+var ISO_DRAW={
+ elec:function(ctx,p,PF,K,sel){var a=p.leads[0],b=p.leads[1],cg=[(a[0]+b[0])/2,(a[1]+b[1])/2];
+  var dia=PF.dia||6.5,H=Math.max(6,dia*1.15),base=K.proj(cg[0],cg[1],0),top=K.proj(cg[0],cg[1],H);
+  var rx=Math.max(4,K.immX(dia/2)),ry=rx*0.5;
+  ctx.globalAlpha=0.9;ctx.fillStyle='rgba(0,0,0,.18)';ctx.beginPath();ctx.ellipse(base[0],base[1],rx*1.06,ry*1.06,0,0,6.2832);ctx.fill();ctx.globalAlpha=1;
+  var g=ctx.createLinearGradient(base[0]-rx,0,base[0]+rx,0);
+  g.addColorStop(0,'#3a4452');g.addColorStop(0.4,'#1a2230');g.addColorStop(1,'#0a0e14');
+  ctx.beginPath();ctx.moveTo(top[0]-rx,top[1]);ctx.lineTo(base[0]-rx,base[1]);
+  ctx.ellipse(base[0],base[1],rx,ry,0,Math.PI,0,true);ctx.lineTo(top[0]+rx,top[1]);ctx.closePath();
+  ctx.fillStyle=g;ctx.fill();ctx.strokeStyle='#444';ctx.lineWidth=1.2;ctx.stroke();
+  ctx.beginPath();ctx.ellipse(top[0],top[1],rx,ry,0,0,6.2832);ctx.fillStyle='#2a3340';ctx.fill();ctx.strokeStyle='#555';ctx.stroke();
+  ctx.fillStyle='rgba(201,210,221,.30)';ctx.fillRect(base[0]+rx*0.45,top[1],Math.max(1,rx*0.28),base[1]-top[1]);
+  if(sel){ctx.setLineDash([5,4]);ctx.strokeStyle='#5edcff';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(base[0],base[1],rx*1.15,ry*1.15,0,0,6.2832);ctx.stroke();ctx.setLineDash([]);}
+  var pl=(p.plus===1)?b:a,pv=K.proj(pl[0],pl[1],H+2);K.txt(ctx,pv[0],pv[1],'+','#ff7b7b',12);
+  if(K.labels&&p.label)K.txt(ctx,top[0],top[1]-ry-6,p.label,'#dce3ea',10);},
+ disc:function(ctx,p,PF,K,sel){var a=p.leads[0],b=p.leads[1],dia=PF.bodyLen||5,zc=Math.max(3,dia*0.6);
+  ctx.strokeStyle='#cfd8df';ctx.lineWidth=Math.max(1.2,K.immX(0.5));ctx.lineCap='round';
+  [a,b].forEach(function(q){var h=K.proj(q[0],q[1],0),t=K.proj(q[0],q[1],zc);ctx.beginPath();ctx.moveTo(h[0],h[1]);ctx.lineTo(t[0],t[1]);ctx.stroke();});
+  var m=K.proj((a[0]+b[0])/2,(a[1]+b[1])/2,zc),R=Math.max(3,K.immX(dia/2));
+  ctx.beginPath();ctx.ellipse(m[0],m[1],R,R*0.8,0,0,6.2832);ctx.fillStyle='#b5651d';ctx.fill();ctx.strokeStyle='#7e4612';ctx.lineWidth=1.3;ctx.stroke();
+  if(sel){ctx.setLineDash([5,4]);ctx.strokeStyle='#5edcff';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(m[0],m[1],R*1.2,R*0.96,0,0,6.2832);ctx.stroke();ctx.setLineDash([]);}
+  if(K.labels&&p.label)K.txt(ctx,m[0],m[1]-R-6,p.label,'#dce3ea',10);},
+ film:function(ctx,p,PF,K,sel){var a=p.leads[0],b=p.leads[1],bl=PF.bodyLen||10,bw=PF.bodyWid||4.5,H=bw*1.8,z0=0.8;
+  var gp=1/CFG.pitch,dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,px=-uy,py=ux;
+  var m=[(a[0]+b[0])/2,(a[1]+b[1])/2],hl=bl/2*gp,hw=bw/2*gp;
+  var C=[[m[0]-ux*hl-px*hw,m[1]-uy*hl-py*hw],[m[0]+ux*hl-px*hw,m[1]+uy*hl-py*hw],
+         [m[0]+ux*hl+px*hw,m[1]+uy*hl+py*hw],[m[0]-ux*hl+px*hw,m[1]-uy*hl+py*hw]];
+  var T=C.map(function(q){return K.proj(q[0],q[1],z0+H);}),B=C.map(function(q){return K.proj(q[0],q[1],z0);});
+  ctx.strokeStyle='#cfd8df';ctx.lineWidth=1.6;
+  [a,b].forEach(function(q){var h=K.proj(q[0],q[1],0),t=K.proj(q[0],q[1],z0);ctx.beginPath();ctx.moveTo(h[0],h[1]);ctx.lineTo(t[0],t[1]);ctx.stroke();});
+  var vis=[];for(var i=0;i<4;i++){var j=(i+1)%4;vis.push({i:i,j:j,d:uv([(C[i][0]+C[j][0])/2,(C[i][1]+C[j][1])/2])});}
+  vis.sort(function(x,y){return y.d-x.d;});
+  quad(ctx,T[vis[1].i],T[vis[1].j],B[vis[1].j],B[vis[1].i],shade('#f2d22e',0.62));
+  quad(ctx,T[vis[0].i],T[vis[0].j],B[vis[0].j],B[vis[0].i],shade('#f2d22e',0.82));
+  quad(ctx,T[0],T[1],T[2],T[3],'#f2d22e');ctx.strokeStyle='#a88d0e';ctx.lineWidth=1.2;ctx.stroke();
+  if(sel){ctx.setLineDash([5,4]);ctx.strokeStyle='#5edcff';ctx.lineWidth=2;
+   ctx.beginPath();ctx.moveTo(T[0][0],T[0][1]);ctx.lineTo(T[1][0],T[1][1]);ctx.lineTo(T[2][0],T[2][1]);ctx.lineTo(T[3][0],T[3][1]);ctx.closePath();ctx.stroke();ctx.setLineDash([]);}
+  if(K.labels&&p.label)K.txt(ctx,(T[0][0]+T[2][0])/2,(T[0][1]+T[2][1])/2-8,p.label,'#5a4a0a',10);},
+ r:function(ctx,p,PF,K,sel){var a=p.leads[0],b=p.leads[1],standing=!!p.standing||dist(a,b)<2.05;
+  if(standing){var rw=Math.max(3,K.immX((PF.bodyWid||2.5)/2)),H=(PF.bodyLen||6.5),
+   base=K.proj(a[0],a[1],1),top=K.proj(a[0],a[1],1+H);
+   var g=ctx.createLinearGradient(base[0]-rw,0,base[0]+rw,0);
+   g.addColorStop(0,'#ecd2a8');g.addColorStop(0.45,'#d9b38c');g.addColorStop(1,'#9c7642');
+   ctx.beginPath();ctx.moveTo(top[0]-rw,top[1]);ctx.lineTo(base[0]-rw,base[1]);
+   ctx.ellipse(base[0],base[1],rw,rw*0.5,0,Math.PI,0,true);ctx.lineTo(top[0]+rw,top[1]);ctx.closePath();
+   ctx.fillStyle=g;ctx.fill();ctx.strokeStyle='#7e5e30';ctx.lineWidth=1.1;ctx.stroke();
+   ctx.beginPath();ctx.ellipse(top[0],top[1],rw,rw*0.5,0,0,6.2832);ctx.fillStyle='#d9b38c';ctx.fill();ctx.strokeStyle='#7e5e30';ctx.stroke();
+   var hb=K.proj(a[0],a[1],0);ctx.strokeStyle='#cfd8df';ctx.lineWidth=Math.max(1.2,K.immX(0.5));
+   ctx.beginPath();ctx.moveTo(hb[0],hb[1]);ctx.lineTo(base[0],base[1]);ctx.stroke();
+   var hb2=K.proj(b[0],b[1],0),ret=K.proj((a[0]+b[0])/2,(a[1]+b[1])/2,1+H+1.5);
+   ctx.strokeStyle='#9a7748';ctx.lineWidth=1.8;ctx.beginPath();ctx.moveTo(top[0],top[1]);
+   ctx.quadraticCurveTo(ret[0],ret[1],hb2[0],hb2[1]);ctx.stroke();
+   if(sel){ctx.setLineDash([5,4]);ctx.strokeStyle='#5edcff';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(base[0],base[1],rw*1.2,rw*0.6,0,0,6.2832);ctx.stroke();ctx.setLineDash([]);}
+   if(K.labels&&p.label)K.txt(ctx,top[0],top[1]-8,p.label,'#dce3ea',10);return;}
+  var bl=PF.bodyLen||6.5,bw=PF.bodyWid||2.5,zA=bw/2+0.6,gp=1/CFG.pitch;
+  var dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L,m=[(a[0]+b[0])/2,(a[1]+b[1])/2];
+  var A=K.proj(m[0]-ux*bl/2*gp,m[1]-uy*bl/2*gp,zA),B2=K.proj(m[0]+ux*bl/2*gp,m[1]+uy*bl/2*gp,zA);
+  ctx.strokeStyle='#cfd8df';ctx.lineWidth=Math.max(1.2,K.immX(0.6));ctx.lineCap='round';
+  [[a,A],[b,B2]].forEach(function(pr){var h=K.proj(pr[0][0],pr[0][1],0),l=K.proj(pr[0][0],pr[0][1],zA);
+   ctx.beginPath();ctx.moveTo(h[0],h[1]);ctx.lineTo(l[0],l[1]);ctx.lineTo(pr[1][0],pr[1][1]);ctx.stroke();});
+  var rr=Math.max(2.5,K.immX(bw/2));
+  var nx=-(B2[1]-A[1]),ny=B2[0]-A[0],nl=Math.hypot(nx,ny)||1;nx/=nl;ny/=nl;
+  var mid=[(A[0]+B2[0])/2,(A[1]+B2[1])/2];
+  var g2=ctx.createLinearGradient(mid[0]-nx*rr,mid[1]-ny*rr,mid[0]+nx*rr,mid[1]+ny*rr);
+  g2.addColorStop(0,'#ecd2a8');g2.addColorStop(0.45,'#d9b38c');g2.addColorStop(1,'#9c7642');
+  ctx.strokeStyle=g2;ctx.lineWidth=rr*2;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B2[0],B2[1]);ctx.stroke();
+  [['0.28','#5a3a18'],['0.45','#bb0000'],['0.60','#d49a00']].forEach(function(bd){var t=+bd[0],cx=A[0]+(B2[0]-A[0])*t,cy=A[1]+(B2[1]-A[1])*t;
+   ctx.strokeStyle=bd[1];ctx.lineWidth=Math.max(1.5,rr*0.5);ctx.lineCap='butt';
+   ctx.beginPath();ctx.moveTo(cx-nx*rr*0.96,cy-ny*rr*0.96);ctx.lineTo(cx+nx*rr*0.96,cy+ny*rr*0.96);ctx.stroke();});
+  if(sel){ctx.setLineDash([5,4]);ctx.strokeStyle='#5edcff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(A[0],A[1]);ctx.lineTo(B2[0],B2[1]);ctx.stroke();ctx.setLineDash([]);}
+  if(K.labels&&p.label)K.txt(ctx,mid[0],mid[1]-rr-8,p.label,'#dce3ea',10);},
+ ic:function(ctx,p,PF,K,sel){var ks=Object.keys(p.pins);if(!ks.length)return;
+  var xs=ks.map(function(k){return p.pins[k][0];}),ys=ks.map(function(k){return p.pins[k][1];});
+  var x0=Math.min.apply(null,xs)-0.3,x1=Math.max.apply(null,xs)+0.3,y0=Math.min.apply(null,ys)-0.3,y1=Math.max.apply(null,ys)+0.3,zB=1.3,zT=4.5;
+  ctx.strokeStyle='#9aa4ae';ctx.lineWidth=1.5;
+  ks.forEach(function(k){var q=p.pins[k],h=K.proj(q[0],q[1],0),t=K.proj(q[0],q[1],zB);ctx.beginPath();ctx.moveTo(h[0],h[1]);ctx.lineTo(t[0],t[1]);ctx.stroke();});
+  var Cg=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
+  var T=Cg.map(function(q){return K.proj(q[0],q[1],zT);}),B2=Cg.map(function(q){return K.proj(q[0],q[1],zB);});
+  quad(ctx,T[1],T[2],B2[2],B2[1],shade('#16181c',0.72));
+  quad(ctx,T[3],T[2],B2[2],B2[3],shade('#16181c',0.55));
+  quad(ctx,T[0],T[1],T[2],T[3],'#20242a');
+  ctx.strokeStyle=sel?'#5edcff':'#000';ctx.lineWidth=sel?2.5:1;
+  ctx.beginPath();ctx.moveTo(T[0][0],T[0][1]);ctx.lineTo(T[1][0],T[1][1]);ctx.lineTo(T[2][0],T[2][1]);ctx.lineTo(T[3][0],T[3][1]);ctx.closePath();ctx.stroke();
+  var p1=p.pins[ks[0]],pv=K.proj(p1[0],p1[1],zT);
+  ctx.beginPath();ctx.ellipse(pv[0],pv[1],3.2,1.6,0,0,6.2832);ctx.fillStyle='#ff5d5d';ctx.fill();
+  if(p.locked){var lp=K.proj(x0+0.3,y0+0.3,zT);ctx.fillStyle='#fff';ctx.fillRect(lp[0]-4,lp[1]-4,8,8);}
+  if(K.labels){var lbl=(p.family?p.family+' ':'')+(p.label||'');K.txt(ctx,(T[0][0]+T[2][0])/2,(T[0][1]+T[2][1])/2+4,lbl,'#fff',11);}}};
+
+/* --- 統合: renderIso / compose / invalidate / pick / hover --- */
+function isoRevKey(){return [curI,ISOREV,LY.parts,LY.labels,LY.wires,LY.bridges,LY.ends,LY.caut,LY.blocked,MIRROR].join('|');}
+function renderIso(){ensureIsoCanvas();if(ISO.S===0)isoFit();
+ var lk=isoRevKey();if(ISO.listKey!==lk){ISO.list=buildIsoList();ISO.listKey=lk;}
+ isoEnsureBake();isoCompose();isoStatus();
+ if(selPart!==palLast){palLast=selPart;buildPalEdit();}
+ saveLS();}
+function isoCompose(){var ctx=isoCtx,cw=isoCv.clientWidth,ch=isoCv.clientHeight;
+ ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,cw,ch);ctx.fillStyle='#0d1117';ctx.fillRect(0,0,cw,ch);
+ if(ISO.bake)ctx.drawImage(ISO.bake,ISO.bakeAtOX,ISO.bakeAtOY,ISO.bakeCssW,ISO.bakeCssH);
+ var K=makeK();for(var i=0;i<ISO.list.length;i++)ISO.list[i].draw(ctx,K);}
+var isoDirty=false;
+function isoInvalidate(){if(isoDirty)return;isoDirty=true;requestAnimationFrame(function(){isoDirty=false;if(ISO.on){isoCompose();isoStatus();}});}
+function isoHover(ev){var pt=isoPt(ev),best=null,bestD=8;
+ D.wires.forEach(function(w){var pa=w.a.direct?w.a.pad:w.a.hole,pb=w.b.direct?w.b.pad:w.b.hole;
+  var sa=iproj(pa[0],pa[1],2),sb=iproj(pb[0],pb[1],2);
+  var d=isoSegDist(pt,sa,sb);if(d<bestD){bestD=d;best=w.net;}});
+ if(best!==hoverNet){hoverNet=best;isoInvalidate();
+  var el=document.getElementById('st-pos');if(el)el.textContent=best||'—';}}
+function isoSegDist(p,a,b){var vx=b[0]-a[0],vy=b[1]-a[1],wx=p[0]-a[0],wy=p[1]-a[1];
+ var t=(vx*vx+vy*vy)?Math.max(0,Math.min(1,(wx*vx+wy*vy)/(vx*vx+vy*vy))):0;
+ return Math.hypot(p[0]-(a[0]+t*vx),p[1]-(a[1]+t*vy));}
+function isoPick(ev){var pt=isoPt(ev);
+ for(var i=ISO.list.length-1;i>=0;i--){var pr=ISO.list[i];
+  if(pr.p&&isoBBoxHit(pr.p,pt[0],pt[1])){
+   if(ev.shiftKey){var ix=selSet.indexOf(pr.p);if(ix<0)selSet.push(pr.p);else selSet.splice(ix,1);}
+   else selSet=[pr.p];
+   selPart=selSet.length?selSet[selSet.length-1]:null;syncSelBar();render();return;}}
+ selSet=[];selPart=null;syncSelBar();render();}
+function isoStatus(){var el=document.getElementById('st-stats');if(!el)return;
+ var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)direct++;});});
+ el.innerHTML=tr('被覆線')+' <b>'+D.wires.length+'</b> ('+tr('直付')+' '+direct+') / 3D '+Math.round(ISO.S*10)/10+'px'+
+  (selPart?(' / '+tr('選択')+' <b>'+selPart.id+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'');}
+function setIso(v){if(v===ISO.on)return;ISO.on=v;
+ var btn=document.getElementById('z-iso');if(btn)btn.className=v?'on':'';
+ if(v&&MIRROR)setMirror(false);
+ svg.style.display=v?'none':'';var cv=document.getElementById('pw-iso');if(cv)cv.style.display=v?'block':'none';
+ if(v){ISO.S=0;ISO.bakeKey='';ISO.listKey='';
+  showHelp(tr('3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。編集は2Dに戻って行います。'));}
+ render();}
+document.getElementById('z-iso').onclick=function(){setIso(!ISO.on);};
 function tgl(box,label,k){label=tr(label);var d=document.createElement('label');d.className='tgl';
 var i=document.createElement('input');i.type='checkbox';i.checked=LY[k];
 i.onchange=function(){LY[k]=i.checked;render();};
