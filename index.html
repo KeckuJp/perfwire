@@ -424,6 +424,7 @@ var JE={
 '{0} 件の案を取り込みました。':'Imported {0} proposal(s).',
 '取込 {0}':'Imported {0}',
 '{0} 個の部品・{1} 本の配線を読み込みました。':'Loaded {0} part(s) and {1} wire(s).',
+' / 壊れた部品を{0}個スキップしました。':' / Skipped {0} malformed part(s).',
 '設定（重み/物理寸法など）を取り込みました。盤面は変更していません。':'Imported settings (weights/physical dimensions, etc). The board itself is unchanged.',
 '列 <b>{0}</b> 行 <b>{1}</b>':'Col <b>{0}</b> Row <b>{1}</b>','ネット <b>{0}</b>（{1}）':'Net <b>{0}</b> ({1})','被覆線端子 <b>{0}</b>':'Jumper wire end <b>{0}</b>','空き穴':'Empty hole',
 '✓ 完了':'✓ done','コピー済み':'Copied',' ロック中':' locked','監査エラー: {0}':'Audit error: {0}',
@@ -435,7 +436,7 @@ var JE={
 '盤面図のみ縮小（文字全体を拡大するにはブラウザの Ctrl -）':'Zooms the board diagram only (for the whole page, use your browser\'s Ctrl -)',
 '盤面図のみ拡大縮小（文字全体を拡大するにはブラウザの Ctrl +）':'Zooms the board diagram only (for the whole page, use your browser\'s Ctrl +)',
 '盤面図のみ拡大（文字全体を拡大するにはブラウザの Ctrl +）':'Zooms the board diagram only (for the whole page, use your browser\'s Ctrl +)',
-'基板配線図':'perfboard wiring diagram','基板3Dビュー':'perfboard 3D view','コマンドパレット':'Command palette','はじめに':'Welcome'};
+'基板配線図':'perfboard wiring diagram','基板3Dビュー':'perfboard 3D view','コマンドパレット':'Command palette'};
 function tr(s){return LANG==='en'&&Object.prototype.hasOwnProperty.call(JE,s)?JE[s]:s;}
 function scrollBehavior(){return (window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)?'auto':'smooth';}
 function trf(s){var t=tr(s),a=arguments;return t.replace(/\{(\d+)\}/g,function(m,i){var v=a[+i+1];return v===undefined?m:v;});}
@@ -1181,7 +1182,15 @@ if(!d2.proposals&&!matched.length&&!hasCfg){
 alert(tr('このJSONはperfwireの盤面データとして認識できませんでした（grid/parts/leads/wiresなどのキーが見つかりません）。書き出したJSONをそのまま貼り付けているか確認してください。'));
 return;}
 snap();matched.forEach(function(k){D[k]=d2[k];});
-var lt=lintState(D);if(lt.length){var ec=lt.filter(function(x){return x.level==='error';}).length;showHelp(trf('JSON 取込: {0} 件の指摘（error {1}）— {2}',lt.length,ec,lt.map(function(x){return x.code;}).join(', ')));}
+/* lintStateはic_pins等を警告止まりにするが、pins欠落のICはpartLeads()がObject.keys(undefined)で
+   例外を投げ、それ以降のrender()呼び出しが全て失敗して盤面が固まる（セッション中回復不能）。
+   loadProp()が既に同条件で採用している防御的フィルタをここでも適用し、壊れた部品は取り込み時に落とす。 */
+var droppedParts=0;
+if(D.parts){var beforeLen=D.parts.length;
+D.parts=D.parts.filter(function(p){return p.kind==='ic'?(p.pins&&typeof p.pins==='object'&&Object.keys(p.pins).length):(Array.isArray(p.leads)&&p.leads.length>=2);});
+droppedParts=beforeLen-D.parts.length;}
+var lt=lintState(D);if(lt.length||droppedParts){var ec=lt.filter(function(x){return x.level==='error';}).length;
+showHelp(trf('JSON 取込: {0} 件の指摘（error {1}）— {2}',lt.length,ec,lt.map(function(x){return x.code;}).join(', '))+(droppedParts?trf(' / 壊れた部品を{0}個スキップしました。',droppedParts):''));}
 if(d2.proposals){props=d2.proposals.map(function(p){return{name:p.name,orig:p.state,cur:null,origin:p.origin||'import'};});curI=0;refreshSel();loadProp(0);auditNow();
 showHelp(trf('{0} 件の案を取り込みました。',props.length));return;}
 if(hasCfg)CFG=d2.cfg;
@@ -1218,6 +1227,8 @@ var del=curI;
 props.splice(del,1);
 undoStack=undoStack.filter(function(u){return u.i!==del;});
 undoStack.forEach(function(u){if(u.i>del)u.i--;});
+redoStack=redoStack.filter(function(u){return u.i!==del;});
+redoStack.forEach(function(u){if(u.i>del)u.i--;});
 try{localStorage.removeItem(LSKEY+'_guide_'+del);
 for(var i=del+1;i<=props.length;i++){var v=localStorage.getItem(LSKEY+'_guide_'+i);
 localStorage.removeItem(LSKEY+'_guide_'+i);if(v!==null)localStorage.setItem(LSKEY+'_guide_'+(i-1),v);}}catch(e){}
@@ -1762,18 +1773,21 @@ var dn=0;GUIDE.steps.forEach(function(st){if(GUIDE.done[st.sig])dn++;});
 var phMap={intro:'はじめに',parts:'部品',bridges:'ブリッジ',wires:'被覆線',verify:'確認'},phName=phMap[s.phase||'']||'';
 document.getElementById('g-count').textContent=tr('作業ガイド')+' · '+(phName?tr(phName)+' · ':'')+tr('手順')+' '+(GUIDE.i+1)+' / '+GUIDE.steps.length+'  '+tr('完了')+' '+dn+(GUIDE.done[s.sig]?'  ✓'+tr('この手順は済'):'');
 document.getElementById('g-text').textContent=stepText(s);var gh=document.getElementById('g-hint');if(gh)gh.textContent=(s.t==='part'||s.t==='bridge'||s.t==='wire')?tr('▶ 盤面で光っている穴がこの手順の場所です'):'';render();scrollToStep(s);}
+var _guideCloseTrap=null;
 function guideStart(){if(ISO.on)setIso(false);GUIDE.steps=buildSteps();if(!GUIDE.steps.length)return;
 try{GUIDE.done=JSON.parse(localStorage.getItem(LSKEY+'_guide_'+curI)||'{}');}catch(e){GUIDE.done={};}
 GUIDE.on=true;GUIDE.i=0;
 while(GUIDE.i<GUIDE.steps.length-1&&GUIDE.done[GUIDE.steps[GUIDE.i].sig])GUIDE.i++;
 if(auditState().hard)showHelp(tr('監査にNG（極性・接続・短絡）があります。はんだ付け前に左の監査パネルで直してください。'));
-var gEl=document.getElementById('guide');gEl.style.display='block';guideShow();gEl.focus();}
+var gEl=document.getElementById('guide');gEl.style.display='block';guideShow();
+_guideCloseTrap=openTrap(gEl);gEl.focus();}
 function setMirror(v){if(v&&ISO.on)setIso(false);MIRROR=v;document.getElementById('z-mirror').className=v?'on':'';
 var gm=document.getElementById('g-mirror');if(gm)gm.checked=v;
 if(v)showHelp(tr('裏面ビュー: はんだ面から見た左右反転表示。テスターモードは使用可、編集はロックされます。'));
 render();}
 document.getElementById('z-mirror').onclick=function(){setMirror(!MIRROR);};
-function guideEnd(){GUIDE.on=false;document.getElementById('guide').style.display='none';render();}
+function guideEnd(){GUIDE.on=false;document.getElementById('guide').style.display='none';
+if(_guideCloseTrap){_guideCloseTrap();_guideCloseTrap=null;}render();}
 function gDone(){var s=GUIDE.steps[GUIDE.i];if(!s)return;GUIDE.done[s.sig]=1;
 try{localStorage.setItem(LSKEY+'_guide_'+curI,JSON.stringify(GUIDE.done));}catch(e){}
 if(GUIDE.i<GUIDE.steps.length-1)GUIDE.i++;guideShow();}
@@ -1865,7 +1879,7 @@ CMDS.forEach(function(c){if(c.key===e.key)c.f();});
 if(ISO.on){if(e.key==='Escape'){selClear();render();}return;}/* 閲覧専用: ロック/削除キーは無効（Esc=選択解除・Ctrl+Zは上のundoで既に許可済み） */
 /* 盤面編集がポインタ専用（キーボード経路0%）だったのを埋める最小実装。SVG自体を1つのTabストップにし（tabindex=0）、
    その中は矢印キーで部品選択を巡回・Shift+矢印キーで選択部品を1穴移動、という複合ウィジェットの標準作法（Tabで出入り・矢印で内部移動）。 */
-if(document.activeElement===svg&&mode==='move'&&D.parts.length&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].indexOf(e.key)>=0){
+if(!GUIDE.on&&document.activeElement===svg&&mode==='move'&&D.parts.length&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].indexOf(e.key)>=0){
 e.preventDefault();
 if(e.shiftKey&&selPart){var dx=e.key==='ArrowRight'?1:e.key==='ArrowLeft'?-1:0,dy=e.key==='ArrowDown'?1:e.key==='ArrowUp'?-1:0;nudgePart(selPart,dx,dy);}
 else{var idx=D.parts.indexOf(selPart),dir=(e.key==='ArrowRight'||e.key==='ArrowDown')?1:-1;selOne(D.parts[(idx+dir+D.parts.length)%D.parts.length]);render();}
@@ -1874,8 +1888,12 @@ if(e.key.toLowerCase()==='l'){e.preventDefault();lockSel();}
 if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();delSel();}
 if(e.key==='Escape'){selClear();render();}});
 /* undoでD.leadsから消えたUI追加のW.*端子名をCFG.powerEntryからも除く。ercAudit自体には触れない(監査ロジック外の正規化) */
+/* UIPE/CFG.powerEntryは「案(proposal)をまたいで共有されるグローバル設定」なので、
+   現在表示中のDだけを見て判定すると、別の案を開いただけで他の案が追加した外部端子が消える
+   （P2機能が別案を見るだけで自壊する）。undo等で本当に消えたかは全案のリードを見て判定する。 */
+function anyPropHasLead(nm){for(var i=0;i<props.length;i++){var st=props[i].cur||props[i].orig;if(st&&st.leads&&st.leads[nm])return true;}return false;}
 function pruneUIPE(){Object.keys(UIPE).forEach(function(n){UIPE[n]=UIPE[n].filter(function(nm){
-if(D.leads[nm])return true;
+if(anyPropHasLead(nm))return true;
 if(CFG.powerEntry&&CFG.powerEntry[n]){CFG.powerEntry[n]=CFG.powerEntry[n].filter(function(x){return x!==nm;});
 if(!CFG.powerEntry[n].length)delete CFG.powerEntry[n];}
 return false;});});}
@@ -2484,7 +2502,10 @@ if(_welcomeCloseTrap){_welcomeCloseTrap();_welcomeCloseTrap=null;}}
 document.getElementById('wc-start').onclick=function(){var vi=0;for(var vk=0;vk<props.length;vk++)if(props[vk].origin==='verified'){vi=vk;break;}
 loadProp(vi);var s=document.getElementById('pw-prop');if(s)s.value=vi;auditNow();dismissWelcome();};
 /* welcomeの一発勝負だった「空の基板から始める」を、いつでも呼べる関数として独立化（新規ボタン・CMDSから共通利用）。 */
-function newBlankBoard(){var pe=props[curI]&&props[curI].edited;snap();if(props[curI])props[curI].edited=pe;
+/* guardSynth()/pw-saveasと同じ理由でsnap()は呼ばない: これは新しい案をprops配列に追加するだけで、
+   現在の案のDを一切変更しない。snap()するとD不変のno-op undoエントリが積まれ、undo()してもprops配列
+   からは消えない（undo()はcurIを戻すだけでprops.length/spliceは扱わない）ため、亡霊案が永久に残る。 */
+function newBlankBoard(){
 var st={version:1,grid:{cols:20,rows:15},netColors:{},leads:{},parts:[],padBridges:[],wires:[],blockedHoles:[]};
 props.push({name:uniqName(tr('空の基板')),orig:st,cur:null,origin:'blank'});curI=props.length-1;refreshSel();loadProp(curI);
 var P=CFG.profiles||{};if(P.easy){var w=P.easy.weights||{};for(var f in w)CFG.weights[f]=w[f];buildSliders();}
