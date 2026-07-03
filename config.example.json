@@ -69,7 +69,8 @@
       "IF_MIC",
       "MIC_IN",
       "SPK_N",
-      "SPK_P"
+      "SPK_P",
+      "ECHO_5V"
     ]
   },
   "net_classes": {
@@ -96,7 +97,10 @@
         "MIC_IN",
         "SPK_P",
         "SPK_N",
-        "VREF"
+        "VREF",
+        "SOIL_ADC",
+        "ECHO_5V",
+        "ECHO_SIG"
       ],
       "max_wire_holes": 14,
       "adj_penalty": 3,
@@ -108,7 +112,13 @@
         "OUTA1",
         "SPK_OUT",
         "OUTB2",
-        "IF_MIC"
+        "IF_MIC",
+        "TRIG_SIG",
+        "RELAY_CTL",
+        "BUZZ_CTL",
+        "PUMP_HOT",
+        "Q_BASE",
+        "COIL_LO"
       ],
       "max_wire_holes": 99,
       "adj_penalty": 2,
@@ -121,7 +131,8 @@
       "nets": [
         "V3V3",
         "GND",
-        "VMID"
+        "VMID",
+        "V5"
       ],
       "max_wire_holes": 99,
       "adj_penalty": 1,
@@ -149,6 +160,11 @@
       "cap": "C4",
       "pin": "W.RED",
       "max_holes": 4
+    },
+    {
+      "cap": "C11",
+      "pin": "U1.VSYS_IN",
+      "max_holes": 3
     }
   ],
   "part_overrides": {
@@ -223,28 +239,35 @@
       }
     }
   },
-  "_rail_rank": "ERC極性: 電位の高い順に大きい値。電解の + 足がより高電位レールにあるか検査（無ければ INFO のみ）",
+  "_rail_rank": "ERC極性: 電位の高い順に大きい値。電解の + 足がより高電位レールにあるか検査（無ければ INFO のみ）。注意: この表の最大値のネットが全基板共通でsolver.pyのdecouplingCoverageのsupply_net(バイパス必須ピンの基準レール)に選ばれる（examples/の各基板固有の値ではない）。新しいレールを足すときはV3V3(=2)を最大値のまま超えさせないこと（超えると他基板のdecouplingCoverageが空になる＝consume_smoke.pyが検知）。この極性検査自体は各ペア(plusNet,minusNet)の相対比較なので、最大値を奪わない限り新レールの値は自由",
   "rail_rank": {
     "V3V3": 2,
     "VMID": 1,
-    "GND": 0
+    "GND": 0,
+    "V5": 1.5
   },
   "_rail_volts": "ERC抵抗電力: 各レールの実電位[V]。抵抗に value[Ω] があり両端がここにあれば P=ΔV²/R を定格(rated_w 既定0.25W)と照合。VMID は V3V3 の中点",
   "rail_volts": {
     "V3V3": 3.3,
     "VMID": 1.65,
-    "GND": 0
+    "GND": 0,
+    "V5": 5.0
   },
   "_rail_short_ma": "ERC railShort: 抵抗が異なるレール間にあり I=|ΔV|/R がこの値[mA]超で警告（定格内でも過大電流＝実効的な部分短絡）",
   "rail_short_ma": 50,
   "_power_entry": "ERC電源到達性: 各 PWR ネットの給電リード。当該ネットが 1 連結かつこの根に届くか検査（VMID は外部給電なしのため未掲載＝検査対象外）",
   "power_entry": {
     "V3V3": [
-      "W.RED"
+      "W.RED",
+      "U1.G3V3"
     ],
     "GND": [
       "W.BLK1",
-      "W.BLK2"
+      "W.BLK2",
+      "W.GNDIN"
+    ],
+    "V5": [
+      "W.V5IN"
     ]
   },
   "_reference_rails": "ERC grounding: 外部給電の無い内部基準レール（VMID 等）も還流トポロジ評価。根=基準点リード（VMID の bypass C6.p）。daisy-chain なら daisyReturn 警告（共通インピーダンス結合）",
