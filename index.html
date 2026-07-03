@@ -989,13 +989,13 @@ if(best){snap();D.trackCuts=D.trackCuts||[];var ix=-1;for(var ci=0;ci<D.trackCut
 if(ix>=0)D.trackCuts.splice(ix,1);else D.trackCuts.push([best.a,best.b]);render();auditSoon();}return;}
 if(mode==='block'){var h2=nearHole(pt[0],pt[1]);if(h2){if(occupiedOther(h2[0],h2[1],null,null))return;snap();var bi=blockedIdx(h2[0],h2[1]);if(bi>=0)D.blockedHoles.splice(bi,1);else D.blockedHoles.push([h2[0],h2[1]]);render();}return;}
 if(mode==='move'){/* モードレス: 部品も端子(銅線端/足)も同じ操作でドラッグ。Shift＝複数選択切替、空ドラッグ＝範囲選択 */
-for(j=0;j<D.wires.length;j++){var w=D.wires[j],es=[w.a,w.b];for(var k2=0;k2<2;k2++){var e=es[k2];if(e._px&&Math.hypot(pt[0]-e._px[0],pt[1]-e._px[1])<13){drag={t:'end',e:e,w:w,prev:deep({hole:e.hole,direct:e.direct,bridgeTo:e.bridgeTo||null})};return;}}}
-for(i=D.parts.length-1;i>=0;i--){var p=D.parts[i],Ls=partLeads(p);for(j=0;j<Ls.length;j++){var v=xy(Ls[j].pos[0],Ls[j].pos[1]);if(Math.hypot(pt[0]-v[0],pt[1]-v[1])<11){if(ev.shiftKey){selToggle(p);render();return;}selOne(p);if(!p.locked&&p.kind!=='ic')drag={t:'plead',p:p,L:Ls[j],prev:deep(Ls[j].pos)};render();return;}}}
+for(j=0;j<D.wires.length;j++){var w=D.wires[j],es=[w.a,w.b];for(var k2=0;k2<2;k2++){var e=es[k2];if(e._px&&Math.hypot(pt[0]-e._px[0],pt[1]-e._px[1])<13){drag={t:'end',e:e,w:w,prev:deep({hole:e.hole,direct:e.direct,bridgeTo:e.bridgeTo||null})};snap();return;}}}
+for(i=D.parts.length-1;i>=0;i--){var p=D.parts[i],Ls=partLeads(p);for(j=0;j<Ls.length;j++){var v=xy(Ls[j].pos[0],Ls[j].pos[1]);if(Math.hypot(pt[0]-v[0],pt[1]-v[1])<11){if(ev.shiftKey){selToggle(p);render();return;}selOne(p);if(!p.locked&&p.kind!=='ic'){drag={t:'plead',p:p,L:Ls[j],prev:deep(Ls[j].pos)};snap();}render();return;}}}
 var pp=null;for(i=0;i<D.parts.length;i++){var p2=D.parts[i];if(p2._body&&pt[0]>=p2._body[0]&&pt[0]<=p2._body[0]+p2._body[2]&&pt[1]>=p2._body[1]&&pt[1]<=p2._body[1]+p2._body[3])pp=p2;}
 if(!pp)for(i=D.parts.length-1;i>=0;i--){var p3=D.parts[i];if(p3._seg&&segd(pt[0],pt[1],p3._seg[0][0],p3._seg[0][1],p3._seg[1][0],p3._seg[1][1])<9){pp=p3;break;}}
 if(pp){if(ev.shiftKey){selToggle(pp);render();return;}
-if(inSel(pp)&&selSet.length>1){drag=groupMoveDrag(pt);render();return;}/* 既に複数選択の1つ＝まとめて移動 */
-selOne(pp);if(!pp.locked)drag={t:'pmove',p:pp,g0:[(pt[0]-OX)/PITCH+1,(pt[1]-OY)/PITCH+1],orig:partLeads(pp).map(function(L){return deep(L.pos);})};render();return;}
+if(inSel(pp)&&selSet.length>1){drag=groupMoveDrag(pt);if(drag.parts.length)snap();render();return;}/* 既に複数選択の1つ＝まとめて移動（全ロック時はparts空＝undo不要） */
+selOne(pp);if(!pp.locked){drag={t:'pmove',p:pp,g0:[(pt[0]-OX)/PITCH+1,(pt[1]-OY)/PITCH+1],orig:partLeads(pp).map(function(L){return deep(L.pos);})};snap();}render();return;}
 drag={t:'marquee',s:pt,cur:pt,add:ev.shiftKey};return;}
 selPart=null;render();});
 svg.addEventListener('pointermove',function(ev){if(drag||pinch0)return;var pt=getPt(ev),h=nearHole(pt[0],pt[1]);
@@ -1026,30 +1026,31 @@ delete touches[ev.pointerId];
 if(Object.keys(touches).length<2)pinch0=null;
 if(!drag)return;var pt=getPt(ev),h=nearHole(pt[0],pt[1]);
 if(drag.t==='photo'){drag=null;savePhotoT();render();return;}
-if(drag.t==='bridge'){if(h&&adj(h,drag.a)){snap();D.padBridges.push([drag.a,h]);}drag=null;render();return;}
-if(drag.t==='end'){var e=drag.e,w=drag.w;
-function rev(){e.hole=drag.prev.hole;e.direct=drag.prev.direct;e.bridgeTo=drag.prev.bridgeTo;}
+if(drag.t==='bridge'){if(h&&adj(h,drag.a)){snap();D.padBridges.push([drag.a,h]);drag=null;render();auditNow();return;}drag=null;render();return;}
+if(drag.t==='end'){var e=drag.e,w=drag.w,changed=true;
+/* snap()はpointerdown側でドラッグ開始時（pointermoveのライブ書き換えが始まる前）に既に積んである。リバート時は無駄なundoエントリをpopで消す */
+function rev(){e.hole=drag.prev.hole;e.direct=drag.prev.direct;e.bridgeTo=drag.prev.bridgeTo;changed=false;undoStack.pop();}
 if(!h){rev();}
-else if(h[0]===e.pad[0]&&h[1]===e.pad[1]){snap();e.hole=deep(e.pad);e.direct=true;e.bridgeTo=null;}
+else if(h[0]===e.pad[0]&&h[1]===e.pad[1]){e.hole=deep(e.pad);e.direct=true;e.bridgeTo=null;}
 else if(blockedIdx(h[0],h[1])>=0||occupiedOther(h[0],h[1],null,e)){rev();}
-else{snap();e.hole=[h[0],h[1]];e.direct=false;revalidate(e,w);}
-drag=null;render();return;}
-if(drag.t==='plead'){var L=drag.L,p=drag.p;
-if(!h||blockedIdx(h[0],h[1])>=0||occupiedOther(h[0],h[1],p,null)){L.set(drag.prev);}
-else{var dup=false;partLeads(p).forEach(function(L2){if(L2!==L&&L2.pos[0]===h[0]&&L2.pos[1]===h[1])dup=true;});
-if(dup)L.set(drag.prev);else{snap();L.set([h[0],h[1]]);afterMove(p);}}
-drag=null;palLast=undefined;render();return;}
+else{e.hole=[h[0],h[1]];e.direct=false;revalidate(e,w);}
+drag=null;render();if(changed)auditNow();return;}
+if(drag.t==='plead'){var L=drag.L,p=drag.p,changed2=false;
+if(!h||blockedIdx(h[0],h[1])>=0||occupiedOther(h[0],h[1],p,null)){L.set(drag.prev);undoStack.pop();}
+else{var dup=false;partLeads(p).forEach(function(L2){if(L2.name!==L.name&&L2.pos[0]===h[0]&&L2.pos[1]===h[1])dup=true;});
+if(dup){L.set(drag.prev);undoStack.pop();}else{L.set([h[0],h[1]]);afterMove(p);changed2=true;}}
+drag=null;palLast=undefined;render();if(changed2)auditNow();return;}
 if(drag.t==='pmove'){var p2=drag.p,Ls=partLeads(p2),dx=Math.round((pt[0]-OX)/PITCH+1-drag.g0[0]),dy=Math.round((pt[1]-OY)/PITCH+1-drag.g0[1]),ok=true,i;
 var np=[];for(i=0;i<Ls.length;i++){var q=[drag.orig[i][0]+dx,drag.orig[i][1]+dy];np.push(q);if(!inb(q[0],q[1])||blockedIdx(q[0],q[1])>=0||occupiedOther(q[0],q[1],p2,null))ok=false;}
 for(i=0;i<Ls.length;i++)Ls[i].set(ok?np[i]:drag.orig[i]);
-if(ok){snap();afterMove(p2);}
-drag=null;palLast=undefined;render();return;}
+if(ok)afterMove(p2);else undoStack.pop();
+drag=null;palLast=undefined;render();if(ok)auditNow();return;}
 if(drag.t==='gmove'){var dx=Math.round((pt[0]-OX)/PITCH+1-drag.g0[0]),dy=Math.round((pt[1]-OY)/PITCH+1-drag.g0[1]),gok=true;
 var moved=drag.parts.map(function(p,pi){return partLeads(p).map(function(L,i){return [drag.orig[pi][i][0]+dx,drag.orig[pi][i][1]+dy];});});
 drag.parts.forEach(function(p,pi){moved[pi].forEach(function(q){if(!inb(q[0],q[1])||blockedIdx(q[0],q[1])>=0)gok=false;});});
 drag.parts.forEach(function(p,pi){partLeads(p).forEach(function(L,i){L.set(gok?moved[pi][i]:drag.orig[pi][i]);});});
-if(gok){snap();drag.parts.forEach(function(p){afterMove(p);});}
-drag=null;palLast=undefined;render();return;}
+if(gok)drag.parts.forEach(function(p){afterMove(p);});else undoStack.pop();
+drag=null;palLast=undefined;render();if(gok)auditNow();return;}
 if(drag.t==='marquee'){var mv=Math.hypot(pt[0]-drag.s[0],pt[1]-drag.s[1]);
 if(mv<6){if(!drag.add)selClear();}
 else{var x0=Math.min(drag.s[0],pt[0]),x1=Math.max(drag.s[0],pt[0]),y0=Math.min(drag.s[1],pt[1]),y1=Math.max(drag.s[1],pt[1]);
