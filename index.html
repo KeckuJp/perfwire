@@ -250,7 +250,6 @@ var JE={
 '選択／移動':'Select / Move','モード: 選択／移動':'Mode: Select / Move','ロック解除':'Unlock','削除':'Delete','選択解除':'Deselect','{0}個 選択中':'{0} selected','うち{0}個ロック':'{0} locked',
 'ロック中: 自動再配置の対象外（人/AIが位置を確定済み）':'Locked: excluded from auto re-placement (position confirmed by a human or the AI)',
 '□ ロック中の部品':'Locked part','この印が付いた部品は「配置を再提案」で動きません（人/AIが位置を確定済み）。クリックで選択→ロック切替で解除できます。':'Parts with this mark won’t move on "Re-place & route" (position confirmed by a human or the AI). Click to select, then Toggle lock to release it.',
-'配置を再提案しました。ロック済み {0} 個は動かしていません。':'Re-placed. {0} locked part(s) were left untouched.',
 '部品も端子も同じ操作でドラッグ移動（モード切替なし）。クリックで選択／Shift＋クリックで複数選択／空きをドラッグで範囲選択／選択をドラッグでまとめて移動。L＝ロック、Del＝削除、Esc＝解除。':'Drag parts and terminals the same way (no mode switch). Click to select / Shift+click for multi / drag empty to box-select / drag the selection to move them together. L=lock, Del=delete, Esc=deselect.',
 'スピーカー（[client-hardware]）':'Speaker (client-hardware)','マイク':'Mic','GND（電源）':'GND (power)',
 '出力（外部へ）':'output (off-board)','入力（外部から）':'input (from outside)','入出力（双方向）':'I/O (bidirectional)','電源（外部）':'power (external)','電源入力':'power in',
@@ -411,6 +410,12 @@ var JE={
 '{0} を追加しました。ドラッグで配置し、下の欄でネットを割り当ててください。':'Added {0}. Drag to position it, then assign nets in the panel below.',
 '{0} を「{1}」クラスにしました。監査と再配置の基準が変わります。':'Set {0} to class "{1}". Audit and re-placement criteria change accordingly.',
 'JSON 取込: {0} 件の指摘（error {1}）— {2}':'Imported JSON: {0} issue(s) (errors {1}) — {2}',
+'監査NGが{0}件増えました（素地の結線が変わったため）。「元に戻す」で戻せます。':'Audit NGs increased by {0} (the board substrate\'s wiring changed). Use Undo to revert.',
+'監査NGが{0}件減りました。':'Audit NGs decreased by {0}.',
+'案をリセットしました。移動{0}・部品+{1}−{2}・線+{3}−{4}。':'Proposal reset. Moved {0} · parts +{1}−{2} · wires +{3}−{4}.',
+'案をリセットしました（変更はありませんでした）。':'Proposal reset (there was nothing to change).',
+'配置を再提案しました。移動{0}・線+{1}−{2}。':'Re-placed. Moved {0} · wires +{1}−{2}.',
+' ロック済み {0} 個は動かしていません。':' {0} locked part(s) were left untouched.',
 'このJSONはperfwireの盤面データとして認識できませんでした（grid/parts/leads/wiresなどのキーが見つかりません）。書き出したJSONをそのまま貼り付けているか確認してください。':'This JSON wasn\'t recognized as perfwire board data (no grid/parts/leads/wires keys found). Check that you pasted an exported JSON as-is.',
 '{0} 件の案を取り込みました。':'Imported {0} proposal(s).',
 '取込 {0}':'Imported {0}',
@@ -1203,7 +1208,10 @@ document.getElementById('m-block').onclick=function(){setMode('block');};
 document.getElementById('m-probe').onclick=function(){setMode('probe');};
 document.getElementById('m-cut').onclick=function(){setMode('cut');};
 document.getElementById('pw-lock').onclick=lockSel;
-document.getElementById('pw-reset').onclick=function(){snap();props[curI].cur=deep(props[curI].orig);props[curI].edited=false;updatePropHint();loadProp(curI);auditNow();};
+document.getElementById('pw-reset').onclick=function(){var before=deep(D);snap();props[curI].cur=deep(props[curI].orig);props[curI].edited=false;updatePropHint();loadProp(curI);auditNow();
+var df=diffCount(before,D);
+if(df.mv||df.pAdd||df.pDel||df.wAdd||df.wDel)showHelp(trf('案をリセットしました。移動{0}・部品+{1}−{2}・線+{3}−{4}。',df.mv,df.pAdd,df.pDel,df.wAdd,df.wDel));
+else showHelp(tr('案をリセットしました（変更はありませんでした）。'));};
 document.getElementById('pw-prop').onchange=function(){loadProp(parseInt(this.value,10));auditNow();};
 document.getElementById('pw-undo').onclick=undo;
 document.getElementById('pw-redo').onclick=redo;
@@ -1212,9 +1220,10 @@ function doRewire(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-rew
 calcNote=tr('配線再計算: 被覆線')+' '+wb+'→'+D.wires.length+tr('本');render();auditNow();
 b.textContent=tr('✓ 完了');setTimeout(function(){b.textContent=tr('配線を再計算');},900);}
 function doPropose(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-repropose');
-var lockedN=D.parts.filter(function(p){return p.locked;}).length;snap();
+var lockedN=D.parts.filter(function(p){return p.locked;}).length,before=deep(D);snap();
 proposeAsync(function(){render();auditNow();b.textContent=tr('✓ 完了');setTimeout(function(){b.textContent=tr('配置を再提案');},900);
-if(lockedN)showHelp(trf('配置を再提案しました。ロック済み {0} 個は動かしていません。',lockedN));});}
+var df=diffCount(before,D),lockNote=lockedN?trf(' ロック済み {0} 個は動かしていません。',lockedN):'';
+showHelp(trf('配置を再提案しました。移動{0}・線+{1}−{2}。',df.mv,df.wAdd,df.wDel)+lockNote);});}
 function resolveGuardNet(hiz){for(var i=0;i<D.parts.length;i++){var p=D.parts[i];if(p.kind!=='ic')continue;var pt=(p.pinTypes&&typeof p.pinTypes==='object')?p.pinTypes:{},pins=p.pins||{};
 var hasIn=Object.keys(pins).some(function(pin){return D.leads[p.id+'.'+pin]&&D.leads[p.id+'.'+pin].net===hiz&&pt[pin]==='in';});
 if(hasIn){var outs=Object.keys(pins).filter(function(pin){return pt[pin]==='out';});if(outs.length&&D.leads[p.id+'.'+outs[0]])return D.leads[p.id+'.'+outs[0]].net;}}return null;}
@@ -1563,6 +1572,20 @@ buildPartDims(box,p);
 var del=document.createElement('button');del.textContent=tr('この部品を削除');del.style.marginTop='6px';
 del.onclick=function(){if(confirm(trf('{0} を削除しますか？（参照する被覆線も消えます）',p.id)))delPart(p);};
 box.appendChild(del);}
+/* diffOverlay()の集計ロジックのみを流用した純粋版（SVG描画無し）。一括操作の事後トースト用。 */
+function diffCount(B,C){var sum={mv:0,wAdd:0,wDel:0,pAdd:0,pDel:0};
+var bParts={};(B.parts||[]).forEach(function(p){bParts[p.id]=p;});
+var cParts={};(C.parts||[]).forEach(function(p){cParts[p.id]=p;});
+Object.keys(bParts).forEach(function(id){var bp=bParts[id],cp=cParts[id];
+if(!cp){sum.pDel++;return;}
+var bl=leadsOf(bp),cl=leadsOf(cp),moved=false;
+for(var i=0;i<bl.length;i++)if(!cl[i]||bl[i][0]!==cl[i][0]||bl[i][1]!==cl[i][1])moved=true;
+if(moved)sum.mv++;});
+Object.keys(cParts).forEach(function(id){if(!bParts[id])sum.pAdd++;});
+var bw={},cw={};(B.wires||[]).forEach(function(w){bw[wireSig(w)]=1;});(C.wires||[]).forEach(function(w){cw[wireSig(w)]=1;});
+Object.keys(cw).forEach(function(s){if(!bw[s])sum.wAdd++;});
+Object.keys(bw).forEach(function(s){if(!cw[s])sum.wDel++;});
+return sum;}
 function wireSig(w){var a=w.a.direct?w.a.pad:w.a.hole,b=w.b.direct?w.b.pad:w.b.hole,k1=key(a),k2=key(b);
 return w.net+'|'+(k1<k2?k1+'|'+k2:k2+'|'+k1);}
 function bridgeSig(b){var k1=key(b[0]),k2=key(b[1]);return k1<k2?k1+'|'+k2:k2+'|'+k1;}
@@ -1752,7 +1775,10 @@ var CMDS=[
 {n:'モード: 穴ブロック',k:'mode block',key:'3',mode:'block',f:function(){setMode('block');}},
 {n:'モード: テスター（導通プローブ）',k:'mode probe tester',key:'4',mode:'probe',f:function(){setMode('probe');}},
 {n:'モード: カット（ストリップ基板）',k:'mode cut strip track',key:'5',mode:'cut',f:function(){setMode('cut');}},
-{n:'基板種別を切替（独立ランド/ストリップ/十字配線/ブレッドボード/連ランド）',k:'board type strip perf mesh cross juuji breadboard cluster veroboard cycle',f:function(){snap();var order=['perf','strip','mesh','breadboard','cluster'],g=D.grid;g.type=order[(order.indexOf(g.type||'perf')+1)%order.length];if(g.type==='strip'&&!g.stripAxis)g.stripAxis='row';if(g.type==='breadboard'){if(!g.segLen)g.segLen=5;if(!g.railRows)g.railRows=[1,g.rows];}if(g.type==='cluster'){if(!g.clusterSize)g.clusterSize=2;if(!g.clusterAxis)g.clusterAxis='row';}showHelp(tr('基板種別')+': '+g.type);render();auditSoon();}},
+{n:'基板種別を切替（独立ランド/ストリップ/十字配線/ブレッドボード/連ランド）',k:'board type strip perf mesh cross juuji breadboard cluster veroboard cycle',f:function(){var ngBefore=ercHardCount();snap();var order=['perf','strip','mesh','breadboard','cluster'],g=D.grid;g.type=order[(order.indexOf(g.type||'perf')+1)%order.length];if(g.type==='strip'&&!g.stripAxis)g.stripAxis='row';if(g.type==='breadboard'){if(!g.segLen)g.segLen=5;if(!g.railRows)g.railRows=[1,g.rows];}if(g.type==='cluster'){if(!g.clusterSize)g.clusterSize=2;if(!g.clusterAxis)g.clusterAxis='row';}
+var ngAfter=ercHardCount(),d=ngAfter-ngBefore;
+showHelp(tr('基板種別')+': '+g.type+(d>0?' — '+trf('監査NGが{0}件増えました（素地の結線が変わったため）。「元に戻す」で戻せます。',d):(d<0?' — '+trf('監査NGが{0}件減りました。',-d):'')));
+render();auditSoon();}},
 {n:'十字/格子基板: 必要なカットを自動生成＋一覧（ネット分離）',k:'mesh cross auto cut isolate required cuts juuji jidou',f:function(){var g=D.grid;if(g.type!=='mesh'){showHelp(tr('カット自動生成は十字/格子（mesh）基板のみ。先に基板種別を切替えてください。'));return;}snap();var r=autoMeshCuts();D.trackCuts=r.cuts;var t=r.text;document.getElementById('pw-out').value=t;try{navigator.clipboard&&navigator.clipboard.writeText(t);}catch(e){}try{var bl=new Blob([t],{type:'text/markdown'}),a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='required_cuts.md';a.click();}catch(e){}render();auditSoon();showHelp(trf('必要カット {0} 本を生成（盤面に表示・テキスト欄・.md）。これを実機で切ればネットが分離します。',r.cuts.length));}},
 {n:'ストリップ向き切替（行⇄列）',k:'strip axis row col',f:function(){if(D.grid.type!=='strip')return;snap();D.grid.stripAxis=(D.grid.stripAxis==='col')?'row':'col';render();auditSoon();}},
 {n:'導通チェックリスト生成',k:'beep continuity checklist',f:function(){document.getElementById('pw-beep').click();}},
