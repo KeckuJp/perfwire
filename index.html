@@ -37,6 +37,8 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 #canvas{flex:1;overflow:auto;position:relative}
 #canvas::-webkit-scrollbar{width:10px;height:10px}
 #canvas::-webkit-scrollbar-thumb{background:rgba(255,255,255,.10);border-radius:5px}
+#pw-svg.mode-bridge,#pw-svg.mode-block,#pw-svg.mode-cut{cursor:crosshair}
+#pw-svg.mode-probe{cursor:help}
 #pw-iso{display:none;width:100%;height:100%;cursor:grab}
 #pw-iso:active{cursor:grabbing}
 #ztools{position:absolute;top:12px;right:16px;display:flex;gap:6px;z-index:5}
@@ -105,6 +107,7 @@ svg{display:block;margin:16px auto}
 .vok{color:var(--ok);background:rgba(61,220,132,.10);border:1px solid rgba(61,220,132,.32)}
 .vng{color:var(--ng);background:rgba(255,93,93,.10);border:1px solid rgba(255,93,93,.36)}
 .vwr{color:var(--wr);background:rgba(255,180,84,.10);border:1px solid rgba(255,180,84,.34)}
+.vinfo{color:var(--mut);background:rgba(139,151,163,.10);border:1px solid rgba(139,151,163,.30)}
 :focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
@@ -124,6 +127,7 @@ svg{display:block;margin:16px auto}
 <button id="pw-lang" title="Language">EN</button>
 <button id="pw-cmd" title="Ctrl+K">Ctrl+K</button>
 <button id="pw-undo" title="Ctrl+Z">元に戻す</button>
+<button id="pw-redo" title="Ctrl+Y">やり直す</button>
 <button id="pw-open">開く…</button>
 <button id="pw-export" title="盤面JSONを書き出し（クリップボード＋Downloads）。Claude Code に渡して監査してもらえます">書き出し</button>
 <button id="pw-share" title="盤面をディープリンク化してコピー。Claude Code に貼れば read_link.py で復元できます">URL共有</button>
@@ -187,7 +191,7 @@ svg{display:block;margin:16px auto}
 <svg id="pw-svg" style="touch-action:none" role="img" aria-label="perfboard wiring diagram"></svg>
 <canvas id="pw-iso" style="display:none;touch-action:none" aria-label="perfboard 3D view"></canvas>
 </div>
-<footer id="status"><span class="chip" id="st-pos">—</span><span class="chip" id="st-net" style="display:none"></span><span class="chip" id="st-stats"></span></footer>
+<footer id="status"><span class="chip" id="st-mode"></span><span class="chip" id="st-pos">—</span><span class="chip" id="st-net" style="display:none"></span><span class="chip" id="st-stats"></span></footer>
 </main>
 </div>
 <div id="toast" aria-live="polite"></div>
@@ -244,6 +248,9 @@ var JE={
 '外部端子 {0}（{1}）を追加しました。「配線を再計算」を押すと基板内の {1} と結線されます。やり直すには「元に戻す」。':'Added external terminal {0} ({1}). Press "Rewire" to connect it to {1} on the board. Use Undo to revert.',
 'この外部端子を削除':'Delete this external terminal',
 '選択／移動':'Select / Move','モード: 選択／移動':'Mode: Select / Move','ロック解除':'Unlock','削除':'Delete','選択解除':'Deselect','{0}個 選択中':'{0} selected','うち{0}個ロック':'{0} locked',
+'ロック中: 自動再配置の対象外（人/AIが位置を確定済み）':'Locked: excluded from auto re-placement (position confirmed by a human or the AI)',
+'□ ロック中の部品':'Locked part','この印が付いた部品は「配置を再提案」で動きません（人/AIが位置を確定済み）。クリックで選択→ロック切替で解除できます。':'Parts with this mark won’t move on "Re-place & route" (position confirmed by a human or the AI). Click to select, then Toggle lock to release it.',
+'配置を再提案しました。ロック済み {0} 個は動かしていません。':'Re-placed. {0} locked part(s) were left untouched.',
 '部品も端子も同じ操作でドラッグ移動（モード切替なし）。クリックで選択／Shift＋クリックで複数選択／空きをドラッグで範囲選択／選択をドラッグでまとめて移動。L＝ロック、Del＝削除、Esc＝解除。':'Drag parts and terminals the same way (no mode switch). Click to select / Shift+click for multi / drag empty to box-select / drag the selection to move them together. L=lock, Del=delete, Esc=deselect.',
 'スピーカー（[client-hardware]）':'Speaker (client-hardware)','マイク':'Mic','GND（電源）':'GND (power)',
 '出力（外部へ）':'output (off-board)','入力（外部から）':'input (from outside)','入出力（双方向）':'I/O (bidirectional)','電源（外部）':'power (external)','電源入力':'power in',
@@ -269,7 +276,8 @@ var JE={
 '直交・寝かせ・最小スパン・ゆとりある間隔。手はんだと目視確認のしやすさを最優先（初心者おすすめ）':'Orthogonal, lying-flat, minimal span, roomy spacing. Optimised for easy hand-soldering and visual inspection (recommended for beginners)',
 '高Z入力を短く、入出力を強く分離、デカップリング近接。オペアンプ/オーディオ/センサなど発振・ノイズに弱い回路向け':'Short high-Z inputs, strong input/output separation, tight decoupling. For op-amp / audio / sensor circuits prone to oscillation and noise',
 'ブリッジ多用で被覆線最少、立て実装可、密でも可。小さい基板に詰めたい上級者向け':'Bridge-heavy for fewest jumpers, standing mounts allowed, density accepted. For experienced builders fitting a small board',
-'配線を再計算':'Rewire','配置を再提案':'Re-place & route','案として保存':'Save as proposal','作業ガイド':'Work guide','元に戻す':'Undo','開く…':'Open…','書き出し':'Export','URL共有':'Share URL',
+'配線を再計算':'Rewire','配置を再提案':'Re-place & route','案として保存':'Save as proposal','作業ガイド':'Work guide','元に戻す':'Undo','やり直す':'Redo','開く…':'Open…','書き出し':'Export','URL共有':'Share URL',
+'戻す操作はありません。':'Nothing to undo.','やり直す操作はありません。':'Nothing to redo.','元に戻しました。':'Undone.','やり直しました。':'Redone.',
 '盤面を斜め上から見る3Dビュー（閲覧専用・編集は2Dに戻って行います）':'3D view of the board from above (view-only — go back to 2D to edit)',
 '3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。編集は2Dに戻って行います。':'3D view: a view-only isometric overview. Click to select, drag to pan, Ctrl+wheel to zoom. Go back to 2D to edit.',
 '3Dビュー 切替':'Toggle 3D view',
@@ -356,8 +364,9 @@ var JE={
 '左の監査パネルで内容を確認してください。':'Check the details in the audit panel on the left.',
 '監査にNG（極性・接続・短絡）があります。はんだ付け前に左の監査パネルで直してください。':'The audit has NG (polarity / connections / shorts). Fix it in the audit panel before soldering.',
 '監査を確認':'Check the audit','監査を確認（赤いNGが無ければOK）':'Check the audit (OK if there are no red NG items)','。 ':'. ',
-'✓ 組んで大丈夫です（赤いNGなし）':'✓ Safe to solder (no red NG)','✗ 先に直してください（NG {0}件）':'✗ Fix these first (NG {0})','重なりなし':'no overlap','△ 指摘は配線長のみ（既知の許容範囲）。組んで大丈夫です':'△ Only a wire-length note (known acceptable margin) — safe to solder',
+'✓ 組んで大丈夫です（赤いNGなし・実物で極性/向きは要確認）':'✓ No blocking issues found (verify polarity/orientation on the real board)','✗ 先に直してください（NG {0}件）':'✗ Fix these first (NG {0})','重なりなし':'no overlap','△ 指摘は配線長のみ（既知の許容範囲）。組んで大丈夫です':'△ Only a wire-length note (known acceptable margin) — safe to solder',
 '△ 配線長に加えて他に{0}件の注意点があります。下の詳細を確認のうえ、組んで大丈夫です':'△ Besides wire length, there are {0} more notes below — check them, then it is safe to solder','△ 配線長のみ（許容範囲）':'△ Wire length only (acceptable margin)',
+'部品がありません。左の「部品を追加」から始めてください。':'No parts yet. Start from "Add part" on the left.',
 '編集ツール（上級者向け）':'Editor tools (advanced)','初めての方は「作業ガイド」だけでOK。ここは手動で図を編集する人向けです。':'New here? The Work guide is all you need — this is for manually editing the diagram.',
 '？はじめに':'? Intro','このツールの説明をもう一度見る':'See the tool intro again','▶ 盤面で光っている穴がこの手順の場所です':'▶ The glowing holes on the board are where this step goes',
 '部品数':'Parts','ブリッジ数':'Bridges','被覆線数':'Jumpers',
@@ -425,7 +434,7 @@ var probeA=null,probeRes=null;
 var DIFF={on:false,base:null,name:''};
 var HINT={move:'部品も端子も同じ操作でドラッグ移動（モード切替なし）。クリックで選択／Shift＋クリックで複数選択／空きをドラッグで範囲選択／選択をドラッグでまとめて移動。L＝ロック、Del＝削除、Esc＝解除。',end:'リング＝被覆線の挿し穴。ドラッグで隣の空き穴へ（ブリッジ自動追従）。足の上に置くと直付け。',part:'本体や足をドラッグ。足ドラッグ中は置ける穴が緑に光ります。クリック選択→ロック切替。',bridge:'隣接2穴をドラッグでブリッジ追加。既存の線をクリックで削除。',block:'使えない穴をクリックで×指定／解除。再計算が避けます。',probe:'2つの穴を順にクリック → 計画上の導通/非導通と接続グループを表示。実機のテスター当てと突き合わせる。',cut:'ストリップ基板用: ストリップ上の隣接2穴の間をクリックで track cut を追加/削除。異ネットが同ストリップに乗る短絡を切って分離する。'};
 var LY={parts:true,labels:true,wires:true,bridges:true,ends:true,caut:true,blocked:true,foot:false};
-var undoStack=[];
+var undoStack=[],redoStack=[];
 var svg=document.getElementById('pw-svg');
 function key(p){return p[0]+','+p[1];}
 function xy(c,r){return[OX+(MIRROR?cols-c:c-1)*PITCH,OY+(r-1)*PITCH];}
@@ -788,11 +797,13 @@ if(fixes.length)rows.push('<div class="aud-row aud-fixes"><span class="aud-k">'+
 var h=noteLine+rows.join('');
 try{var ed=document.getElementById('eedump');if(ed)ed.textContent=JSON.stringify({wireLength:GEE.wireLength,decoupling:GEE.decoupling,padJoints:GEE.padJoints,bodyOverlaps:GEE.bodyOverlaps,grounding:topo.grounding,openNets:erc.openNets,singleLeadNets:erc.singleLeadNets,unconnectedLeads:erc.unconnectedLeads,duplicateIds:erc.duplicateIds,unclassifiedNets:erc.unclassifiedNets,polarity:erc.polarity,powerReach:erc.powerReach,floatingPowerPins:erc.floatingPowerPins,multipleDrivers:erc.multipleDrivers,undrivenNets:erc.undrivenNets,stripShorts:erc.stripShorts,resistorPower:erc.resistorPower,decouplingValueWarn:erc.decouplingValueWarn,pinConflicts:erc.pinConflicts,netMerge:erc.netMerge,bridgeDangle:erc.bridgeDangle,fabReady:ngs===0});}catch(e){}
 var el=document.getElementById('audit');var ast=auditState();/* #eedump was just written above; classify hard vs the accepted soft wire-length margin so the verdict matches the guide */
-var vOK='<div class="vd vok">'+tr('✓ 組んで大丈夫です（赤いNGなし）')+'</div>',vNG='<div class="vd vng">'+trf('✗ 先に直してください（NG {0}件）',ngsHard||ngs)+'</div>';
+var vOK='<div class="vd vok">'+tr('✓ 組んで大丈夫です（赤いNGなし・実物で極性/向きは要確認）')+'</div>',vNG='<div class="vd vng">'+trf('✗ 先に直してください（NG {0}件）',ngsHard||ngs)+'</div>';
 /* otherWarn = 他に表示中の warn 項目（ERC=eb・還流トポロジ・レイアウト品質）の件数。soft(配線長のみ)判定でも
    これらが非ゼロなら「指摘は配線長のみ」は事実と食い違う（監査で発見された矛盾）ので文言を動的に切替える。 */
 var otherWarn=eb.length+topo.grounding.filter(function(gr){return gr.daisyReturn;}).length+(_ci?1:0);
-var vd=ast.fabReady?vOK:ast.hard?vNG:ast.soft?(otherWarn?'<div class="vd vwr">'+trf('△ 配線長に加えて他に{0}件の注意点があります。下の詳細を確認のうえ、組んで大丈夫です',otherWarn)+'</div>':'<div class="vd vwr">'+tr('△ 指摘は配線長のみ（既知の許容範囲）。組んで大丈夫です')+'</div>'):(ngs?vNG:vOK);
+/* 部品ゼロの盤面は eedump.fabReady（parity対象・不変）上は「NGなし」で真だが、検証対象が無いだけの空虚な真＝合格バナーは出さない */
+var vd=(!D.parts.length)?'<div class="vd vinfo">'+tr('部品がありません。左の「部品を追加」から始めてください。')+'</div>'
+:ast.fabReady?vOK:ast.hard?vNG:ast.soft?(otherWarn?'<div class="vd vwr">'+trf('△ 配線長に加えて他に{0}件の注意点があります。下の詳細を確認のうえ、組んで大丈夫です',otherWarn)+'</div>':'<div class="vd vwr">'+tr('△ 指摘は配線長のみ（既知の許容範囲）。組んで大丈夫です')+'</div>'):(ngs?vNG:vOK);
 el.innerHTML=vd+h;
 el.querySelectorAll('button[data-fixpwr]').forEach(function(b){b.onclick=function(){
 addExtTerminal(decodeURIComponent(b.getAttribute('data-fixpwr')));};});
@@ -802,6 +813,7 @@ function jointMap(){var joints={};D.padBridges.forEach(function(b){[b[0],b[1]].f
 D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct&&e.bridgeTo)joints[key(e.bridgeTo)]=(joints[key(e.bridgeTo)]||0)+1;});});return joints;}
 var NS='http://www.w3.org/2000/svg';
 function E(t,a){var n=document.createElementNS(NS,t);for(var k in a)n.setAttribute(k,a[k]);svg.appendChild(n);return n;}
+function withTitle(n,t){var ti=document.createElementNS(NS,'title');ti.textContent=t;n.appendChild(ti);return n;}
 function T(x,y,s,a){var b={x:x,y:y,'font-size':11,'font-family':'Segoe UI,sans-serif','paint-order':'stroke',stroke:'rgba(0,0,0,0.55)','stroke-width':'2',fill:'#fff'};for(var k in (a||{}))b[k]=a[k];var n=E('text',b);n.textContent=s;return n;}
 /* 外部接続（基板の外へ出る W.* 端子）を「どこから・何に・どう」分かるように描く。
    内部の足は丸ドット、外部端子は角タグ＋最寄りの基板端へ向かう矢印＋役割ラベル。 */
@@ -895,7 +907,7 @@ if(horiz){bx=mnx-8;bw=mxx-mnx+16;var _cr=mxy-mny;if(_cr<22){by=mny-11;bh=22;}els
 p._body=[bx,by,bw,bh];p._seg=null;
 E('rect',{x:bx,y:by,width:bw,height:bh,rx:4,fill:'#16181c',opacity:0.92,stroke:inSel(p)?'#5edcff':'#000','stroke-width':inSel(p)?2.5:1});
 if(_pk[0]){var p1v=xy(p.pins[_pk[0]][0],p.pins[_pk[0]][1]);E('circle',{cx:p1v[0],cy:p1v[1],r:3.2,fill:'#ff5d5d',stroke:'#fff','stroke-width':0.8,'pointer-events':'none'});}/* pin-1 orientation marker */
-if(p.locked)E('rect',{x:bx+3,y:by+3,width:8,height:8,rx:2,fill:'#fff',stroke:'#333'});
+if(p.locked)withTitle(E('rect',{x:bx+3,y:by+3,width:8,height:8,rx:2,fill:'#fff',stroke:'#333'}),tr('ロック中: 自動再配置の対象外（人/AIが位置を確定済み）'));
 if(LY.labels){T(bx+bw/2-9,by+bh/2+4,p.label,{'font-size':12});
 Object.keys(p.pins).forEach(function(k){var q=p.pins[k],v=xy(q[0],q[1]);T(v[0]+(horiz?-3:(v[0]<(mnx+mxx)/2?-15:9)),v[1]+(horiz?(v[1]>by?15:-8):4),k,{'font-size':10,fill:'#ffd24d'});});}
 }else{var a=xy(p.leads[0][0],p.leads[0][1]),b=xy(p.leads[1][0],p.leads[1][1]),mx2=(a[0]+b[0])/2,my2=(a[1]+b[1])/2;
@@ -914,7 +926,7 @@ else{var rw=gpx(PB.bodyLen||6.5),rh=gpx(PB.bodyWid||2.5);E('rect',{x:mx2-rw/2,y:
 if(p.kind==='disc'){var dr=gpx(PB.bodyLen||5)/2;E('ellipse',{cx:mx2,cy:my2,rx:dr,ry:Math.max(gpx(PB.bodyWid||2.5)/2,dr*0.62),fill:'#b5651d',stroke:'#7e4612',opacity:0.97});T(mx2-3,my2+4,'C',{'font-size':9,'font-weight':'700'});}
 if(p.kind==='elec'){var er=Math.max(8,gpx(PB.dia||6.5)/2);E('circle',{cx:mx2,cy:my2,r:er,fill:'#101418',stroke:'#000',opacity:0.97});T(mx2-3,my2+4,'E',{'font-size':9,'font-weight':'700'});var pls=(p.plus===1?b:a);T(pls[0]-4,pls[1]-8,'+',{fill:'#ff7b7b','font-size':12});}
 if(inSel(p))E('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'#5edcff','stroke-width':2,'stroke-dasharray':'4 3'});
-if(p.locked)E('rect',{x:mx2-4,y:my2-16,width:8,height:8,rx:2,fill:'#fff',stroke:'#333'});
+if(p.locked)withTitle(E('rect',{x:mx2-4,y:my2-16,width:8,height:8,rx:2,fill:'#fff',stroke:'#333'}),tr('ロック中: 自動再配置の対象外（人/AIが位置を確定済み）'));
 if(LY.labels)T(mx2-16,my2-12,p.label+(standing?tr('(縦)'):''),{'font-size':10});}});
 if(LY.foot||tempFoot)D.parts.forEach(function(p){if(p.kind!=='ic')bodyOutline(p);});
 var _allow=singleLeadAllowSet();
@@ -961,7 +973,7 @@ if(selPart!==palLast){palLast=selPart;buildPalEdit();}
 saveLS();}
 function loadProp(i){if(GUIDE.on)guideEnd();if(DIFF.on){DIFF.on=false;DIFF.base=null;var db=document.getElementById('pw-diff');if(db)db.textContent=tr('比較');}curI=i;if(!props[i].cur)props[i].cur=deep(props[i].orig);D=props[i].cur;D.blockedHoles=D.blockedHoles||[];ISOREV++;
 if(D.parts)D.parts=D.parts.filter(function(p){return p.kind==='ic'?(p.pins&&typeof p.pins==='object'&&Object.keys(p.pins).length):(Array.isArray(p.leads)&&p.leads.length>=2);});
-cols=D.grid.cols;rows=D.grid.rows;selPart=null;selSet=[];syncSelBar();drag=null;hoverNet=null;calcNote='';if(!D.wires||!D.wires.length){try{connect();calcNote=tr('自動結線: 空の配線を補完（被覆線')+' '+D.wires.length+tr('本）');}catch(e){}}buildNetClasses();buildLegend();updatePropHint();render();}
+cols=D.grid.cols;rows=D.grid.rows;selPart=null;selSet=[];syncSelBar();drag=null;hoverNet=null;calcNote='';if(!D.wires||!D.wires.length){try{connect();calcNote=tr('自動結線: 空の配線を補完（被覆線')+' '+D.wires.length+tr('本）');}catch(e){}}buildNetClasses();buildLegend();updatePropHint();updateUndoRedoButtons();render();}
 function getPt(e){var r=svg.getBoundingClientRect(),sx=(svg.width.baseVal.value||r.width)/r.width;return[(e.clientX-r.left)*sx,(e.clientY-r.top)*sx];}
 function nearHole(x,y){var ci=Math.round((x-OX)/PITCH),c=MIRROR?cols-ci:ci+1,r=Math.round((y-OY)/PITCH)+1;if(!inb(c,r))return null;var p=xy(c,r);return Math.hypot(x-p[0],y-p[1])<PITCH*0.5?[c,r]:null;}
 function segd(px,py,ax,ay,bx,by){var dx=bx-ax,dy=by-ay,L=dx*dx+dy*dy,t=L?((px-ax)*dx+(py-ay)*dy)/L:0;t=Math.max(0,Math.min(1,t));return Math.hypot(px-(ax+dx*t),py-(ay+dy*t));}
@@ -971,16 +983,23 @@ if(e.bridgeTo&&adj(e.hole,e.bridgeTo)){for(i=0;i<ns.length;i++)if(ns[i][0]===e.b
 if(!ok){var best=null;ns.forEach(function(n){if(adj(e.hole,n)){var d2=Math.hypot(n[0]-e.pad[0],n[1]-e.pad[1]);if(!best||d2<best[0])best=[d2,n];}});e.bridgeTo=best?deep(best[1]):null;}}
 function afterMove(p){var names={};partLeads(p).forEach(function(L){names[L.name]=L.pos;if(D.leads[L.name])D.leads[L.name].at=deep(L.pos);});
 D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(names[e.tap])e.pad=deep(names[e.tap]);revalidate(e,w);});});}
-function snap(){undoStack.push({i:curI,s:deep(D)});if(undoStack.length>40)undoStack.shift();ISOREV++;
-if(props[curI])props[curI].edited=true;updatePropHint();}
-function undo(){var u=undoStack.pop();if(!u)return;curI=u.i;props[curI].cur=u.s;document.getElementById('pw-prop').value=curI;loadProp(curI);auditNow();}
+function snap(){undoStack.push({i:curI,s:deep(D)});if(undoStack.length>40)undoStack.shift();redoStack.length=0;ISOREV++;
+if(props[curI])props[curI].edited=true;updatePropHint();updateUndoRedoButtons();}
+function updateUndoRedoButtons(){var ub=document.getElementById('pw-undo'),rb=document.getElementById('pw-redo');
+if(ub)ub.disabled=!undoStack.length;if(rb)rb.disabled=!redoStack.length;}
+function undo(){var u=undoStack.pop();if(!u){showHelp(tr('戻す操作はありません。'));return;}
+redoStack.push({i:curI,s:deep(D)});curI=u.i;props[curI].cur=u.s;document.getElementById('pw-prop').value=curI;loadProp(curI);auditNow();
+showHelp(tr('元に戻しました。'));}
+function redo(){var u=redoStack.pop();if(!u){showHelp(tr('やり直す操作はありません。'));return;}
+undoStack.push({i:curI,s:deep(D)});if(undoStack.length>40)undoStack.shift();curI=u.i;props[curI].cur=u.s;document.getElementById('pw-prop').value=curI;loadProp(curI);auditNow();
+showHelp(tr('やり直しました。'));}
 /* === 選択駆動の直接操作モデル（モードレス「移動」の中核） ===
    selSet = 選択中の部品。単一/複数を統一。盤上アクションバー＋キー(L=ロック, Del=削除, Esc=解除)で操作＝左パネル不要。 */
 function inSel(p){return selSet.indexOf(p)>=0;}
 function selOne(p){selSet=p?[p]:[];selPart=p||null;syncSelBar();}
 function selToggle(p){var i=selSet.indexOf(p);if(i<0)selSet.push(p);else selSet.splice(i,1);selPart=selSet.length?selSet[selSet.length-1]:null;syncSelBar();}
 function selClear(){selSet=[];selPart=null;syncSelBar();}
-function lockSel(){if(!selSet.length)return;snap();var anyU=selSet.some(function(p){return !p.locked;});selSet.forEach(function(p){p.locked=anyU;});render();}
+function lockSel(){if(!selSet.length)return;snap();var anyU=selSet.some(function(p){return !p.locked;});selSet.forEach(function(p){p.locked=anyU;});buildLegend();render();}
 function delSel(){if(!selSet.length)return;snap();selSet.slice().forEach(function(p){var names={};partLeads(p).forEach(function(L){names[L.name]=1;});D.parts=D.parts.filter(function(q){return q!==p;});Object.keys(names).forEach(function(n){delete D.leads[n];});D.wires=D.wires.filter(function(w){return !names[w.a.tap]&&!names[w.b.tap];});});selClear();buildNetClasses();buildLegend();render();auditNow();}
 function groupMoveDrag(pt){var parts=selSet.filter(function(p){return !p.locked;});return {t:'gmove',parts:parts,g0:[(pt[0]-OX)/PITCH+1,(pt[1]-OY)/PITCH+1],orig:parts.map(function(p){return partLeads(p).map(function(L){return deep(L.pos);});})};}
 function syncSelBar(){var bar=document.getElementById('sel-bar');if(!bar)return;
@@ -1150,7 +1169,10 @@ document.getElementById('pw-rename').onclick=renameProp;
 document.getElementById('pw-delprop').onclick=delProp;
 function setMode(m){if(ISO.on&&m!=='move')setIso(false);mode=m;['move','bridge','block','probe','cut'].forEach(function(k){document.getElementById('m-'+k).className=(k===m)?'on':'';});
 if(m!=='probe'){probeA=null;probeRes=null;}
-document.getElementById('modehint').textContent=tr(HINT[m]);render();}
+document.getElementById('modehint').textContent=tr(HINT[m]);
+var mb=document.getElementById('st-mode');if(mb)mb.textContent=tr('モード')+': '+document.getElementById('m-'+m).textContent;
+svg.setAttribute('class','mode-'+m);
+render();}
 document.getElementById('m-move').onclick=function(){setMode('move');};
 document.getElementById('m-bridge').onclick=function(){setMode('bridge');};
 document.getElementById('m-block').onclick=function(){setMode('block');};
@@ -1160,12 +1182,15 @@ document.getElementById('pw-lock').onclick=lockSel;
 document.getElementById('pw-reset').onclick=function(){snap();props[curI].cur=deep(props[curI].orig);props[curI].edited=false;updatePropHint();loadProp(curI);auditNow();};
 document.getElementById('pw-prop').onchange=function(){loadProp(parseInt(this.value,10));auditNow();};
 document.getElementById('pw-undo').onclick=undo;
+document.getElementById('pw-redo').onclick=redo;
 document.getElementById('pw-diff').onclick=function(){if(DIFF.on)diffEnd();else diffStart(props[curI].orig,tr('編集前'));};
 function doRewire(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-rewire');snap();var wb=D.wires.length;connect();
 calcNote=tr('配線再計算: 被覆線')+' '+wb+'→'+D.wires.length+tr('本');render();auditNow();
 b.textContent=tr('✓ 完了');setTimeout(function(){b.textContent=tr('配線を再計算');},900);}
-function doPropose(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-repropose');snap();
-proposeAsync(function(){render();auditNow();b.textContent=tr('✓ 完了');setTimeout(function(){b.textContent=tr('配置を再提案');},900);});}
+function doPropose(){if(GUIDE.on)guideEnd();var b=document.getElementById('pw-repropose');
+var lockedN=D.parts.filter(function(p){return p.locked;}).length;snap();
+proposeAsync(function(){render();auditNow();b.textContent=tr('✓ 完了');setTimeout(function(){b.textContent=tr('配置を再提案');},900);
+if(lockedN)showHelp(trf('配置を再提案しました。ロック済み {0} 個は動かしていません。',lockedN));});}
 function resolveGuardNet(hiz){for(var i=0;i<D.parts.length;i++){var p=D.parts[i];if(p.kind!=='ic')continue;var pt=(p.pinTypes&&typeof p.pinTypes==='object')?p.pinTypes:{},pins=p.pins||{};
 var hasIn=Object.keys(pins).some(function(pin){return D.leads[p.id+'.'+pin]&&D.leads[p.id+'.'+pin].net===hiz&&pt[pin]==='in';});
 if(hasIn){var outs=Object.keys(pins).filter(function(pin){return pt[pin]==='out';});if(outs.length&&D.leads[p.id+'.'+outs[0]])return D.leads[p.id+'.'+outs[0]].net;}}return null;}
@@ -1377,6 +1402,11 @@ dd.textContent=(dl.dim?dl.dim+' ':'')+(dl.rng?'· '+tr('スパン')+' '+dl.rng+'
 info.appendChild(nm);info.appendChild(rf);info.appendChild(dd);row.appendChild(sw);row.appendChild(info);
 row.onclick=function(){selOne(ps[0]);render();};
 box.appendChild(row);});
+if(D.parts.some(function(p){return p.locked;})){var lrow=document.createElement('div');
+lrow.style.cssText='display:flex;align-items:center;gap:8px;margin:4px 0;font-size:11px;color:var(--mut)';
+lrow.title=tr('この印が付いた部品は「配置を再提案」で動きません（人/AIが位置を確定済み）。クリックで選択→ロック切替で解除できます。');
+lrow.innerHTML='<span style="flex:none;width:11px;height:11px;border-radius:2px;border:1px solid #333;background:#fff"></span><span>'+tr('□ ロック中の部品')+'</span>';
+box.appendChild(lrow);}
 var conns=extConns();
 if(conns.length){var eh=document.createElement('div');eh.style.cssText='font-weight:600;font-size:11.5px;margin:9px 0 3px';eh.textContent=tr('外部接続（基板の外へ）');box.appendChild(eh);
 conns.forEach(function(cn){var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:7px;margin:3px 0;font-size:11px;cursor:pointer;border-radius:6px;padding:1px 3px';
@@ -1685,6 +1715,7 @@ var CMDS=[
 {n:'ガードリング生成（高Z）',k:'guard ring synth high-z shield',f:guardSynth},
 {n:'案として保存',k:'save proposal',f:function(){document.getElementById('pw-saveas').click();}},
 {n:'元に戻す',k:'undo',f:undo},
+{n:'やり直す',k:'redo',f:redo},
 {n:'書き出し（JSON）',k:'export download',f:function(){document.getElementById('pw-export').click();}},
 {n:'URL共有（圧縮リンク生成）',k:'share url link',f:shareURL},
 {n:'印刷（1:1原寸 — 実基板に重ねて検品。裏面は「裏面」ONで）',k:'print scale paper',f:function(){printView();}},
@@ -1744,7 +1775,8 @@ if(GUIDE.on){if(e.key==='ArrowRight'){e.preventDefault();GUIDE.i=Math.min(GUIDE.
 if(e.key==='ArrowLeft'){e.preventDefault();GUIDE.i=Math.max(0,GUIDE.i-1);guideShow();return;}
 if(e.key==='Enter'||e.key===' '){e.preventDefault();gDone();return;}
 if(e.key==='Escape'){guideEnd();return;}}
-if(e.ctrlKey&&e.key.toLowerCase()==='z'){e.preventDefault();undo();return;}
+if(e.ctrlKey&&e.key.toLowerCase()==='z'&&!e.shiftKey){e.preventDefault();undo();return;}
+if((e.ctrlKey&&e.key.toLowerCase()==='y')||(e.ctrlKey&&e.shiftKey&&e.key.toLowerCase()==='z')){e.preventDefault();redo();return;}
 CMDS.forEach(function(c){if(c.key===e.key)c.f();});
 if(ISO.on){if(e.key==='Escape'){selClear();render();}return;}/* 閲覧専用: ロック/削除キーは無効（Esc=選択解除・Ctrl+Zは上のundoで既に許可済み） */
 if(e.key.toLowerCase()==='l'){e.preventDefault();lockSel();}
