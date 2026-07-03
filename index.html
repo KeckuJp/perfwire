@@ -834,6 +834,9 @@ D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct&&e.bridge
 var NS='http://www.w3.org/2000/svg';
 function E(t,a){var n=document.createElementNS(NS,t);for(var k in a)n.setAttribute(k,a[k]);svg.appendChild(n);return n;}
 function withTitle(n,t){var ti=document.createElementNS(NS,'title');ti.textContent=t;n.appendChild(ti);return n;}
+function relLum(hex){var m=/^#([0-9a-f]{6})$/i.exec(hex||'');if(!m)return 1;var n=parseInt(m[1],16),r=(n>>16&255)/255,g=(n>>8&255)/255,b=(n&255)/255;
+function lin(c){return c<=0.03928?c/12.92:Math.pow((c+0.055)/1.055,2.4);}
+return 0.2126*lin(r)+0.7152*lin(g)+0.0722*lin(b);}
 function T(x,y,s,a){var b={x:x,y:y,'font-size':11,'font-family':'Segoe UI,sans-serif','paint-order':'stroke',stroke:'rgba(0,0,0,0.55)','stroke-width':'2',fill:'#fff'};for(var k in (a||{}))b[k]=a[k];var n=E('text',b);n.textContent=s;return n;}
 /* 外部接続（基板の外へ出る W.* 端子）を「どこから・何に・どう」分かるように描く。
    内部の足は丸ドット、外部端子は角タグ＋最寄りの基板端へ向かう矢印＋役割ラベル。 */
@@ -910,14 +913,15 @@ for(r=1;r<=rows;r++)T(OX-38,xy(1,r)[1]+4,String.fromCharCode(64+r),{fill:'#7e8a9
 for(c=1;c<=cols;c++)for(r=1;r<=rows;r++){var h=xy(c,r);E('circle',{cx:h[0],cy:h[1],r:Math.max(3,PITCH*0.13),fill:'#c8d2c8',stroke:'#6e826e','stroke-width':1});}
 if(LY.blocked)D.blockedHoles.forEach(function(b){var v=xy(b[0],b[1]);E('rect',{x:v[0]-7,y:v[1]-7,width:14,height:14,rx:3,fill:'#222',opacity:0.92,stroke:'#555'});T(v[0]-4,v[1]+4,'×',{'font-size':11,stroke:'none'});});
 var lm=leadMap(),warn=0;
+/* 部品/ピンラベルはパッド円(下記lm描画)より後に描くと54-59%が円に潰れて読めなくなる（描画順の問題、実測済み）。
+   ここではT()の代わりにキューへ積み、パッド描画の直後にまとめて描くことでラベルを常に最前面にする。 */
+var _labelQ=[];function TQ(x,y,s,a){_labelQ.push([x,y,s,a]);}
 var dimW=function(net){return hoverNet&&net!==hoverNet?0.10:0.95;};
 var widW=function(net){return hoverNet&&net===hoverNet?4.2:2.6;};
 if(LY.bridges)D.padBridges.forEach(function(b){var a=xy(b[0][0],b[0][1]),q=xy(b[1][0],b[1][1]);E('line',{x1:a[0],y1:a[1],x2:q[0],y2:q[1],stroke:'#0a3a1e','stroke-width':7,'stroke-linecap':'round',opacity:hoverNet?0.35:1});b._px=[a,q];});
 D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)return;var hp=xy(e.hole[0],e.hole[1]);
 if(e.bridgeTo&&adj(e.hole,e.bridgeTo)){if(LY.bridges){var bp=xy(e.bridgeTo[0],e.bridgeTo[1]);E('line',{x1:hp[0],y1:hp[1],x2:bp[0],y2:bp[1],stroke:'#0a3a1e','stroke-width':6,'stroke-linecap':'round',opacity:hoverNet&&w.net!==hoverNet?0.25:1});}}
 else{warn++;if(LY.bridges){var pp=xy(e.pad[0],e.pad[1]);E('line',{x1:hp[0],y1:hp[1],x2:pp[0],y2:pp[1],stroke:'#ff5d5d','stroke-width':3,'stroke-dasharray':'4 3'});}}});});
-if(LY.wires)D.wires.forEach(function(w){var col=D.netColors[w.net]||'#999';var pa=w.a.direct?xy(w.a.pad[0],w.a.pad[1]):xy(w.a.hole[0],w.a.hole[1]);var pb=w.b.direct?xy(w.b.pad[0],w.b.pad[1]):xy(w.b.hole[0],w.b.hole[1]);
-E('path',{d:'M'+pa[0]+','+pa[1]+' Q'+((pa[0]+pb[0])/2)+','+((pa[1]+pb[1])/2-14)+' '+pb[0]+','+pb[1],stroke:col,'stroke-width':widW(w.net),fill:'none',opacity:dimW(w.net)});});
 if(LY.parts)D.parts.forEach(function(p){
 if(p.kind==='ic'){var _pk=Object.keys(p.pins);var horiz=_pk.length>1?p.pins[_pk[0]][1]===p.pins[_pk[1]][1]:true;
 var ps=Object.keys(p.pins).map(function(k){return p.pins[k];}),mnx=1e9,mxx=-1e9,mny=1e9,mxy=-1e9;
@@ -928,8 +932,8 @@ p._body=[bx,by,bw,bh];p._seg=null;
 E('rect',{x:bx,y:by,width:bw,height:bh,rx:4,fill:'#16181c',opacity:0.92,stroke:inSel(p)?'#5edcff':'#000','stroke-width':inSel(p)?2.5:1});
 if(_pk[0]){var p1v=xy(p.pins[_pk[0]][0],p.pins[_pk[0]][1]);E('circle',{cx:p1v[0],cy:p1v[1],r:3.2,fill:'#ff5d5d',stroke:'#fff','stroke-width':0.8,'pointer-events':'none'});}/* pin-1 orientation marker */
 if(p.locked)withTitle(E('rect',{x:bx+3,y:by+3,width:8,height:8,rx:2,fill:'#fff',stroke:'#333'}),tr('ロック中: 自動再配置の対象外（人/AIが位置を確定済み）'));
-if(LY.labels){T(bx+bw/2-9,by+bh/2+4,p.label,{'font-size':12});
-Object.keys(p.pins).forEach(function(k){var q=p.pins[k],v=xy(q[0],q[1]);T(v[0]+(horiz?-3:(v[0]<(mnx+mxx)/2?-15:9)),v[1]+(horiz?(v[1]>by?15:-8):4),k,{'font-size':10,fill:'#ffd24d'});});}
+if(LY.labels){TQ(bx+bw/2-9,by+bh/2+4,p.label,{'font-size':12});
+Object.keys(p.pins).forEach(function(k){var q=p.pins[k],v=xy(q[0],q[1]);TQ(v[0]+(horiz?-3:(v[0]<(mnx+mxx)/2?-15:9)),v[1]+(horiz?(v[1]>by?15:-8):4),k,{'font-size':10,fill:'#ffd24d'});});}
 }else{var a=xy(p.leads[0][0],p.leads[0][1]),b=xy(p.leads[1][0],p.leads[1][1]),mx2=(a[0]+b[0])/2,my2=(a[1]+b[1])/2;
 p._seg=[a,b];p._body=null;
 var standing=!!p.standing||(p.kind==='r'&&dist(p.leads[0],p.leads[1])<2.05);
@@ -947,13 +951,20 @@ if(p.kind==='disc'){var dr=gpx(PB.bodyLen||5)/2;E('ellipse',{cx:mx2,cy:my2,rx:dr
 if(p.kind==='elec'){var er=Math.max(8,gpx(PB.dia||6.5)/2);E('circle',{cx:mx2,cy:my2,r:er,fill:'#101418',stroke:'#000',opacity:0.97});T(mx2-3,my2+4,'E',{'font-size':9,'font-weight':'700'});var pls=(p.plus===1?b:a);T(pls[0]-4,pls[1]-8,'+',{fill:'#ff7b7b','font-size':12});}
 if(inSel(p))E('line',{x1:a[0],y1:a[1],x2:b[0],y2:b[1],stroke:'#5edcff','stroke-width':2,'stroke-dasharray':'4 3'});
 if(p.locked)withTitle(E('rect',{x:mx2-4,y:my2-16,width:8,height:8,rx:2,fill:'#fff',stroke:'#333'}),tr('ロック中: 自動再配置の対象外（人/AIが位置を確定済み）'));
-if(LY.labels)T(mx2-16,my2-12,p.label+(standing?tr('(縦)'):''),{'font-size':10});}});
+if(LY.labels)TQ(mx2-16,my2-12,p.label+(standing?tr('(縦)'):''),{'font-size':10});}});
+/* 配線をIC矩形(opacity .92)より後に描く＝部品の下を通る配線が隠れない（描画順の問題、実測済み）。
+   GND等の暗色ネット(#111111は相対輝度0.006)は基板の暗い背景に実質溶け込む＝明色ハローを下敷きに1本追加（配置・色割当は不変）。 */
+if(LY.wires)D.wires.forEach(function(w){var col=D.netColors[w.net]||'#999';var pa=w.a.direct?xy(w.a.pad[0],w.a.pad[1]):xy(w.a.hole[0],w.a.hole[1]);var pb=w.b.direct?xy(w.b.pad[0],w.b.pad[1]):xy(w.b.hole[0],w.b.hole[1]);
+var dpath='M'+pa[0]+','+pa[1]+' Q'+((pa[0]+pb[0])/2)+','+((pa[1]+pb[1])/2-14)+' '+pb[0]+','+pb[1];
+if(relLum(col)<0.06)E('path',{d:dpath,stroke:'#fff','stroke-width':widW(w.net)+2.4,fill:'none',opacity:dimW(w.net)*0.6,'stroke-linecap':'round'});
+E('path',{d:dpath,stroke:col,'stroke-width':widW(w.net),fill:'none',opacity:dimW(w.net)});});
 if(LY.foot||tempFoot)D.parts.forEach(function(p){if(p.kind!=='ic')bodyOutline(p);});
 var _allow=singleLeadAllowSet();
 Object.keys(lm).forEach(function(k){var o=lm[k],pos=k.split(',').map(Number),v=xy(pos[0],pos[1]),col=D.netColors[o.net]||'#999',dim=hoverNet&&o.net!==hoverNet?0.25:1;
 if(o.part===null){drawExtTerminal(v,col,dim,false,o.name.replace('W.',''));}
 else{E('circle',{cx:v[0],cy:v[1],r:4,fill:col,stroke:'#fff','stroke-width':1,opacity:dim});
 if(_allow[o.net])drawExtTerminal(v,col,dim,true,o.net);}});/* 許可リストの I/O 足（[client-hardware]スピーカー/マイク等）にも外向き矢印を付与 */
+_labelQ.forEach(function(a){T(a[0],a[1],a[2],a[3]);});
 if(LY.caut){var hn={};Object.keys(lm).forEach(function(k){hn[k]=lm[k].net;});D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});
 Object.keys(hn).forEach(function(kk){var p2=kk.split(',').map(Number);[[1,0],[0,1]].forEach(function(d){var q=key([p2[0]+d[0],p2[1]+d[1]]);if(hn[q]&&hn[q]!==hn[kk]){var a=xy(p2[0],p2[1]),b=xy(p2[0]+d[0],p2[1]+d[1]);T((a[0]+b[0])/2-4,(a[1]+b[1])/2+4,'×',{fill:'#ff5d5d','font-size':12,stroke:'none'});}});});}
 if(LY.ends)D.wires.forEach(function(w){var col=D.netColors[w.net]||'#999';[w.a,w.b].forEach(function(e){var v=e.direct?xy(e.pad[0],e.pad[1]):xy(e.hole[0],e.hole[1]);
