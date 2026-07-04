@@ -451,8 +451,10 @@ var GUIDE={on:false,steps:[],i:0,done:{}};
 var MIRROR=false;
 /* === 3Dビュー(等角/isometric)状態。§設計は index.html 内 renderIso() 一式のコメントを参照。
    ISOREV = 「D の中身が変わった」の代理カウンタ（snap/undo/importObj/loadPropでbump）。
-   選択/ホバーだけの変化ではbumpしない＝isoの部品リスト再構築をrender()毎でなく内容変化時だけに絞る。 */
+   選択/ホバーだけの変化ではbumpしない＝isoの部品リスト再構築をrender()毎でなく内容変化時だけに絞る。
+   bakeRefOX/OY = 直近のベイク時点のパンオフセット（Tier0バグ修正。isoCompose()参照）。 */
 var ISO={on:false,S:0,ox:0,oy:0,bake:null,bakeKey:'',bakeCssW:0,bakeCssH:0,bakeAtOX:0,bakeAtOY:0,
+         bakeRefOX:0,bakeRefOY:0,
          list:null,listKey:'',listRev:-1,pan0:null,moved:false};
 var ISOREV=0,isoCv=null,isoCtx=null,DPR=window.devicePixelRatio||1;
 var probeA=null,probeRes=null;
@@ -2006,17 +2008,29 @@ function makeK(){return{S:ISO.S,proj:iproj,labels:LY.labels,
   ctx.fillStyle=fill||'#fff';ctx.fillText(s,x,y);}};}
 
 /* --- canvas 準備・fit ------------------------------------------------- */
+function isoPanEnd(){/* pointerup/pointercancel共通のパン終了処理。パンが実際に起きていた場合のみ
+  1回だけ強制再ベイクして参照位置(bakeRefOX/OY)をリフレッシュ＝差分描画の蓄積によるボケ/ズレを解消。
+  ドラッグ中は再ベイクしない(isoEnsureBakeのckがox/oy非依存)ので性能への影響は無い。
+  pointercancel(まれなジェスチャ中断等)でもISO.pan0を確実にnullへ戻し、ボタン無しでパンし続ける
+  残留バグ(独立レビュー指摘)を防ぐ。isoInvalidate()はISO.movedの真偽に関わらず無条件で呼ぶ。 */
+ if(ISO.moved){ISO.bakeKey='';isoEnsureBake();}
+ ISO.pan0=null;ISO.moved=false;isoInvalidate();}
 function isoBindEvents(){
  isoCv.addEventListener('pointerdown',function(ev){
   ISO.pan0=[ev.clientX,ev.clientY,ISO.ox,ISO.oy];ISO.moved=false;try{isoCv.setPointerCapture(ev.pointerId);}catch(e){}});
  isoCv.addEventListener('pointermove',function(ev){
   if(ISO.pan0){ISO.ox=ISO.pan0[2]+(ev.clientX-ISO.pan0[0]);ISO.oy=ISO.pan0[3]+(ev.clientY-ISO.pan0[1]);
    if(Math.hypot(ev.clientX-ISO.pan0[0],ev.clientY-ISO.pan0[1])>5)ISO.moved=true;
-   isoEnsureBake();isoInvalidate();return;}
+   /* isoEnsureBake()は呼ばない: ckキー生成(blockedHoles/trackCutsのmap/join、O(n))を
+      pointermove毎に無駄実行してから早期returnするだけになり、「ドラッグ中に重い処理を
+      走らせない」制約に反する。ベイクの構造キーはox/oy非依存なのでパン中は変化せず、
+      ホイールズーム側(isoZoomStep/wheelハンドラ)のisoEnsureBake()だけで十分。 */
+   isoInvalidate();return;}
   isoHover(ev);});
- isoCv.addEventListener('pointerup',function(ev){var wasPan=ISO.moved;ISO.pan0=null;ISO.moved=false;
+ isoCv.addEventListener('pointerup',function(ev){var wasPan=ISO.moved;isoPanEnd();
   if(wasPan)return;
   isoPick(ev);});
+ isoCv.addEventListener('pointercancel',function(){isoPanEnd();});
  isoCv.addEventListener('pointerleave',function(){if(hoverNet){hoverNet=null;isoInvalidate();}});
  isoCv.addEventListener('wheel',function(e){if(!e.ctrlKey){return;}e.preventDefault();e.stopPropagation();
   var pt=isoPt(e),g=iunproj(pt[0],pt[1],0),u=MIRROR?cols-g[0]:g[0]-1,v=g[1]-1;
@@ -2055,7 +2069,7 @@ function isoBakeExtent(){var maxHz=0;D.parts.forEach(function(p){var h=isoPartHe
  var zTop=maxHz+8,corners=[iproj(1,1,0),iproj(cols,1,0),iproj(1,rows,0),iproj(cols,rows,0),
   iproj(1,1,zTop),iproj(cols,1,zTop),iproj(1,rows,zTop),iproj(cols,rows,zTop)];
  var xs=corners.map(function(p){return p[0];}),ys=corners.map(function(p){return p[1];});
- var pad=ISO.S*1.4,minX=Math.min.apply(null,xs)-pad,maxX=Math.max.apply(null,xs)+pad;
+ var pad=Math.max(ISO.S*1.4,20),minX=Math.min.apply(null,xs)-pad,maxX=Math.max.apply(null,xs)+pad;
  var minY=Math.min.apply(null,ys)-pad-26,maxY=Math.max.apply(null,ys)+pad;
  var anchor=iproj(1,1,0),tw=2*ISO.S,th=ISO.S;/* 位相合わせ: bake原点をタイル周期の整数倍だけ anchor からずらす */
  var ox=anchor[0]-tw*Math.ceil((anchor[0]-minX)/tw),oy=anchor[1]-th*Math.ceil((anchor[1]-minY)/th);
@@ -2068,8 +2082,15 @@ function isoEnsureBake(){var bt=D.grid.type||'perf';
   (D.blockedHoles||[]).map(key).join(';'),(D.trackCuts||[]).map(function(cc){return key(cc[0])+'-'+key(cc[1]);}).join(';'),
   LANG].join('|');
  if(ISO.bakeKey===ck)return;
- ISO.bakeKey=ck;var ext=isoBakeExtent();ISO.bakeAtOX=ext.ox;ISO.bakeAtOY=ext.oy;ISO.bakeCssW=ext.w;ISO.bakeCssH=ext.h;
+ ISO.bakeKey=ck;var ext=isoBakeExtent();ISO.bakeAtOX=ext.ox;ISO.bakeAtOY=ext.oy;
+ ISO.bakeRefOX=ISO.ox;ISO.bakeRefOY=ISO.oy;/* このベイクを焼いた時点のパンオフセット。isoCompose()でパン差分をベイク画像に反映させる基準点
+   （Tier0バグ修正: パン時にベイク画像だけがISO.bakeAtOX/OYの絶対位置に固定され、部品/ワイヤ側だけが動いて見えるズレを解消）。 */
  var bc=document.createElement('canvas');bc.width=Math.max(1,Math.round(ext.w*DPR));bc.height=Math.max(1,Math.round(ext.h*DPR));
+ /* 1:1サンプル保証: isoCompose()のdrawImage()に渡すCSSサイズを、丸め後のbc.width/heightから
+    逆算する(元のext.w/hをそのまま使わない)。ext.w*DPRは非整数になり得るが実バッキングは
+    Math.round()で整数device pxに丸めているため、両者がずれると drawImage が端数スケールの
+    リサンプルを行い、穴パターンなど device px 単位で作った内容がわずかにボケる(CG理論指摘)。 */
+ ISO.bakeCssW=bc.width/DPR;ISO.bakeCssH=bc.height/DPR;
  var bx=bc.getContext('2d');bx.setTransform(DPR,0,0,DPR,0,0);bx.translate(-ext.ox,-ext.oy);
  /* 基板スラブ（天面＋厚み） */
  var slabTop=[iproj(1,1,1.6),iproj(cols,1,1.6),iproj(cols,rows,1.6),iproj(1,rows,1.6)];
@@ -2090,7 +2111,11 @@ function isoEnsureBake(){var bt=D.grid.type||'perf';
  /* 穴パターン（天面のみに塗る＝天面パス再構築後にclip） */
  bx.save();bx.beginPath();bx.moveTo(slabTop[0][0],slabTop[0][1]);bx.lineTo(slabTop[1][0],slabTop[1][1]);
  bx.lineTo(slabTop[2][0],slabTop[2][1]);bx.lineTo(slabTop[3][0],slabTop[3][1]);bx.closePath();bx.clip();
- bx.fillStyle=isoHolePattern();bx.fillRect(ext.ox,ext.oy,ext.w,ext.h);
+ /* 穴パターンはタイル画像自体がdevice px設計(tw/th/rx/ryにDPRを直接掛けて作っている)なので、
+    ここだけ一時的にCTMを単位行列へ戻してdevice空間でfillする(クリップはdevice空間で既に確定済みなので
+    setTransform後も有効=維持される)。DPR scale+パン平行移動が乗ったままfillすると、パターンのタイル空間が
+    二重にDPR倍され、格子位相ずれ／ドラッグ解放時のスナップ／DPR>1での間隔・径のDPR倍、の3症状が出る。 */
+ bx.setTransform(1,0,0,1,0,0);bx.fillStyle=isoHolePattern();bx.fillRect(0,0,bc.width,bc.height);
  bx.restore();
  /* trackCuts（切断マーク） */
  (D.trackCuts||[]).forEach(function(cc){if(!(cc&&cc[0]&&cc[1]))return;var a=iproj(cc[0][0],cc[0][1],1.6),b=iproj(cc[1][0],cc[1][1],1.6);
@@ -2303,7 +2328,12 @@ function renderIso(){ensureIsoCanvas();if(ISO.S===0)isoFit();
  saveLS();}
 function isoCompose(){var ctx=isoCtx,cw=isoCv.clientWidth,ch=isoCv.clientHeight;
  ctx.setTransform(DPR,0,0,DPR,0,0);ctx.clearRect(0,0,cw,ch);ctx.fillStyle='#0d1117';ctx.fillRect(0,0,cw,ch);
- if(ISO.bake)ctx.drawImage(ISO.bake,ISO.bakeAtOX,ISO.bakeAtOY,ISO.bakeCssW,ISO.bakeCssH);
+ if(ISO.bake){/* ベイクはck(パン非依存)が変わるまで焼き直さない＝ドラッグ中は毎フレーム再ベイクしない軽量設計。
+   その代わり、焼いた時点(bakeRefOX/OY)からの現在パン(ISO.ox/oy)の差分だけをここで貼り位置に足す
+   （Tier0: 基板/穴/銅箔がベイク時点の絶対位置に取り残され、部品・ワイヤだけがパンして見えるズレの修正）。 */
+  var bx2=ISO.bakeAtOX+(ISO.ox-ISO.bakeRefOX),by2=ISO.bakeAtOY+(ISO.oy-ISO.bakeRefOY);
+  bx2=Math.round(bx2*DPR)/DPR;by2=Math.round(by2*DPR)/DPR;/* DPR>1環境での分数px再サンプルボケ防止 */
+  ctx.drawImage(ISO.bake,bx2,by2,ISO.bakeCssW,ISO.bakeCssH);}
  var K=makeK();for(var i=0;i<ISO.list.length;i++)ISO.list[i].draw(ctx,K);}
 var isoDirty=false;
 function isoInvalidate(){if(isoDirty)return;isoDirty=true;requestAnimationFrame(function(){isoDirty=false;if(ISO.on){isoCompose();isoStatus();}});}
