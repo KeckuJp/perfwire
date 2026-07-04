@@ -181,7 +181,7 @@ svg{display:block;margin:16px auto}
 <div id="pw-flow"></div>
 <div id="sel-bar" style="display:none;align-items:center;gap:8px;padding:5px 10px;margin:0 0 5px;background:rgba(94,220,255,.1);border:1px solid rgba(94,220,255,.4);border-radius:8px;flex-wrap:wrap"></div>
 <div id="canvas">
-<div id="ztools"><button id="z-mirror" title="裏面から見た図に左右反転（はんだ面）。表示とテスターのみ、編集はロック">裏面</button><button id="z-iso" title="盤面を斜め上から見る3Dビュー（閲覧専用・編集は2Dに戻って行います）">3D</button><button id="z-out" title="盤面図のみ縮小（文字全体を拡大するにはブラウザの Ctrl -）">−</button><button id="z-fit" title="盤面図のみ拡大縮小（文字全体を拡大するにはブラウザの Ctrl +）">100%</button><button id="z-in" title="盤面図のみ拡大（文字全体を拡大するにはブラウザの Ctrl +）">＋</button></div>
+<div id="ztools"><button id="z-mirror" title="裏面から見た図に左右反転（はんだ面）。表示とテスターのみ、編集はロック">裏面</button><button id="z-iso" title="盤面を斜め上から見る3Dビュー（閲覧専用・編集は2Dに戻って行います）">3D</button><button id="z-isorot" title="3Dビューを90°回転（見る角度が変わるだけ。基板の天面はそのまま表示されます）" style="display:none">⟳</button><button id="z-out" title="盤面図のみ縮小（文字全体を拡大するにはブラウザの Ctrl -）">−</button><button id="z-fit" title="盤面図のみ拡大縮小（文字全体を拡大するにはブラウザの Ctrl +）">100%</button><button id="z-in" title="盤面図のみ拡大（文字全体を拡大するにはブラウザの Ctrl +）">＋</button></div>
 <div id="guide" role="dialog" aria-label="作業ガイド" tabindex="-1">
 <div class="gtitle" id="g-count"></div>
 <div class="gbody" id="g-text" role="status" aria-live="polite"></div>
@@ -283,6 +283,8 @@ var JE={
 '盤面を斜め上から見る3Dビュー（閲覧専用・編集は2Dに戻って行います）':'3D view of the board from above (view-only — go back to 2D to edit)',
 '3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。編集は2Dに戻って行います。':'3D view: a view-only isometric overview. Click to select, drag to pan, Ctrl+wheel to zoom. Go back to 2D to edit.',
 '3Dビュー 切替':'Toggle 3D view',
+'3Dビューを90°回転（見る角度が変わるだけ。基板の天面はそのまま表示されます）':'Rotate the 3D view 90° (changes only the viewing angle — the board\'s top face stays shown)',
+'3Dビュー 回転（90°）':'Rotate 3D view (90°)','回転 {0}°':'Rotated {0}°',
 'モード':'Mode','({0}-{1}キー)':'(keys {0}-{1})','レイヤー':'Layers','写真下絵':'Photo underlay','しきい値':'Thresholds','部品':'Parts','監査':'Audit','— ライブ更新':'— live','データ':'Data',
 '端子':'Ends','ブリッジ':'Bridges','穴×':'Block','テスター':'Probe',
 'ロック切替':'Toggle lock','案をリセット':'Reset proposal','設定を既定値に戻す':'Reset config to defaults','コピー':'Copy','インポート':'Import','導通リスト':'Continuity list','印刷 1:1':'Print 1:1','新規（空の基板）':'New (blank board)','新しい空の基板を案として追加します':'Adds a new blank board as a proposal','サンプル復元':'Restore sample','保存データ消去':'Clear saved data',
@@ -452,8 +454,10 @@ var MIRROR=false;
 /* === 3Dビュー(等角/isometric)状態。§設計は index.html 内 renderIso() 一式のコメントを参照。
    ISOREV = 「D の中身が変わった」の代理カウンタ（snap/undo/importObj/loadPropでbump）。
    選択/ホバーだけの変化ではbumpしない＝isoの部品リスト再構築をrender()毎でなく内容変化時だけに絞る。
-   bakeRefOX/OY = 直近のベイク時点のパンオフセット（Tier0バグ修正。isoCompose()参照）。 */
-var ISO={on:false,S:0,ox:0,oy:0,bake:null,bakeKey:'',bakeCssW:0,bakeCssH:0,bakeAtOX:0,bakeAtOY:0,
+   rot = カメラの90°刻みヨー回転(0/1/2/3=0/90/180/270°、Tier2)。camera/lightは常に固定で盤面を
+   ターンテーブルのように回して見せる＝常に天面を表示（裏面が見えるわけではない。裏面は既存の
+   MIRRORが別途担当）。g2uv()参照。 */
+var ISO={on:false,S:0,ox:0,oy:0,rot:0,bake:null,bakeKey:'',bakeCssW:0,bakeCssH:0,bakeAtOX:0,bakeAtOY:0,
          bakeRefOX:0,bakeRefOY:0,
          list:null,listKey:'',listRev:-1,pan0:null,moved:false};
 var ISOREV=0,isoCv=null,isoCtx=null,DPR=window.devicePixelRatio||1;
@@ -1835,6 +1839,7 @@ render();auditSoon();}},
 {n:'ズーム アウト',k:'zoom out',f:function(){document.getElementById('z-out').click();}},
 {n:'ズーム 100%',k:'zoom fit',f:function(){document.getElementById('z-fit').click();}},
 {n:'3Dビュー 切替',k:'iso 3d view',f:function(){setIso(!ISO.on);}},
+{n:'3Dビュー 回転（90°）',k:'iso 3d view rotate 90 yaw camera turntable',f:function(){isoRotate(1);}},
 {n:'レイヤー: 実寸法 切替',k:'layer footprint',f:function(){LY.foot=!LY.foot;render();}},
 {n:'レイヤー: 被覆線 切替',k:'layer wires',f:function(){LY.wires=!LY.wires;render();}},
 {n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}},
@@ -1959,26 +1964,62 @@ var defs='<defs><linearGradient id="ppcyl" x1="0" y1="0" x2="0" y2="1"><stop off
 var drawer=PHYS_PREVIEW[kind]||PHYS_PREVIEW.r;
 el.innerHTML='<svg width="'+W+'" height="'+H+'" viewBox="0 0 '+W+' '+H+'" style="width:100%;display:block">'+defs+drawer(part,PF,c)+'</svg>';}
 /* ============================================================================
-   3Dビュー(等角/isometric)実装。Canvas 2D・ディメトリック(ヨー45°/仰角30°)・
-   固定カメラ・閲覧専用。設計はWorkflow(Fable設計→敵対的レビュー、2026-07-03)で
+   3Dビュー(等角/isometric)実装。Canvas 2D・ディメトリック(仰角30°固定)・
+   ヨーは90°刻みスナップ回転(ISO.rot∈{0,1,2,3}、Tier2)に対応・それ以外は閲覧専用。
+   設計はWorkflow(Fable設計→敵対的レビュー、2026-07-03。Tier2=90°回転は2026-07-04追加)で
    射影数式・奥行きソート・性能設計を確定済み。render()先頭の1行分岐(ISO.on時に
    renderIso()へ委譲)以外、既存の2D描画コードには一切手を入れない＝完全並行実装。
    ee/ERC計算(D の読み取りのみ・書き込みはselPart/selSet/hoverNetのみ)には触れ
    ないためparity安全。
-   v1の既知の非対応(コード上の判断・CHANGELOG記載): 回転カメラ・裏面3D・
-   probe/photo/GUIDE/DIFF/vizPreviewの3D表示・編集操作・タッチピンチズーム・
+   重要: ISO.rotはカメラのヨー回転(camera/lightは固定、盤面をターンテーブルのように回して
+   見せる)であり、回転しても常に基板の天面を表示し続ける。裏面が見えるわけではない(裏面表示は
+   既存のMIRROR/「裏面」ボタンが別途担当。ISO表示中はMIRRORは常にfalseで両者は排他)。
+   v1の既知の非対応(コード上の判断・CHANGELOG記載): 連続的な自由回転(90°刻みスナップの
+   み対応)・裏面3D・probe/photo/GUIDE/DIFF/vizPreviewの3D表示・編集操作・タッチピンチズーム・
    隣接部品同士(例: IC脇の電解コンデンサ)の奥行き逆転がまれに起こりうる
    (単純代表点ソートの既知の限界。閲覧モードとして許容)。
    ========================================================================= */
 var VZ=0.8660254;/* cos30° */
-function uv(g){return (MIRROR?cols-g[0]:g[0]-1)+(g[1]-1);}/* グリッド座標→奥行きソートキー(u+v) */
+/* g2uv/uv2g/g2uvVec: グリッド座標(c,r)⇔奥行き座標(u,v)の前置換を1箇所に統一する共有ヘルパ(Tier2)。
+   旧実装はこの前置換(MIRROR?cols-c:c-1 等)がiproj/iunproj/uv/wheelズーム/isoZoomStep/isoFit/
+   isoFootTopの6箇所以上に同型のまま重複しており、ISO.rot(90°刻みのヨー回転。0/1/2/3=0/90/180/
+   270°)を後から安全に足せなかった(敵対的レビュー指摘)。camera/light は常に固定で、盤面側を
+   回して見せる「ターンテーブル」として扱う＝回転しても常に天面を表示する。裏面が見えるわけでは
+   ない(裏面表示は既存のMIRROR/「裏面」ボタンが別途担当。ISO表示中はMIRRORは常にfalseで両者は
+   排他)。 */
+function g2uv(c,r){var u0=MIRROR?cols-c:c-1,v0=r-1;
+ switch(ISO.rot){
+  case 1:return [v0,(cols-1)-u0];
+  case 2:return [(cols-1)-u0,(rows-1)-v0];
+  case 3:return [(rows-1)-v0,u0];
+  default:return [u0,v0];
+ }}
+function uv2g(u,v){switch(ISO.rot){/* g2uvの逆変換。iunproj専用 */
+  case 1:return [MIRROR?(v+1):(cols-v), u+1];
+  case 2:return [MIRROR?(u+1):(cols-u), rows-v];
+  case 3:return [MIRROR?(cols-v):(v+1), rows-u];
+  default:return [MIRROR?cols-u:u+1, v+1];
+ }}
+/* g2uvVec: グリッド空間の方向ベクトル(dc,dr)(2点の差＝平行移動を持たない量)を同じ回転則で
+   u,v空間へ写す。normalShade()が期待するnu,nvはu,v(=camera/light基準)座標系の値なので、grid
+   空間で計算した法線(例: filmコンデンサの側面法線)をそのまま渡すとISO.rot!=0で光源方向とズレる
+   (rot導入前はMIRRORが常にfalseでc→u,r→vが1:1だったため気付かれなかった潜在バグ。敵対的
+   レビュー指摘)。 */
+function g2uvVec(dc,dr){var du0=(MIRROR?-1:1)*dc,dv0=dr;
+ switch(ISO.rot){
+  case 1:return [dv0,-du0];
+  case 2:return [-du0,-dv0];
+  case 3:return [-dv0,du0];
+  default:return [du0,dv0];
+ }}
+function uv(g){var p=g2uv(g[0],g[1]);return p[0]+p[1];}/* グリッド座標→奥行きソートキー(u+v) */
 function isoPXMM(){return ISO.S*Math.SQRT2/CFG.pitch;}/* 地面 px/mm（画面x方向の特異値） */
 function isoMMZ(){return isoPXMM()*VZ;}/* 鉛直 px/mm */
-function iproj(c,r,z){var u=MIRROR?cols-c:c-1,v=r-1;
+function iproj(c,r,z){var p=g2uv(c,r),u=p[0],v=p[1];
  return [ISO.ox+(u-v)*ISO.S, ISO.oy+(u+v)*ISO.S*0.5-(z||0)*isoMMZ()];}
 function iunproj(x,y,z){var y2=y-ISO.oy+(z||0)*isoMMZ(),x2=x-ISO.ox;
  var a=x2/ISO.S,b=2*y2/ISO.S,u=(a+b)/2,v=(b-a)/2;
- return [MIRROR?cols-u:u+1,v+1];}
+ return uv2g(u,v);}
 function nearHoleIso(x,y){var g=iunproj(x,y,0),c=Math.round(g[0]),r=Math.round(g[1]);
  if(!inb(c,r))return null;var p=iproj(c,r,0);return Math.hypot(x-p[0],y-p[1])<ISO.S*0.5?[c,r]:null;}
 function isoPt(e){var r=isoCv.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top];}
@@ -2065,7 +2106,7 @@ function isoBindEvents(){
  isoCv.addEventListener('pointercancel',function(){isoPanEnd();});
  isoCv.addEventListener('pointerleave',function(){if(hoverNet){hoverNet=null;isoInvalidate();}});
  isoCv.addEventListener('wheel',function(e){if(!e.ctrlKey){return;}e.preventDefault();e.stopPropagation();
-  var pt=isoPt(e),g=iunproj(pt[0],pt[1],0),u=MIRROR?cols-g[0]:g[0]-1,v=g[1]-1;
+  var pt=isoPt(e),g=iunproj(pt[0],pt[1],0),guv=g2uv(g[0],g[1]),u=guv[0],v=guv[1];
   ISO.S=isoQuantizeS(ISO.S*(e.deltaY<0?1.1:1/1.1));
   ISO.ox=pt[0]-(u-v)*ISO.S;ISO.oy=pt[1]-(u+v)*ISO.S*0.5;
   isoEnsureBake();isoInvalidate();},{passive:false});
@@ -2076,12 +2117,42 @@ function ensureIsoCanvas(){if(!isoCv){isoCv=document.getElementById('pw-iso');is
  if(isoCv.width!==w||isoCv.height!==h){isoCv.width=w;isoCv.height=h;}
  isoCtx.setTransform(DPR,0,0,DPR,0,0);}
 function isoZoomStep(f){var cw=isoCv.clientWidth/2,ch=isoCv.clientHeight/2;
- var g=iunproj(cw,ch,0),u=MIRROR?cols-g[0]:g[0]-1,v=g[1]-1;
+ var g=iunproj(cw,ch,0),guv=g2uv(g[0],g[1]),u=guv[0],v=guv[1];
  ISO.S=isoQuantizeS(ISO.S*f);ISO.ox=cw-(u-v)*ISO.S;ISO.oy=ch-(u+v)*ISO.S*0.5;
  isoEnsureBake();isoInvalidate();}
-function isoFit(){var W=(cols-1)+(rows-1)||1,cw=isoCv.clientWidth||900,ch=isoCv.clientHeight||600;
+function isoRotate(step){/* 90°刻みスナップ回転(Tier2)。押下ごとの離散イベントなので毎フレーム
+  コストは発生しない。orbit実装(ゲーム制作実装者レビュー提案): 画面中心に映っている盤面上の点を
+  回転前後で固定し続ける。isoZoomStep()と同型の「アンカー点を固定してox/oyだけ解く」手法を、
+  Sの変更でなくrotの変更に適用したもの。ズーム倍率(ISO.S)には一切触れないためユーザーの
+  Ctrl+ホイールズームはそのまま保持され、パン位置(ox,oy)だけが新しい向きでも同じ注視点を
+  指すよう再計算される。
+  訂正(敵対的レビュー指摘): 旧実装はここでisoFit()を呼んでおり、「Sは変えずパンだけ再センタリング」
+  という本コメントの主張に反して、isoFit()は呼ばれるたびにISO.Sを無条件に再計算していたため、
+  回転のたびにユーザーのズーム/パンが実際には破棄されていた。isoFit()は3Dビューを開いた直後の
+  初期フィット専用(ISO.S===0の時のみrenderIso()から呼ばれる)に限定し、回転時には呼ばない。
+  実測で発見した副作用(headless Chromeでの4連続回転の実機検証で発覚): #status は
+  flex-wrap:wrap のため、#st-stats に「/ 回転 90°」表記が付く/消えるだけでテキスト全長が変わり、
+  footerが1行⇔2行を切替えて#pw-isoのclientHeightが変動することがある(実測169px⇔141px、狭い
+  ビューポートで発生)。cw/chをrot変更「前」の値のまま使うと、rot=0⇔非0を跨ぐ回転のたびに
+  アンカーが実際の描画レイアウトとズレて最大十数pxパンが飛ぶ。isoStatus()をrender()より先に
+  呼んで新rotの表記を先に反映させ、その後で改めてclientWidth/Heightを読み直す(読み直しは
+  レイアウトを強制的に確定させる)ことで、実際に描画される時点のレイアウトと一致したcw/chで
+  ox/oyを解く。 */
+ if(!ISO.on)return;
+ var cw=isoCv.clientWidth/2,ch=isoCv.clientHeight/2,g=iunproj(cw,ch,0);
+ ISO.rot=((ISO.rot+(step||1))%4+4)%4;
+ isoStatus();
+ var cw2=isoCv.clientWidth/2,ch2=isoCv.clientHeight/2;
+ var guv=g2uv(g[0],g[1]),u=guv[0],v=guv[1];
+ ISO.ox=cw2-(u-v)*ISO.S;ISO.oy=ch2-(u+v)*ISO.S*0.5;
+ render();}
+function isoFit(){/* umax/vmaxはISO.rotの偶奇でcols-1/rows-1が入れ替わるが、W=umax+vmaxは
+   (cols-1)+(rows-1)のまま不変＝回転してもズーム倍率(ISO.S)は変わらない。ac=(umax-vmax)/2だけ
+   符号/値が変わり、パン位置(ox,oy)が新しい向きの中心に再センタリングされる。 */
+ var odd=(ISO.rot%2)!==0,umax=odd?(rows-1):(cols-1),vmax=odd?(cols-1):(rows-1);
+ var W=umax+vmax||1,cw=isoCv.clientWidth||900,ch=isoCv.clientHeight||600;
  ISO.S=isoQuantizeS(Math.max(1.5,Math.min(cw*0.88/W,ch*0.88*2/W,40)));
- var ac=((cols-1)-(rows-1))/2,bc=W/2;
+ var ac=(umax-vmax)/2,bc=W/2;
  ISO.ox=cw/2-ac*ISO.S;ISO.oy=ch/2-bc*ISO.S*0.5+isoMMZ()*3;}
 
 /* --- BAKE層(基材＋穴パターン＋strip/mesh銅箔＋ラベル＋blocked×＋trackCuts) --- */
@@ -2110,7 +2181,7 @@ function isoEnsureBake(){var bt=D.grid.type||'perf';
  /* ローカル変数名を ck とし、既存の key() 関数(点→"c,r"文字列)を隠さないようにする。
     直前まで ck という別名の代わりに key を使っており、同名のグローバル key() を覆い隠して
     map(key)/key(...)がその未代入中のローカル変数(undefined)を呼ぼうとして例外になっていた。 */
- var ck=[curI,ISOREV,cols,rows,bt,D.grid.stripAxis,ISO.S,MIRROR?1:0,LY.blocked?1:0,
+ var ck=[curI,ISOREV,cols,rows,bt,D.grid.stripAxis,ISO.S,MIRROR?1:0,LY.blocked?1:0,ISO.rot,
   (D.blockedHoles||[]).map(key).join(';'),(D.trackCuts||[]).map(function(cc){return key(cc[0])+'-'+key(cc[1]);}).join(';'),
   LANG].join('|');
  if(ISO.bakeKey===ck)return;
@@ -2135,8 +2206,14 @@ function isoEnsureBake(){var bt=D.grid.type||'perf';
   bx.beginPath();bx.moveTo(slabBot[0][0]+o[0],slabBot[0][1]+o[1]);bx.lineTo(slabBot[1][0]+o[0],slabBot[1][1]+o[1]);
   bx.lineTo(slabBot[2][0]+o[0],slabBot[2][1]+o[1]);bx.lineTo(slabBot[3][0]+o[0],slabBot[3][1]+o[1]);bx.closePath();
   bx.fillStyle='rgba(0,0,0,'+o[2]+')';bx.fill();});
- quad(bx,slabTop[3],slabTop[2],slabBot[2],slabBot[3],normalShade(slabCol,0,1,0));/* +v 側面 */
- quad(bx,slabTop[2],slabTop[1],slabBot[1],slabBot[2],normalShade(slabCol,1,0,0));/* +u 側面 */
+ /* +u/+v側面は「camera/light基準で常に見える2面」だが、それがどの物理エッジ(c=1/c=cols/
+    r=1/r=rows)に当たるかはISO.rotで変わる(盤面を回すターンテーブルのため)。slabTop/slabBot
+    のcorner indexは[(1,1),(cols,1),(cols,rows),(1,rows)]の巡回順で並んでいるので、
+    rotの分だけ選ぶindexを回せば良い(uv()の深度ソートと同じ回転規則。決め打ちの角番号を
+    毎回rot分だけずらす。敵対的レビュー指摘)。 */
+ var _ri=((ISO.rot%4)+4)%4,_iu0=(1+_ri)%4,_iu1=(2+_ri)%4,_iv1=(3+_ri)%4;
+ quad(bx,slabTop[_iu1],slabTop[_iv1],slabBot[_iv1],slabBot[_iu1],normalShade(slabCol,0,1,0));/* +v 側面(現rotでの可視エッジ) */
+ quad(bx,slabTop[_iu0],slabTop[_iu1],slabBot[_iu1],slabBot[_iu0],normalShade(slabCol,1,0,0));/* +u 側面(現rotでの可視エッジ) */
  bx.beginPath();bx.moveTo(slabTop[0][0],slabTop[0][1]);bx.lineTo(slabTop[1][0],slabTop[1][1]);
  bx.lineTo(slabTop[2][0],slabTop[2][1]);bx.lineTo(slabTop[3][0],slabTop[3][1]);bx.closePath();
  bx.fillStyle=normalShade(slabCol,0,0,1);bx.fill();
@@ -2165,10 +2242,18 @@ function isoEnsureBake(){var bt=D.grid.type||'perf';
   var s=Math.max(6,ISO.S*0.28);bx.beginPath();bx.rect(v[0]-s/2,v[1]-s/2,s,s);bx.fill();bx.stroke();
   bx.font='700 '+Math.max(8,s*0.8)+'px sans-serif';bx.fillStyle='#ff8080';bx.textAlign='center';bx.fillText('×',v[0],v[1]+s*0.35);});
  /* 列/行ラベル */
- if(ISO.S>=6){var lblStep=ISO.S>=14?1:5;
-  for(var c2=1;c2<=cols;c2++){if(c2!==1&&c2%lblStep!==0)continue;var lp=iproj(c2,1,1.6),lp2=[lp[0],lp[1]-ISO.S*0.55];
+ if(ISO.S>=6){var lblStep=ISO.S>=14?1:5,rIn=Math.min(rows,2),cIn=Math.min(cols,2);
+  /* ラベルは常に物理エッジr=1沿い/c=1沿いに置くが、「盤外側へ逃がす」画面オフセット方向は
+     ISO.rotで変わる(g2uvがc,rをu,vへ回転させるため、r=1エッジがu一定になるかv一定になるかが
+     rotごとに入れ替わる)。固定のX/Y軸オフセットではなく、1マス内側の点との射影差分から実際の
+     外向きベクトルを求める(filmコンデンサの可視面汎用判定と同じ思想。敵対的レビュー指摘)。 */
+  for(var c2=1;c2<=cols;c2++){if(c2!==1&&c2%lblStep!==0)continue;
+   var lp=iproj(c2,1,1.6),lin=iproj(c2,rIn,1.6),ddx=lp[0]-lin[0],ddy=lp[1]-lin[1],dl=Math.hypot(ddx,ddy)||1;
+   var lp2=[lp[0]+ddx/dl*ISO.S*0.55,lp[1]+ddy/dl*ISO.S*0.55];
    bx.font='10px Consolas,monospace';bx.fillStyle='#8b97a3';bx.textAlign='center';bx.fillText(String(c2),lp2[0],lp2[1]);}
-  for(var r2=1;r2<=rows;r2++){if(r2!==1&&r2%lblStep!==0)continue;var lq=iproj(1,r2,1.6),lq2=[lq[0]-ISO.S*0.85,lq[1]];
+  for(var r2=1;r2<=rows;r2++){if(r2!==1&&r2%lblStep!==0)continue;
+   var lq=iproj(1,r2,1.6),lqin=iproj(cIn,r2,1.6),edx=lq[0]-lqin[0],edy=lq[1]-lqin[1],el=Math.hypot(edx,edy)||1;
+   var lq2=[lq[0]+edx/el*ISO.S*0.85,lq[1]+edy/el*ISO.S*0.85];
    bx.font='10px Consolas,monospace';bx.fillStyle='#8b97a3';bx.textAlign='center';bx.fillText(String.fromCharCode(64+r2),lq2[0],lq2[1]+3);}}
  ISO.bake=bc;}
 
@@ -2182,7 +2267,10 @@ function isoFootTop(g){/* byPart: 部品ID→{d,topZ}（部品プリミティブ
   if(p.kind==='ic'){var ks=Object.keys(p.pins),xs=ks.map(function(k){return p.pins[k][0];}),ys=ks.map(function(k){return p.pins[k][1];});
    var x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys);
    cells=[];for(var cc=x0;cc<=x1;cc++)for(var rr=y0;rr<=y1;rr++)cells.push([cc,rr]);
-   d=uv([x1,y1]);}
+   /* rot===0の旧実装は「(x1,y1)コーナー=最遠点」を決め打ちしていたが、g2uvが回転すると
+      最遠コーナーは4隅のどれにでもなり得る。4隅すべてのuv深度を見て実際の最大値を採る
+      (敵対的レビュー指摘)。 */
+   d=Math.max(uv([x0,y0]),uv([x1,y0]),uv([x0,y1]),uv([x1,y1]));}
   else{var f=g.foots[p.id];cells=(f?f.cells:[]).concat([p.leads[0],p.leads[1]]);
    d=cells.reduce(function(m,c){return Math.max(m,uv(c));},-1e9);}
   byPart[p.id]={d:d,topZ:h};
@@ -2285,14 +2373,21 @@ function isoBBoxHit(p,x,y){var pts=isoPartBBox(p).map(function(q){return iproj(q
  var xs=pts.map(function(v){return v[0];}),ys=pts.map(function(v){return v[1];});
  var pad=6;return x>=Math.min.apply(null,xs)-pad&&x<=Math.max.apply(null,xs)+pad&&y>=Math.min.apply(null,ys)-pad&&y<=Math.max.apply(null,ys)+pad;}
 function isoExtTerminal(ctx,K,at,col,dim,label){var v=K.proj(at[0],at[1],0.3);
+ /* dir: 盤面の最寄り物理エッジへ向かう向き(grid空間)。「どのエッジが最寄りか」自体はカメラの
+    向きと無関係な盤面の物理形状の話なのでISO.rot非依存のままでよい(矢印の実際の画面方向は
+    K.proj=iprojが内部でg2uvを適用して正しく回転済みの位置を返す)。 */
  var toEdge=[Math.min(at[0]-1,cols-at[0]),Math.min(at[1]-1,rows-at[1])],dir=toEdge[0]<toEdge[1]?[at[0]-1<cols-at[0]?-1:1,0]:[0,at[1]-1<rows-at[1]?-1:1];
  var tip=K.proj(at[0]+dir[0]*1.6,at[1]+dir[1]*1.6,0.3);
  ctx.globalAlpha=dim;ctx.strokeStyle='#fff';ctx.lineWidth=4.2;ctx.lineCap='round';
  ctx.beginPath();ctx.moveTo(v[0],v[1]);ctx.lineTo(tip[0],tip[1]);ctx.stroke();
  ctx.strokeStyle=col;ctx.lineWidth=2.2;ctx.beginPath();ctx.moveTo(v[0],v[1]);ctx.lineTo(tip[0],tip[1]);ctx.stroke();
  ctx.fillStyle=col;ctx.beginPath();ctx.arc(tip[0],tip[1],3,0,6.2832);ctx.fill();
- if(K.S>=10){ctx.font='9px "Segoe UI",system-ui,sans-serif';ctx.textAlign=dir[0]<0?'right':(dir[0]>0?'left':'center');
-  ctx.fillStyle='#dce3ea';ctx.fillText(label,tip[0]+dir[0]*4,tip[1]+dir[1]*4+3);}
+ if(K.S>=10){/* ラベルの画面オフセットはgrid空間のdirでなく、既に投影済みのv→tip画面ベクトルから
+     求める(旧実装はgrid空間のdirをそのままpx単位の画面オフセットに使っており、ISO.rotで矢印の
+     実際の画面方向とラベルの逃がし方向がズレる潜在バグだった。敵対的レビュー指摘)。 */
+  var sdx=tip[0]-v[0],sdy=tip[1]-v[1],sl=Math.hypot(sdx,sdy)||1;sdx/=sl;sdy/=sl;
+  ctx.font='9px "Segoe UI",system-ui,sans-serif';ctx.textAlign=sdx<-0.15?'right':(sdx>0.15?'left':'center');
+  ctx.fillStyle='#dce3ea';ctx.fillText(label,tip[0]+sdx*4,tip[1]+sdy*4+3);}
  ctx.globalAlpha=1;}
 
 /* --- 接地影(blob shadow): 電解コンデンサに既にあった手法(底面楕円)を全kindへ横展開。
@@ -2359,7 +2454,11 @@ var ISO_DRAW={
   var vis=[];for(var i=0;i<4;i++){var j=(i+1)%4;
    var ex=C[j][0]-C[i][0],ey=C[j][1]-C[i][1],nx=-ey,ny=ex,mid=[(C[i][0]+C[j][0])/2,(C[i][1]+C[j][1])/2];
    if(nx*(mid[0]-m[0])+ny*(mid[1]-m[1])<0){nx=-nx;ny=-ny;}
-   vis.push({i:i,j:j,d:uv(mid),nx:nx,ny:ny});}
+   /* ここまでnx,nyはgrid空間(c,r)の法線。normalShade()が期待するのはu,v(camera/light基準)
+      空間の値なので、g2uvVec()で変換してから渡す(ISO.rot!=0だとgrid空間とu,v空間が一致しなく
+      なるため。敵対的レビュー指摘＝rot導入前は潜在バグだった)。 */
+   var nuv=g2uvVec(nx,ny);
+   vis.push({i:i,j:j,d:uv(mid),nx:nuv[0],ny:nuv[1]});}
   vis.sort(function(x,y){return y.d-x.d;});
   /* 輪郭線の様式統一: 側面2枚にも天面と同じISO_OUTLINE_COL経由の縁取りを付ける
      (旧実装は天面のみで側面には無く、film だけ側面が縁取り無しになっていた)。 */
@@ -2417,8 +2516,11 @@ var ISO_DRAW={
   ks.forEach(function(k){var q=p.pins[k],h=K.proj(q[0],q[1],0),t=K.proj(q[0],q[1],zB);ctx.beginPath();ctx.moveTo(h[0],h[1]);ctx.lineTo(t[0],t[1]);ctx.stroke();});
   var Cg=[[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
   var T=Cg.map(function(q){return K.proj(q[0],q[1],zT);}),B2=Cg.map(function(q){return K.proj(q[0],q[1],zB);});
-  quad(ctx,T[1],T[2],B2[2],B2[1],normalShade('#16181c',1,0,0));
-  quad(ctx,T[3],T[2],B2[2],B2[3],normalShade('#16181c',0,1,0));
+  /* Cgのcorner indexは[(x0,y0),(x1,y0),(x1,y1),(x0,y1)]でslabTopと同じ巡回順＝同じ回転規則
+     (§g2uv/isoEnsureBakeの+u/+v側面選択コメント参照)。決め打ちのindex(1,2)/(3,2)をrot分だけ回す。 */
+  var _ri=((ISO.rot%4)+4)%4,_iu0=(1+_ri)%4,_iu1=(2+_ri)%4,_iv1=(3+_ri)%4;
+  quad(ctx,T[_iu0],T[_iu1],B2[_iu1],B2[_iu0],normalShade('#16181c',1,0,0));
+  quad(ctx,T[_iv1],T[_iu1],B2[_iu1],B2[_iv1],normalShade('#16181c',0,1,0));
   quad(ctx,T[0],T[1],T[2],T[3],normalShade('#20242a',0,0,1));
   if(sel){ctx.strokeStyle='#5edcff';ctx.lineWidth=2.5;}else{isoStroke(ctx,K,1);}
   ctx.beginPath();ctx.moveTo(T[0][0],T[0][1]);ctx.lineTo(T[1][0],T[1][1]);ctx.lineTo(T[2][0],T[2][1]);ctx.lineTo(T[3][0],T[3][1]);ctx.closePath();ctx.stroke();
@@ -2428,7 +2530,7 @@ var ISO_DRAW={
   if(K.labels){var lbl=(p.family?p.family+' ':'')+(p.label||'');K.txt(ctx,(T[0][0]+T[2][0])/2,(T[0][1]+T[2][1])/2+4,lbl,'#fff',11);}}};
 
 /* --- 統合: renderIso / compose / invalidate / pick / hover --- */
-function isoRevKey(){return [curI,ISOREV,LY.parts,LY.labels,LY.wires,LY.bridges,LY.ends,LY.caut,LY.blocked,MIRROR].join('|');}
+function isoRevKey(){return [curI,ISOREV,LY.parts,LY.labels,LY.wires,LY.bridges,LY.ends,LY.caut,LY.blocked,MIRROR,ISO.rot].join('|');}
 function renderIso(){ensureIsoCanvas();if(ISO.S===0)isoFit();
  var lk=isoRevKey();if(ISO.listKey!==lk){ISO.list=buildIsoList();ISO.listKey=lk;}
  isoEnsureBake();isoCompose();isoStatus();
@@ -2476,15 +2578,18 @@ function isoPick(ev){var pt=isoPt(ev);
 function isoStatus(){var el=document.getElementById('st-stats');if(!el)return;
  var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)direct++;});});
  el.innerHTML=tr('被覆線')+' <b>'+D.wires.length+'</b> ('+tr('直付')+' '+direct+') / 3D '+Math.round(ISO.S*10)/10+'px'+
+  (ISO.rot?(' / '+trf('回転 {0}°',ISO.rot*90)):'')+
   (selPart?(' / '+tr('選択')+' <b>'+esc(selPart.id)+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'');}
 function setIso(v){if(v===ISO.on)return;ISO.on=v;
  var btn=document.getElementById('z-iso');if(btn)btn.className=v?'on':'';
+ var rb=document.getElementById('z-isorot');if(rb)rb.style.display=v?'':'none';/* 回転ボタンは3D表示中のみ意味を持つ */
  if(v&&MIRROR)setMirror(false);
  svg.style.display=v?'none':'';var cv=document.getElementById('pw-iso');if(cv)cv.style.display=v?'block':'none';
  if(v){ISO.S=0;ISO.bakeKey='';ISO.listKey='';
   showHelp(tr('3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。編集は2Dに戻って行います。'));}
  render();}
 document.getElementById('z-iso').onclick=function(){setIso(!ISO.on);};
+document.getElementById('z-isorot').onclick=function(){isoRotate(1);};
 function tgl(box,label,k){label=tr(label);var d=document.createElement('label');d.className='tgl';
 var i=document.createElement('input');i.type='checkbox';i.checked=LY[k];
 i.onchange=function(){LY[k]=i.checked;render();};
