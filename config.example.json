@@ -64,20 +64,14 @@
     "max_joints_per_pad": 3,
     "edge_margin_holes": 0,
     "lead_margin_mm": 5.0,
-    "_single_lead_allowlist": "ERC: 単一リードを許可する I/O 点（外部マイク/スピーカ等。空配列なら全て警告）",
+    "_single_lead_allowlist": "ERC: 単一リードを許可する I/O 点（外部センサ等。空配列なら全て警告）",
     "single_lead_allowlist": [
-      "IF_MIC",
-      "MIC_IN",
-      "SPK_N",
-      "SPK_P",
       "ECHO_5V"
     ]
   },
   "net_classes": {
     "HIZ": {
-      "nets": [
-        "INA_P"
-      ],
+      "nets": [],
       "max_wire_holes": 6,
       "adj_penalty": 8,
       "keep_away_from": [
@@ -88,16 +82,6 @@
     },
     "SIG": {
       "nets": [
-        "INA_N",
-        "SPKP_AC",
-        "SPKN_AC",
-        "INA2_P",
-        "INA2_N",
-        "SUM",
-        "MIC_IN",
-        "SPK_P",
-        "SPK_N",
-        "VREF",
         "SOIL_ADC",
         "ECHO_5V",
         "ECHO_SIG"
@@ -109,16 +93,20 @@
     },
     "OUT": {
       "nets": [
-        "OUTA1",
-        "SPK_OUT",
-        "OUTB2",
-        "IF_MIC",
         "TRIG_SIG",
         "RELAY_CTL",
         "BUZZ_CTL",
         "PUMP_HOT",
         "Q_BASE",
-        "COIL_LO"
+        "COIL_LO",
+        "AIN1",
+        "AIN2",
+        "BIN1",
+        "BIN2",
+        "AOUT1",
+        "AOUT2",
+        "BOUT1",
+        "BOUT2"
       ],
       "max_wire_holes": 99,
       "adj_penalty": 2,
@@ -131,8 +119,8 @@
       "nets": [
         "V3V3",
         "GND",
-        "VMID",
-        "V5"
+        "V5",
+        "VM"
       ],
       "max_wire_holes": 99,
       "adj_penalty": 1,
@@ -142,39 +130,23 @@
   },
   "decoupling": [
     {
-      "cap": "C3",
-      "pin": "U1.8",
-      "max_holes": 2
-    },
-    {
-      "cap": "C9",
-      "pin": "U2.8",
-      "max_holes": 2
-    },
-    {
-      "cap": "C5",
-      "pin": "C6.p",
-      "max_holes": 3
-    },
-    {
-      "cap": "C4",
-      "pin": "W.RED",
-      "max_holes": 4
-    },
-    {
       "cap": "C11",
       "pin": "U1.VSYS_IN",
       "max_holes": 3
+    },
+    {
+      "cap": "C1",
+      "pin": "U2.VM",
+      "max_holes": 3
+    },
+    {
+      "cap": "C2",
+      "pin": "U2.V3V3",
+      "max_holes": 2
     }
   ],
   "part_overrides": {
-    "_comment": "個体別の寸法上書き（実測して調整）",
-    "C4": {
-      "dia_mm": 5.0
-    },
-    "C6": {
-      "dia_mm": 6.5
-    }
+    "_comment": "個体別の寸法上書き（実測して調整）"
   },
   "weights": {
     "bridge_bonus": 20,
@@ -242,58 +214,39 @@
   "_rail_rank": "ERC極性: 電位の高い順に大きい値。電解の + 足がより高電位レールにあるか検査（無ければ INFO のみ）。注意: この表の最大値のネットが全基板共通でsolver.pyのdecouplingCoverageのsupply_net(バイパス必須ピンの基準レール)に選ばれる（examples/の各基板固有の値ではない）。新しいレールを足すときはV3V3(=2)を最大値のまま超えさせないこと（超えると他基板のdecouplingCoverageが空になる＝consume_smoke.pyが検知）。この極性検査自体は各ペア(plusNet,minusNet)の相対比較なので、最大値を奪わない限り新レールの値は自由",
   "rail_rank": {
     "V3V3": 2,
-    "VMID": 1,
-    "GND": 0,
-    "V5": 1.5
+    "V5": 1.5,
+    "VM": 1,
+    "GND": 0
   },
-  "_rail_volts": "ERC抵抗電力: 各レールの実電位[V]。抵抗に value[Ω] があり両端がここにあれば P=ΔV²/R を定格(rated_w 既定0.25W)と照合。VMID は V3V3 の中点",
+  "_rail_volts": "ERC抵抗電力: 各レールの実電位[V]。抵抗に value[Ω] があり両端がここにあれば P=ΔV²/R を定格(rated_w 既定0.25W)と照合",
   "rail_volts": {
     "V3V3": 3.3,
-    "VMID": 1.65,
-    "GND": 0,
-    "V5": 5.0
+    "V5": 5.0,
+    "VM": 6.0,
+    "GND": 0
   },
   "_rail_short_ma": "ERC railShort: 抵抗が異なるレール間にあり I=|ΔV|/R がこの値[mA]超で警告（定格内でも過大電流＝実効的な部分短絡）",
   "rail_short_ma": 50,
-  "_power_entry": "ERC電源到達性: 各 PWR ネットの給電リード。当該ネットが 1 連結かつこの根に届くか検査（VMID は外部給電なしのため未掲載＝検査対象外）",
+  "_power_entry": "ERC電源到達性: 各 PWR ネットの給電リード。当該ネットが 1 連結かつこの根に届くか検査",
   "power_entry": {
     "V3V3": [
-      "W.RED",
       "U1.G3V3"
     ],
     "GND": [
-      "W.BLK1",
-      "W.BLK2",
       "W.GNDIN"
     ],
     "V5": [
       "W.V5IN"
+    ],
+    "VM": [
+      "W.VMIN"
     ]
   },
-  "_reference_rails": "ERC grounding: 外部給電の無い内部基準レール（VMID 等）も還流トポロジ評価。根=基準点リード（VMID の bypass C6.p）。daisy-chain なら daisyReturn 警告（共通インピーダンス結合）",
-  "reference_rails": {
-    "VMID": [
-      "C6.p"
-    ]
-  },
+  "_reference_rails": "ERC grounding: 外部給電の無い内部基準レールも還流トポロジ評価（現在の例題基板はどれも外部給電レールのみのため空）。根=基準点リード。daisy-chain なら daisyReturn 警告（共通インピーダンス結合）",
+  "reference_rails": {},
   "propose_order": [
-    "C6",
-    "C4",
-    "C3",
-    "C9",
-    "C5",
-    "R5",
-    "R4",
-    "R1",
-    "R2",
-    "R3",
-    "R10",
-    "R9",
-    "R7",
-    "R8",
-    "R12",
-    "R11",
-    "R13"
+    "C1",
+    "C2"
   ],
   "_weights_craft": "diag_penalty: 斜め配置の罰則 / span_penalty: 本体長を超える伸長の罰則(穴) / standing_penalty: 立て実装の罰則。大きいほど整然・直交・寝かせ優先（配置を再提案で反映）"
 }

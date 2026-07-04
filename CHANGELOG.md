@@ -31,7 +31,7 @@
 ## [0.6.8] — 2026-07-01
 
 ### Added
-- **Launch-readiness pass**: a "Clear saved data" confirmation dialog (previously a single misclick silently wiped all local edits with no undo); the audit banner and its "総合" (overall) line no longer contradict each other (the banner could say "safe to solder, only a wire-length note" while a red NG line showed right below it — found by an adversarial usability + design-critique pass, not just code review); the audit panel is now a bordered card/row layout instead of one long `<br>`-joined text block; a new original example board, **Pico Plant Sitter** (a Raspberry Pi Pico plant-watering/monitoring board with a "Before" proposal carrying three real, solver-verified mistakes — reversed electrolytic polarity, a misplaced decoupling cap, an ungated 5V-into-GPIO clamp risk — and a clean "Recommended" proposal), replaces the previous default board shown on first open (which was derived from a client engagement and wasn't clean to publish; it remains available as `examples/client-hardware_tap_buffer.json`, just no longer the cold-start default); the welcome screen gained a "start from a blank board" option that applies the beginner-recommended placement profile automatically.
+- **Launch-readiness pass**: a "Clear saved data" confirmation dialog (previously a single misclick silently wiped all local edits with no undo); the audit banner and its "総合" (overall) line no longer contradict each other (the banner could say "safe to solder, only a wire-length note" while a red NG line showed right below it — found by an adversarial usability + design-critique pass, not just code review); the audit panel is now a bordered card/row layout instead of one long `<br>`-joined text block; a new original example board, **Pico Plant Sitter** (a Raspberry Pi Pico plant-watering/monitoring board with a "Before" proposal carrying three real, solver-verified mistakes — reversed electrolytic polarity, a misplaced decoupling cap, an ungated 5V-into-GPIO clamp risk — and a clean "Recommended" proposal), replaces the previous default board shown on first open (which wasn't clean to publish as the cold-start default); the welcome screen gained a "start from a blank board" option that applies the beginner-recommended placement profile automatically.
 - **CI**: `ci_smoke.py` now locks in the Pico Plant Sitter example's exact expected findings (2 hard NG + 1 warn on "Before", `fabReady:true` on "Recommended") so a future `solver.py` change can't silently break the demo.
 
 ### Fixed
@@ -222,9 +222,9 @@ byte-for-byte across the whole release.
   Compact, shared by the editor dropdown and `solver.py --profile`.
 
 ### External connections
-- **Off-board connections are now visualised**: external terminals (`W.*`) and the client-hardware
-  **speaker / mic** I/O points get a boundary glyph (square tag + off-board arrow) and an
-  "外部接続" legend that names *what* each connects to (Speaker / Mic / Power) and *where*.
+- **Off-board connections are now visualised**: external terminals (`W.*`) and single-lead
+  audio-style **speaker / mic** I/O points get a boundary glyph (square tag + off-board arrow)
+  and an "外部接続" legend that names *what* each connects to (Speaker / Mic / Power) and *where*.
 
 ### Config, provenance & Claude Code integration
 - **Single config SSOT** (`config.example.json`) with a never-silent "EE audit degraded"

@@ -50,7 +50,7 @@ def main() -> None:
             shutil.copytree(ROOT / d, cache / d)
         consumer = td / "consumer-project"  # the consumer's unrelated cwd (has NO solver.py/config in it)
         consumer.mkdir()
-        sample = json.loads((cache / "examples" / "client-hardware_tap_buffer.json").read_text(encoding="utf-8"))
+        sample = json.loads((cache / "examples" / "pico_motor_driver.json").read_text(encoding="utf-8"))
         prop = sample["proposals"][0]
         (consumer / "board.json").write_text(json.dumps(prop["state"]), encoding="utf-8")
 

@@ -46,9 +46,9 @@ hardware, so it is not R4 — but its electrical claims have a real-world safety
 ## Load-bearing repo rules (these are the things agents get wrong)
 
 a. **Same-name 3-copies trap.** This repo (`perfwire-dev/perfwire`) is the only canonical
-   copy. Do **not** edit either of the other two: the old IVR copy
-   (`a-client-project/[client-hardware]/tools/perfwire/perfwire.html`, an outdated v4 living in a
-   different product's data) and the installed plugin build
+   copy. Do **not** edit either of the other two that may exist on the maintainer's own
+   machine: an outdated (v4) copy embedded in an unrelated private project's own data
+   directory, and the installed plugin build
    (`~/.claude/plugins/cache/.../perfwire/<version>/index.html`, a build artifact wiped on
    update). Fix bugs here; the others are not the source of truth.
 

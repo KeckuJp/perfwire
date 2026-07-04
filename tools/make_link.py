@@ -9,7 +9,8 @@ This mirrors the in-browser "Share URL" feature byte-for-byte (CompressionStream
 INPUT MUST BE THE FLAT exportJSON SHAPE (singular keys: grid / netColors / leads /
 parts / padBridges / wires / blockedHoles [, cfg]) — i.e. what `solver.py -o out.json`
 emits, or the editor's "Export". It is NOT the proposals[] wrapper used by
-examples/client-hardware_tap_buffer.json; the editor's loadHash reads flat fields only.
+examples/pico_plant_sitter.json or examples/pico_motor_driver.json; the editor's
+loadHash reads flat fields only.
 Opening the link APPENDS a new proposal and never overwrites the user's local work.
 
 Usage:
@@ -50,7 +51,7 @@ def main():
         state = json.load(f)
     if "proposals" in state:
         sys.exit(
-            "error: input is the proposals[] wrapper (e.g. examples/client-hardware_tap_buffer.json). "
+            "error: input is the proposals[] wrapper (e.g. examples/pico_plant_sitter.json). "
             "Pass a FLAT state — solver.py -o out.json output, or one proposal's .state."
         )
     if args.task:

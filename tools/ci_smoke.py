@@ -3,15 +3,19 @@
 Asserts the solver exits cleanly, emits a schema-complete state, and connects
 every net (no warnings about unreachable pads beyond known direct-attaches).
 
-client-hardware_tap_buffer.json is a real, fully-audited board: every proposal in it
-must come back completely clean (no hard ERC errors).
-
 pico_plant_sitter.json is a Before/After teaching example: "Before" is expected
 to trip exactly the three findings the launch story is built on (reversed
 electrolytic polarity, a decoupling cap placed too far from the MCU's power
 pin, and a clamp-risk on an ungated 5V sensor input) and nothing else; "After"
-must be fully clean. Locking both sides in CI means a future change to
-solver.py's polarity/decoupling/clampRisk logic can't silently break the demo.
+must be fully clean.
+
+pico_motor_driver.json is a second Before/Recommended teaching example (Pico +
+DRV8833 dual-motor driver): "Before" is expected to trip exactly three findings
+(a mispopulated 0-ohm jumper shorting VM into V3V3, both motor-A driver outputs
+tied to one net, and one driver ground pin left unconnected) and nothing else;
+"Recommended" must be fully clean. Locking both examples' expected findings in
+CI means a future change to solver.py's netMerge/multipleDrivers/unconnectedLeads/
+polarity/decoupling/clampRisk logic can't silently break either demo.
 """
 
 import json
@@ -72,13 +76,29 @@ def check_clean(name, ee, failures):
         failures.append(f"{name}: unexpected reversed-polarity finding")
 
 
-def check_tap_buffer(failures):
-    sample = json.loads((ROOT / "examples" / "client-hardware_tap_buffer.json").read_text(encoding="utf-8"))
+def check_pico_motor_driver(failures):
+    sample = json.loads((ROOT / "examples" / "pico_motor_driver.json").read_text(encoding="utf-8"))
     for prop in sample["proposals"]:
-        res = run_solver(prop["name"], prop["state"], failures)
+        name = prop["name"]
+        res = run_solver(name, prop["state"], failures)
         if res is None:
             continue
-        check_clean(prop["name"], res.get("ee", {}), failures)
+        ee = res.get("ee", {})
+        if name.startswith("Before"):
+            # the three intentional mistakes must all still fire...
+            if not any(sorted(m.get("nets", [])) == ["V3V3", "VM"] for m in ee.get("netMerge", [])):
+                failures.append(f"{name}: expected a netMerge finding on V3V3/VM, got {ee.get('netMerge')}")
+            if not any(m.get("net") == "AOUT1" for m in ee.get("multipleDrivers", [])):
+                failures.append(f"{name}: expected a multipleDrivers finding on AOUT1, got {ee.get('multipleDrivers')}")
+            if "U2.GND1" not in ee.get("unconnectedLeads", []):
+                failures.append(f"{name}: expected an unconnectedLeads finding on U2.GND1, got {ee.get('unconnectedLeads')}")
+            if ee.get("fabReady"):
+                failures.append(f"{name}: expected fabReady=false (this proposal is the deliberately-broken one)")
+        else:
+            # "Recommended" (or any other named proposal) must be fully clean
+            check_clean(name, ee, failures)
+            if not ee.get("fabReady"):
+                failures.append(f"{name}: expected fabReady=true, got ee={ee}")
 
 
 def check_pico_plant_sitter(failures):
@@ -114,7 +134,7 @@ def check_pico_plant_sitter(failures):
 
 def main() -> None:
     failures = []
-    check_tap_buffer(failures)
+    check_pico_motor_driver(failures)
     check_pico_plant_sitter(failures)
     if failures:
         print("\n".join("NG: " + f for f in failures))

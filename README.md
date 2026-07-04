@@ -14,7 +14,7 @@ Everything lives in one JSON state file that both sides read and write.
 ## Quick start
 
 1. Clone this repo.
-2. Open `index.html` in any modern browser (no install, no server, single file). A sample project (a dual op-amp audio tap buffer) is embedded.
+2. Open `index.html` in any modern browser (no install, no server, single file). A sample project is embedded: **Pico Plant Sitter**, a Raspberry Pi Pico plant-watering board with a "Before" proposal carrying three deliberate, solver-caught mistakes and a clean "Recommended" proposal.
 3. Drag wire endpoints / parts, set thresholds with the sliders, hit **配線を再計算** (re-route) or **配置を再提案** (re-place & route).
 4. **書き出し** exports the full state JSON — hand it to Claude Code for deeper audits, or commit it to your project repo.
 
@@ -115,7 +115,7 @@ When consumed this way the bundled `solver.py` / `tools/*.py` / `config.example.
 
 A wire endpoint is a `hole` (where the copper wire is inserted) plus a `bridgeTo` (the adjacent same-net hole it is solder-bridged to). `hole == pad` with `direct: true` means the wire is soldered straight onto the lead.
 
-Files: `examples/client-hardware_tap_buffer.json` (sample project, 2 proposals), `config.example.json` (the single threshold file for the Python solver — its dimensions/EE-limits are kept in lockstep with the editor's embedded `DEFCFG` by `tools/parity_check.mjs`, and it is the default the solver loads when `--config` is omitted), `tools/make_link.py` (state JSON → `#z=` editor deep link) and `tools/read_link.py` (the inverse: a pasted `#z=` link → state JSON, so the human can hand a board back by clicking **URL共有 / Share URL** and pasting the link).
+Files: `examples/pico_plant_sitter.json` (the embedded default, 2 proposals) and `examples/pico_motor_driver.json` (a second Before/Recommended teaching example — a Raspberry Pi Pico + DRV8833 dual-motor driver — exercising a different set of ERC findings: a mispopulated jumper shorting two rails, a driver-output conflict, and an unconnected ground pin), `config.example.json` (the single threshold file for the Python solver — its dimensions/EE-limits are kept in lockstep with the editor's embedded `DEFCFG` by `tools/parity_check.mjs`, and it is the default the solver loads when `--config` is omitted), `tools/make_link.py` (state JSON → `#z=` editor deep link) and `tools/read_link.py` (the inverse: a pasted `#z=` link → state JSON, so the human can hand a board back by clicking **URL共有 / Share URL** and pasting the link).
 
 ## CI
 
@@ -131,7 +131,7 @@ Files: `examples/client-hardware_tap_buffer.json` (sample project, 2 proposals),
 
 ## Background
 
-Extracted from a real project: a 2× opamp-ic active buffer for a telephone-client-hardware audio tap, hand-built on a cut piece of perfboard. Photo-based position guessing failed three times; the drag-editor + solver + audit loop is what actually worked. The sample data is that real board.
+Grew out of hand-building a real perfboard project: photo-based position guessing failed three times before the actual build matched the plan. The drag-editor + solver + audit loop is what finally worked, and perfwire is that workflow generalized into a standalone tool.
 
 ## Roadmap
 

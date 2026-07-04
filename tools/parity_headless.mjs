@@ -61,7 +61,7 @@ const norm = {
   grounding: a => JSON.stringify((a || []).map(x => x.net + ':' + x.topology + ':' + x.maxDepth + ':' + (x.daisyReturn ? 1 : 0)).sort()),
 };
 
-const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'client-hardware_tap_buffer.json'), 'utf8'));
+const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'pico_motor_driver.json'), 'utf8'));
 const fails = [];
 for (const prop of sample.proposals) {
   const js = renderEE(deepLink(prop.state));

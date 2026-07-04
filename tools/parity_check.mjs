@@ -88,20 +88,27 @@ const STRIP = (cuts) => ({
   padBridges: [], wires: [], blockedHoles: [], trackCuts: cuts,
 });
 // value-aware fixture: intentionally trips resistorPower (R across V3V3-GND, 33ohm -> 0.33W > 0.25),
-// decouplingValueWarn (C3 is a listed bypass cap with 10uF > 1uF), pinConflicts (net NET carries both an
-// out driver and a pwr source), and multipleDrivers (two out drivers on NET = output contention).
-// Proves these gate-affecting fields on the POPULATED path, not just empty.
+// decouplingValueWarn (C1 is a listed bypass cap -- reuses a cap id from config.example.json's
+// decoupling list, deliberately, so this stays exercised regardless of which board is the bundled
+// example -- with 10uF > 1uF), pinConflicts (net NET carries both an out driver and a pwr source),
+// multipleDrivers (two out drivers on NET = output contention), and clampRisk (U9's "in" pin reaches
+// the allowlisted single-lead external net ECHO_5V through a non-resistor (cap) hop, with no active
+// driver in between). Proves these gate-affecting fields on the POPULATED path, not just empty.
 const VALUE = {
-  grid: { cols: 8, rows: 6, type: 'perf' }, netColors: { V3V3: '#f00', GND: '#000', NET: '#0a0' },
+  grid: { cols: 12, rows: 6, type: 'perf' }, netColors: { V3V3: '#f00', GND: '#000', NET: '#0a0', U9NET: '#00f', ECHO_5V: '#f0f' },
   leads: {
     'R9.a': { net: 'V3V3', at: [1, 1] }, 'R9.b': { net: 'GND', at: [1, 3] },
-    'C3.p': { net: 'V3V3', at: [3, 1] }, 'C3.n': { net: 'GND', at: [3, 3] },
+    'C1.p': { net: 'V3V3', at: [3, 1] }, 'C1.n': { net: 'GND', at: [3, 3] },
     'W.DRV': { net: 'NET', at: [6, 1], role: 'out' }, 'W.DRV2': { net: 'NET', at: [6, 5], role: 'out' },
     'W.PWR': { net: 'NET', at: [6, 3], role: 'pwr' },
+    'U9.IN1': { net: 'U9NET', at: [9, 1] },
+    'C5.a': { net: 'U9NET', at: [11, 1] }, 'C5.b': { net: 'ECHO_5V', at: [11, 3] },
   },
   parts: [
     { id: 'R9', kind: 'r', leads: [[1, 1], [1, 3]], leadNames: ['R9.a', 'R9.b'], value: 33 },
-    { id: 'C3', kind: 'disc', leads: [[3, 1], [3, 3]], leadNames: ['C3.p', 'C3.n'], value: 1e-5 },
+    { id: 'C1', kind: 'disc', leads: [[3, 1], [3, 3]], leadNames: ['C1.p', 'C1.n'], value: 1e-5 },
+    { id: 'U9', kind: 'ic', pins: { IN1: [9, 1] }, pinTypes: { IN1: 'in' } },
+    { id: 'C5', kind: 'disc', leads: [[11, 1], [11, 3]], leadNames: ['C5.a', 'C5.b'], value: 1e-8 },
   ],
   padBridges: [], wires: [], blockedHoles: [], trackCuts: [],
 };
@@ -190,7 +197,7 @@ for (const k of Object.keys(jprof)) {
 }
 if (DEFCFG.defaultProfile !== PYCFG.default_profile) cfgFails.push(`defaultProfile(${DEFCFG.defaultProfile}) != config.default_profile(${PYCFG.default_profile})`);
 
-const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'client-hardware_tap_buffer.json'), 'utf8'));
+const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'pico_motor_driver.json'), 'utf8'));
 // openNets/powerReach depend on the solver's auto-routing (Python adds jumpers, the editor
 // evaluates the as-given wiring), so they only match on fully-wired inputs (the sample proposals).
 // The synthetic strip fixtures carry no jumpers -> skip those two fields for them.
