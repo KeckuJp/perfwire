@@ -501,7 +501,7 @@ if(p.kind==='ic'){var xs=[],ys=[];Object.keys(p.pins).forEach(function(k){var q=
 var x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys),cells=[];
 for(var c=x0;c<=x1;c++)for(var r=y0;r<=y1;r++){var isPin=Object.keys(p.pins).some(function(k){return p.pins[k][0]===c&&p.pins[k][1]===r;});if(!isPin){icSet[c+','+r]=1;cells.push([c,r]);}}
 foots[p.id]={cells:cells,tall:true};}
-else{leadPos[p.leadNames[0]]=p.leads[0];leadPos[p.leadNames[1]]=p.leads[1];
+else{var pln=p.leadNames||[p.id+'.a',p.id+'.b'];leadPos[pln[0]]=p.leads[0];leadPos[pln[1]]=p.leads[1];
 var f=footCells(p,p.leads[0],p.leads[1],p.standing);foots[p.id]=f;
 f.cells.forEach(function(q){bodySet[key(q)]=1;});}});
 Object.keys(D.leads).forEach(function(k){if(!(k in leadPos))leadPos[k]=D.leads[k].at;});
@@ -2023,13 +2023,19 @@ function iunproj(x,y,z){var y2=y-ISO.oy+(z||0)*isoMMZ(),x2=x-ISO.ox;
 function nearHoleIso(x,y){var g=iunproj(x,y,0),c=Math.round(g[0]),r=Math.round(g[1]);
  if(!inb(c,r))return null;var p=iproj(c,r,0);return Math.hypot(x-p[0],y-p[1])<ISO.S*0.5?[c,r]:null;}
 function isoPt(e){var r=isoCv.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top];}
-function isoQuantizeS(s){/* 2*S*DPRが偶数pxになるよう丸める＝穴タイルの幅・高さとも常に厳密整数。
+function isoQuantizeS(s,prev){/* 2*S*DPRが偶数pxになるよう丸める＝穴タイルの幅・高さとも常に厳密整数。
   ズーム操作は連続的に見えるがステップは1/DPR px単位＝知覚不能。CanvasPattern.setTransformでの
   分数周期補正より単純で、実装ミスの余地が無い（敵対的レビュー指摘A-1への対応）。
   [1.2,160]にクランプ: 2D の ZOOM が[0.5,2.4]に制限されているのと同様、ここを通さず
   ISO.S を直接掛け続けるズームイン/アウト操作(isoZoomStep・Ctrl+ホイール)が上限なしに
   暴走し盤面が実質見えなくなるのを防ぐ（独立レビュー指摘）。 */
- var tw=Math.max(2,Math.round(2*Math.max(1.2,Math.min(160,s))*DPR/2)*2);return tw/(2*DPR);}
+ var tw=Math.max(2,Math.round(2*Math.max(1.2,Math.min(160,s))*DPR/2)*2),q=tw/(2*DPR);
+ /* prev(直前の量子化済みS)が渡され、かつ結果がprevと変わらない場合、意図した方向(s>prevなら
+    拡大・そうでなければ縮小)へ最低1量子(=1/DPR px相当)だけ強制的に動かす。DPR=1環境では量子が
+    整数刻みになるため、小さいS付近で×1.1刻みのズームが端数丸めにより常に同じ整数へスナップ
+    バックし、ズーム操作が効かないように見える不具合があった(ゲーム制作実装者レビュー指摘)。 */
+ if(prev!==undefined&&q===prev){var step=1/DPR;q=(s>prev)?Math.min(160,prev+step):Math.max(1.2,prev-step);}
+ return q;}
 function isoPartHeight(p,PF){switch(p.kind){
  case 'elec':return Math.max(6,(PF.dia||6.5)*1.15);
  case 'disc':return Math.max(3,(PF.bodyLen||5)*0.6);
@@ -2107,7 +2113,7 @@ function isoBindEvents(){
  isoCv.addEventListener('pointerleave',function(){if(hoverNet){hoverNet=null;isoInvalidate();}});
  isoCv.addEventListener('wheel',function(e){if(!e.ctrlKey){return;}e.preventDefault();e.stopPropagation();
   var pt=isoPt(e),g=iunproj(pt[0],pt[1],0),guv=g2uv(g[0],g[1]),u=guv[0],v=guv[1];
-  ISO.S=isoQuantizeS(ISO.S*(e.deltaY<0?1.1:1/1.1));
+  ISO.S=isoQuantizeS(ISO.S*(e.deltaY<0?1.1:1/1.1),ISO.S);
   ISO.ox=pt[0]-(u-v)*ISO.S;ISO.oy=pt[1]-(u+v)*ISO.S*0.5;
   isoEnsureBake();isoInvalidate();},{passive:false});
 }
@@ -2118,7 +2124,7 @@ function ensureIsoCanvas(){if(!isoCv){isoCv=document.getElementById('pw-iso');is
  isoCtx.setTransform(DPR,0,0,DPR,0,0);}
 function isoZoomStep(f){var cw=isoCv.clientWidth/2,ch=isoCv.clientHeight/2;
  var g=iunproj(cw,ch,0),guv=g2uv(g[0],g[1]),u=guv[0],v=guv[1];
- ISO.S=isoQuantizeS(ISO.S*f);ISO.ox=cw-(u-v)*ISO.S;ISO.oy=ch-(u+v)*ISO.S*0.5;
+ ISO.S=isoQuantizeS(ISO.S*f,ISO.S);ISO.ox=cw-(u-v)*ISO.S;ISO.oy=ch-(u+v)*ISO.S*0.5;
  isoEnsureBake();isoInvalidate();}
 function isoRotate(step){/* 90°刻みスナップ回転(Tier2)。押下ごとの離散イベントなので毎フレーム
   コストは発生しない。orbit実装(ゲーム制作実装者レビュー提案): 画面中心に映っている盤面上の点を
@@ -2169,7 +2175,10 @@ function isoHolePattern(){var ck=ISO.S+'|'+DPR;/* 変数名ck: グローバル k
  if(ISO.S>=3){hole(tw/2,th/2);[[0,0],[tw,0],[0,th],[tw,th]].forEach(function(q){hole(q[0],q[1]);});}
  ISO_TILE={key:ck,pattern:isoCtx.createPattern(t,'repeat')};return ISO_TILE.pattern;}
 function isoBakeExtent(){var maxHz=0;D.parts.forEach(function(p){var h=isoPartHeight(p,physFor(p));if(h>maxHz)maxHz=h;});
- var zTop=maxHz+8,corners=[iproj(1,1,0),iproj(cols,1,0),iproj(1,rows,0),iproj(cols,rows,0),
+ /* z=0を天面(穴・部品・ワイヤの基準面)とし、スラブは下方z=-1.6へ伸ばす(CG理論レビュー指摘の
+    天面z=1.6/穴基準z=0という二重基準の解消。iunproj/nearHoleIsoが前提とするz=0=天面に統一)。
+    そのためextentの下端はスラブ底のz=-1.6まで含める必要がある。 */
+ var zBot=-1.6,zTop=maxHz+8,corners=[iproj(1,1,zBot),iproj(cols,1,zBot),iproj(1,rows,zBot),iproj(cols,rows,zBot),
   iproj(1,1,zTop),iproj(cols,1,zTop),iproj(1,rows,zTop),iproj(cols,rows,zTop)];
  var xs=corners.map(function(p){return p[0];}),ys=corners.map(function(p){return p[1];});
  var pad=Math.max(ISO.S*1.4,20),minX=Math.min.apply(null,xs)-pad,maxX=Math.max.apply(null,xs)+pad;
@@ -2195,9 +2204,12 @@ function isoEnsureBake(){var bt=D.grid.type||'perf';
     リサンプルを行い、穴パターンなど device px 単位で作った内容がわずかにボケる(CG理論指摘)。 */
  ISO.bakeCssW=bc.width/DPR;ISO.bakeCssH=bc.height/DPR;
  var bx=bc.getContext('2d');bx.setTransform(DPR,0,0,DPR,0,0);bx.translate(-ext.ox,-ext.oy);
- /* 基板スラブ（天面＋厚み） */
- var slabTop=[iproj(1,1,1.6),iproj(cols,1,1.6),iproj(cols,rows,1.6),iproj(1,rows,1.6)];
- var slabBot=[iproj(1,1,0),iproj(cols,1,0),iproj(cols,rows,0),iproj(1,rows,0)];
+ /* 基板スラブ（天面＋厚み）。天面をz=0に統一(動的層のiunproj/nearHoleIsoが前提とする
+    「z=0=穴のある天面」と一致させる。旧実装は天面z=1.6・穴基準z=0が分裂しており、
+    銅箔/trackCuts/blocked×/ラベルが穴格子から約0.77*S px(厚み1.6mm相当)ずれていた。
+    CG理論レビュー指摘の修正: スラブは天面(z=0)から下方(z=-1.6)へ厚みを持たせる。 */
+ var slabTop=[iproj(1,1,0),iproj(cols,1,0),iproj(cols,rows,0),iproj(1,rows,0)];
+ var slabBot=[iproj(1,1,-1.6),iproj(cols,1,-1.6),iproj(cols,rows,-1.6),iproj(1,rows,-1.6)];
  var slabCol=bt==='strip'?'#3a2a1c':((bt==='mesh'||bt==='breadboard'||bt==='cluster'||bt==='custom')?'#402b1a':'#2c6e46');
  /* 盤面ドロップシャドウ: ベイクは構造変化時のみ再構築されるため、ここで焼き込むコストは実質ベイク時1回のみ。
     ctx.shadowBlurはCanvas 2Dで最も遅いパスなので使わず、オフセット＋減衰アルファを複数回重ねた
@@ -2219,11 +2231,11 @@ function isoEnsureBake(){var bt=D.grid.type||'perf';
  bx.fillStyle=normalShade(slabCol,0,0,1);bx.fill();
  /* strip/meshの銅箔（簡易: stripは行/列帯、mesh系はboardLinksの線分） */
  if(bt==='strip'){var ax=D.grid.stripAxis||'row';bx.strokeStyle='rgba(206,140,80,.5)';bx.lineWidth=Math.max(1,ISO.S*0.16);
-  if(ax==='row'){for(var sr=1;sr<=rows;sr++){var a=iproj(1,sr,1.6),b=iproj(cols,sr,1.6);bx.beginPath();bx.moveTo(a[0],a[1]);bx.lineTo(b[0],b[1]);bx.stroke();}}
-  else{for(var sc=1;sc<=cols;sc++){var a2=iproj(sc,1,1.6),b2=iproj(sc,rows,1.6);bx.beginPath();bx.moveTo(a2[0],a2[1]);bx.lineTo(b2[0],b2[1]);bx.stroke();}}}
+  if(ax==='row'){for(var sr=1;sr<=rows;sr++){var a=iproj(1,sr,0),b=iproj(cols,sr,0);bx.beginPath();bx.moveTo(a[0],a[1]);bx.lineTo(b[0],b[1]);bx.stroke();}}
+  else{for(var sc=1;sc<=cols;sc++){var a2=iproj(sc,1,0),b2=iproj(sc,rows,0);bx.beginPath();bx.moveTo(a2[0],a2[1]);bx.lineTo(b2[0],b2[1]);bx.stroke();}}}
  if(bt==='mesh'||bt==='breadboard'||bt==='cluster'||bt==='custom'){var cutsV={};(D.trackCuts||[]).forEach(function(cc){if(cc&&cc[0]&&cc[1]){cutsV[key(cc[0])+'|'+key(cc[1])]=1;cutsV[key(cc[1])+'|'+key(cc[0])]=1;}});
   bx.strokeStyle='rgba(206,140,80,.5)';bx.lineWidth=Math.max(1,ISO.S*0.1);
-  boardLinks(cols,rows,D.grid,cutsV).forEach(function(seg){for(var i=1;i<seg.length;i++){var a=iproj(seg[i-1][0],seg[i-1][1],1.6),b=iproj(seg[i][0],seg[i][1],1.6);bx.beginPath();bx.moveTo(a[0],a[1]);bx.lineTo(b[0],b[1]);bx.stroke();}});}
+  boardLinks(cols,rows,D.grid,cutsV).forEach(function(seg){for(var i=1;i<seg.length;i++){var a=iproj(seg[i-1][0],seg[i-1][1],0),b=iproj(seg[i][0],seg[i][1],0);bx.beginPath();bx.moveTo(a[0],a[1]);bx.lineTo(b[0],b[1]);bx.stroke();}});}
  /* 穴パターン（天面のみに塗る＝天面パス再構築後にclip） */
  bx.save();bx.beginPath();bx.moveTo(slabTop[0][0],slabTop[0][1]);bx.lineTo(slabTop[1][0],slabTop[1][1]);
  bx.lineTo(slabTop[2][0],slabTop[2][1]);bx.lineTo(slabTop[3][0],slabTop[3][1]);bx.closePath();bx.clip();
@@ -2234,11 +2246,11 @@ function isoEnsureBake(){var bt=D.grid.type||'perf';
  bx.setTransform(1,0,0,1,0,0);bx.fillStyle=isoHolePattern();bx.fillRect(0,0,bc.width,bc.height);
  bx.restore();
  /* trackCuts（切断マーク） */
- (D.trackCuts||[]).forEach(function(cc){if(!(cc&&cc[0]&&cc[1]))return;var a=iproj(cc[0][0],cc[0][1],1.6),b=iproj(cc[1][0],cc[1][1],1.6);
+ (D.trackCuts||[]).forEach(function(cc){if(!(cc&&cc[0]&&cc[1]))return;var a=iproj(cc[0][0],cc[0][1],0),b=iproj(cc[1][0],cc[1][1],0);
   var mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2,horiz=cc[0][1]===cc[1][1];bx.strokeStyle='#ff5d5d';bx.lineWidth=Math.max(1.5,ISO.S*0.1);
   bx.beginPath();if(horiz){bx.moveTo(mx,my-ISO.S*0.34);bx.lineTo(mx,my+ISO.S*0.34);}else{bx.moveTo(mx-ISO.S*0.34,my);bx.lineTo(mx+ISO.S*0.34,my);}bx.stroke();});
  /* blocked穴 */
- if(LY.blocked)(D.blockedHoles||[]).forEach(function(b){var v=iproj(b[0],b[1],1.62);bx.fillStyle='rgba(30,30,34,.92)';bx.strokeStyle='#555';bx.lineWidth=1;
+ if(LY.blocked)(D.blockedHoles||[]).forEach(function(b){var v=iproj(b[0],b[1],0.02);bx.fillStyle='rgba(30,30,34,.92)';bx.strokeStyle='#555';bx.lineWidth=1;
   var s=Math.max(6,ISO.S*0.28);bx.beginPath();bx.rect(v[0]-s/2,v[1]-s/2,s,s);bx.fill();bx.stroke();
   bx.font='700 '+Math.max(8,s*0.8)+'px sans-serif';bx.fillStyle='#ff8080';bx.textAlign='center';bx.fillText('×',v[0],v[1]+s*0.35);});
  /* 列/行ラベル */
@@ -2248,11 +2260,11 @@ function isoEnsureBake(){var bt=D.grid.type||'perf';
      rotごとに入れ替わる)。固定のX/Y軸オフセットではなく、1マス内側の点との射影差分から実際の
      外向きベクトルを求める(filmコンデンサの可視面汎用判定と同じ思想。敵対的レビュー指摘)。 */
   for(var c2=1;c2<=cols;c2++){if(c2!==1&&c2%lblStep!==0)continue;
-   var lp=iproj(c2,1,1.6),lin=iproj(c2,rIn,1.6),ddx=lp[0]-lin[0],ddy=lp[1]-lin[1],dl=Math.hypot(ddx,ddy)||1;
+   var lp=iproj(c2,1,0),lin=iproj(c2,rIn,0),ddx=lp[0]-lin[0],ddy=lp[1]-lin[1],dl=Math.hypot(ddx,ddy)||1;
    var lp2=[lp[0]+ddx/dl*ISO.S*0.55,lp[1]+ddy/dl*ISO.S*0.55];
    bx.font='10px Consolas,monospace';bx.fillStyle='#8b97a3';bx.textAlign='center';bx.fillText(String(c2),lp2[0],lp2[1]);}
   for(var r2=1;r2<=rows;r2++){if(r2!==1&&r2%lblStep!==0)continue;
-   var lq=iproj(1,r2,1.6),lqin=iproj(cIn,r2,1.6),edx=lq[0]-lqin[0],edy=lq[1]-lqin[1],el=Math.hypot(edx,edy)||1;
+   var lq=iproj(1,r2,0),lqin=iproj(cIn,r2,0),edx=lq[0]-lqin[0],edy=lq[1]-lqin[1],el=Math.hypot(edx,edy)||1;
    var lq2=[lq[0]+edx/el*ISO.S*0.85,lq[1]+edy/el*ISO.S*0.85];
    bx.font='10px Consolas,monospace';bx.fillStyle='#8b97a3';bx.textAlign='center';bx.fillText(String.fromCharCode(64+r2),lq2[0],lq2[1]+3);}}
  ISO.bake=bc;}
@@ -2335,12 +2347,15 @@ function buildIsoList(){var g=geom(),out=[],footTop=isoFootTop(g),_allow=singleL
  if(LY.wires)D.wires.forEach(function(w){isoWirePrims(w,footTop,out);});
  /* 部品（＋接地影を同じdでlayer:-1に乗せる） */
  if(LY.parts)D.parts.forEach(function(p){var drawer=ISO_DRAW[p.kind];if(!drawer)return;var PF=physFor(p),ft=footTop.byPart[p.id];
-  var sel=inSel(p),shFn=ISO_SHADOW[p.kind];
+  var shFn=ISO_SHADOW[p.kind];
   if(shFn){var sh=shFn(p,PF);
    out.push({d:ft.d,layer:-1,draw:function(ctx,K){
     if(sh.rect)isoQuadShadow(ctx,K,sh.rect);else isoBlobShadow(ctx,K,sh.cx,sh.cy,sh.rMm);}});}
   out.push({d:ft.d,layer:1,p:p,bbox:isoPartBBox(p),
-   draw:function(ctx,K){drawer(ctx,p,PF,K,sel);}});});
+   /* inSel(p)はリスト構築時ではなく描画時に評価する(選択状態はisoRevKeyに含まれておらず、
+      リストが再構築されるまで選択ハイライトが1操作遅れて反映される不具合があった。
+      hoverNetと同じ「描画時に都度評価」方式に揃える。CG理論レビュー指摘)。 */
+   draw:function(ctx,K){drawer(ctx,p,PF,K,inSel(p));}});});
  /* 端子リング＋外部端子タグ */
  if(LY.ends){var lm=g.leadPos;Object.keys(D.leads).forEach(function(nm){var Lx=D.leads[nm];if(!Lx||!Lx.at)return;
   var net=Lx.net,col=D.netColors[net]||'#999',dim=hoverNet&&net!==hoverNet?0.25:1,isExt=nm.slice(0,2)==='W.';
@@ -2492,11 +2507,15 @@ var ISO_DRAW={
   [[a,A],[b,B2]].forEach(function(pr){var h=K.proj(pr[0][0],pr[0][1],0),l=K.proj(pr[0][0],pr[0][1],zA);
    ctx.beginPath();ctx.moveTo(h[0],h[1]);ctx.lineTo(l[0],l[1]);ctx.lineTo(pr[1][0],pr[1][1]);ctx.stroke();});
   var rr=Math.max(2.5,K.immX(bw/2));
-  var nx=-(B2[1]-A[1]),ny=B2[0]-A[0],nl=Math.hypot(nx,ny)||1;nx/=nl;ny/=nl;
-  /* 法線符号を光方向で正規化: (nx,ny)はp.leads[0]→[1]のどちらがa/bかで符号が反転しうるため、
-     固定の参照方向との内積で常に同じ側を向くよう揃える。これが無いと、盤面上で同じ向き(同じ行/列)に
-     置かれた抵抗でも netlist 上のリード順が違うだけで明暗が逆側から照らされる(様式不統一の一因)。 */
-  if(nx*0.9-ny*0.45<0){nx=-nx;ny=-ny;}
+  /* 法線をLIGHT(normalShade()と同じLambert光源)基準で確定: 抵抗の長手方向(ux,uy)に垂直な
+     grid空間(u,v)法線候補(-uy,ux)を作り、LIGHTとの内積が正(=明側)になるよう符号を選び、
+     さらにこのグラデーションは(nx,ny)を暗側(stop 1側)として使う規約なので反転して用いる。
+     screen空間の固定参照ベクトル(0.9,-0.45)による旧実装は、2:1ディメトリック格子軸への
+     射影と平行退化する向きで符号判定が不定になり、netlist上のリード順(a/b)違いだけで
+     同じ向きの抵抗の明暗が反転する不具合があった(CG理論レビュー指摘)。grid空間でLIGHTと
+     直接内積を取ることで、退化方向がなく、リード順にも依存しない。 */
+  var gnu=-uy,gnv=ux;if(gnu*LIGHT.du+gnv*LIGHT.dv>0){gnu=-gnu;gnv=-gnv;}
+  var nx=gnu-gnv,ny=(gnu+gnv)*0.5,nl=Math.hypot(nx,ny)||1;nx/=nl;ny/=nl;
   var mid=[(A[0]+B2[0])/2,(A[1]+B2[1])/2];
   var g2=ctx.createLinearGradient(mid[0]-nx*rr,mid[1]-ny*rr,mid[0]+nx*rr,mid[1]+ny*rr);
   g2.addColorStop(0,'#ecd2a8');g2.addColorStop(0.45,'#d9b38c');g2.addColorStop(1,'#9c7642');
@@ -2530,7 +2549,11 @@ var ISO_DRAW={
   if(K.labels){var lbl=(p.family?p.family+' ':'')+(p.label||'');K.txt(ctx,(T[0][0]+T[2][0])/2,(T[0][1]+T[2][1])/2+4,lbl,'#fff',11);}}};
 
 /* --- 統合: renderIso / compose / invalidate / pick / hover --- */
-function isoRevKey(){return [curI,ISOREV,LY.parts,LY.labels,LY.wires,LY.bridges,LY.ends,LY.caut,LY.blocked,MIRROR,ISO.rot].join('|');}
+function isoRevKey(){/* ISO.S<6のバケットを含める: isoWirePrims()のワイヤ分割数NSは構築時の
+  ISO.S<6判定でLOD(簡易/詳細)を決めるため、これが無いとズームでバケットを跨いでもリストが
+  再構築されず、ワイヤ弧が古いNSのまま(拡大で「へ」の字にテント化/縮小でLOD簡略化が効かない)
+  になる(ゲーム制作実装者レビュー指摘)。*/
+ return [curI,ISOREV,LY.parts,LY.labels,LY.wires,LY.bridges,LY.ends,LY.caut,LY.blocked,MIRROR,ISO.rot,(ISO.S<6?0:1)].join('|');}
 function renderIso(){ensureIsoCanvas();if(ISO.S===0)isoFit();
  var lk=isoRevKey();if(ISO.listKey!==lk){ISO.list=buildIsoList();ISO.listKey=lk;}
  isoEnsureBake();isoCompose();isoStatus();
