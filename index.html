@@ -440,6 +440,7 @@ var JE={
 function tr(s){return LANG==='en'&&Object.prototype.hasOwnProperty.call(JE,s)?JE[s]:s;}
 function scrollBehavior(){return (window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)?'auto':'smooth';}
 function trf(s){var t=tr(s),a=arguments;return t.replace(/\{(\d+)\}/g,function(m,i){var v=a[+i+1];return v===undefined?m:v;});}
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 var props=INIT.proposals.map(function(p,i){return{name:p.name,orig:p.state,cur:null,origin:p.origin||'saved',initIdx:i};});
 var curI=0,D=null,BASE=30,ZOOM=1,PITCH=30,OX=50,OY=40,mode='move',drag=null,selPart=null,selSet=[],cols=17,rows=14;
 var hoverNet=null,tempFoot=false,footTimer=null,auditTimer=null,tempViz=null,vizTimer=null,busy=false,calcNote='';
@@ -748,9 +749,9 @@ var ap=g.leadPos[d.pin];if(!ap)return;var an=D.leads[d.pin]?D.leads[d.pin].net:n
 var lead=(cpart.leadNames||[]).filter(function(nm){return D.leads[nm]&&D.leads[nm].net===an;})[0];if(!lead)return;
 var dd=cheb(g.leadPos[lead],ap),ok=dd<=d.max;if(!ok){ngs++;ngsHard++;}
 GEE.decoupling.push({cap:d.cap,pin:d.pin,holes:dd,max:d.max,ok:ok});
-rows2.push('<span class="'+(ok?'ok':'ng')+'">'+d.cap+'→'+d.pin+' '+dd+(ok?'✓':'✗')+'</span>');});
+rows2.push('<span class="'+(ok?'ok':'ng')+'">'+esc(d.cap)+'→'+esc(d.pin)+' '+dd+(ok?'✓':'✗')+'</span>');});
 addRow(tr('デカップリング'),rows2.join(' '));
-var wlr=[];D.wires.forEach(function(w){var wl=dist(w.a.hole,w.b.hole),mx=cdef(w.net).maxWire;GEE.wireLength.push({net:w.net,holes:Math.round(wl*10)/10,max:mx,ok:wl<=mx});if(wl>mx){ngs++;wlr.push('<span class="ng">'+w.net+' '+wl.toFixed(1)+'&gt;'+mx+'</span>');}});
+var wlr=[];D.wires.forEach(function(w){var wl=dist(w.a.hole,w.b.hole),mx=cdef(w.net).maxWire;GEE.wireLength.push({net:w.net,holes:Math.round(wl*10)/10,max:mx,ok:wl<=mx});if(wl>mx){ngs++;wlr.push('<span class="ng">'+esc(w.net)+' '+wl.toFixed(1)+'&gt;'+esc(mx)+'</span>');}});
 addRow(tr('配線長'),wlr.length?wlr.join(' '):'<span class="ok">'+tr('全クラス上限内')+' ✓</span>');
 var ovNg=0,ovWr=0,ids=Object.keys(g.foots);
 for(var i=0;i<ids.length;i++)for(var j=i+1;j<ids.length;j++){var A=g.foots[ids[i]],B=g.foots[ids[j]],hit=false;
@@ -761,7 +762,7 @@ GEE.bodyOverlaps={ng:ovNg,wr:ovWr};
 addRow(tr('本体重なり'),(ovNg?'<span class="ng">NG '+ovNg+'</span>':'<span class="ok">'+tr('重なりなし')+' ✓</span>')+' <span class="wr">'+tr('警告')+' '+ovWr+'</span>');
 var joints=jointMap();
 var jNg=0;Object.keys(joints).forEach(function(k){if(joints[k]>CFG.rules.maxJoints){jNg++;var pk=k.split(',').map(Number);GEE.padJoints.push({hole:pk,joints:joints[k],max:CFG.rules.maxJoints});}});ngs+=jNg;ngsHard+=jNg;
-addRow(tr('パッド接合数'),jNg?'<span class="ng">NG '+jNg+'</span>':'<span class="ok">'+CFG.rules.maxJoints+tr('以下')+' ✓</span>');
+addRow(tr('パッド接合数'),jNg?'<span class="ng">NG '+jNg+'</span>':'<span class="ok">'+esc(CFG.rules.maxJoints)+tr('以下')+' ✓</span>');
 var erc=ercAudit();
 var polbad=erc.polarity.filter(function(x){return x.ok===false;}).map(function(x){return x.part;});
 var preachbad=erc.powerReach.filter(function(x){return !x.ok;}).map(function(x){return x.net;});
@@ -769,54 +770,54 @@ var respbad=erc.resistorPower.filter(function(x){return !x.ok;}).map(function(x)
 var ercNg=erc.openNets.length+erc.netMerge.length+erc.bridgeDangle.length+erc.unconnectedLeads.length+erc.duplicateIds.length+polbad.length+preachbad.length+erc.floatingPowerPins.length+erc.multipleDrivers.length+erc.stripShorts.length+respbad.length+erc.pinConflicts.length;
 ngs+=ercNg;ngsHard+=ercNg;
 var eb=[];
-if(erc.pinConflicts.length)eb.push('<span class="ng">'+tr('出力電源競合')+' '+erc.pinConflicts.map(function(x){return x.net;}).join(',')+'</span>');
-if(respbad.length)eb.push('<span class="ng">'+tr('抵抗過負荷')+' '+respbad.join(',')+'</span>');
-if(erc.decouplingValueWarn.length)eb.push('<span class="wr">'+tr('パスコン値')+' '+erc.decouplingValueWarn.map(function(x){return x.cap;}).join(',')+'</span>');
-if(erc.stripShorts.length)eb.push('<span class="ng">'+tr('ストリップ短絡')+' '+erc.stripShorts.map(function(s){return s.nets.join('/');}).join(' ')+'</span>');
-if(erc.multipleDrivers.length)eb.push('<span class="ng">'+tr('出力競合')+' '+erc.multipleDrivers.map(function(m){return m.net+'('+m.pins.join('+')+')';}).join(' ')+'</span>');
-if(erc.openNets.length)eb.push('<span class="ng">'+tr('オープンネット')+' '+erc.openNets.join(',')+'</span>');
-if(erc.netMerge.length)eb.push('<span class="ng">'+tr('ネット短絡')+' '+erc.netMerge.map(function(x){return x.nets.join('/');}).join(' ')+'</span>');
-if(erc.bridgeDangle.length)eb.push('<span class="ng">'+tr('ブリッジ宙ぶらりん')+' '+erc.bridgeDangle.map(function(x){return (x.tap||x.net)+'→'+x.bridgeTo.join(',');}).join(' ')+'</span>');
-if(erc.unconnectedLeads.length)eb.push('<span class="ng">'+tr('未接続')+' '+erc.unconnectedLeads.join(',')+'</span>');
-if(erc.floatingPowerPins.length)eb.push('<span class="ng">'+tr('電源ピン浮き')+' '+erc.floatingPowerPins.join(',')+'</span>');
-if(preachbad.length)eb.push('<span class="ng">'+tr('電源未到達')+' '+preachbad.join(',')+'</span>');
-if(erc.duplicateIds.length)eb.push('<span class="ng">'+tr('重複ID')+' '+erc.duplicateIds.join(',')+'</span>');
-if(polbad.length)eb.push('<span class="ng">'+tr('極性逆')+' '+polbad.join(',')+'</span>');
-if(erc.singleLeadNets.length)eb.push('<span class="wr">'+tr('単一リード')+' '+erc.singleLeadNets.join(',')+'</span>');
-if(erc.undrivenNets.length)eb.push('<span class="wr">'+tr('未駆動入力')+' '+erc.undrivenNets.join(',')+'</span>');
-if(erc.clampRisk.length)eb.push('<span class="wr">'+tr('入力クランプ')+' '+erc.clampRisk.map(function(x){return x.pin;}).join(',')+'</span>');
-if(erc.railShort.some(function(x){return !x.ok;}))eb.push('<span class="wr">'+tr('レール過電流')+' '+erc.railShort.filter(function(x){return !x.ok;}).map(function(x){return x.part+' '+x.ma+'mA';}).join(',')+'</span>');
-if(erc.railReff.some(function(x){return !x.ok;}))eb.push('<span class="wr">'+tr('レール実効短絡')+' '+erc.railReff.filter(function(x){return !x.ok;}).map(function(x){return x.pair.join('-')+' '+x.ohms+'Ω';}).join(',')+'</span>');
-if(erc.unclassifiedNets.length)eb.push('<span class="wr">'+tr('未分類')+' '+erc.unclassifiedNets.join(',')+'</span>');
+if(erc.pinConflicts.length)eb.push('<span class="ng">'+tr('出力電源競合')+' '+erc.pinConflicts.map(function(x){return esc(x.net);}).join(',')+'</span>');
+if(respbad.length)eb.push('<span class="ng">'+tr('抵抗過負荷')+' '+respbad.map(esc).join(',')+'</span>');
+if(erc.decouplingValueWarn.length)eb.push('<span class="wr">'+tr('パスコン値')+' '+erc.decouplingValueWarn.map(function(x){return esc(x.cap);}).join(',')+'</span>');
+if(erc.stripShorts.length)eb.push('<span class="ng">'+tr('ストリップ短絡')+' '+erc.stripShorts.map(function(s){return esc(s.nets.join('/'));}).join(' ')+'</span>');
+if(erc.multipleDrivers.length)eb.push('<span class="ng">'+tr('出力競合')+' '+erc.multipleDrivers.map(function(m){return esc(m.net+'('+m.pins.join('+')+')');}).join(' ')+'</span>');
+if(erc.openNets.length)eb.push('<span class="ng">'+tr('オープンネット')+' '+erc.openNets.map(esc).join(',')+'</span>');
+if(erc.netMerge.length)eb.push('<span class="ng">'+tr('ネット短絡')+' '+erc.netMerge.map(function(x){return esc(x.nets.join('/'));}).join(' ')+'</span>');
+if(erc.bridgeDangle.length)eb.push('<span class="ng">'+tr('ブリッジ宙ぶらりん')+' '+erc.bridgeDangle.map(function(x){return esc((x.tap||x.net)+'→'+x.bridgeTo.join(','));}).join(' ')+'</span>');
+if(erc.unconnectedLeads.length)eb.push('<span class="ng">'+tr('未接続')+' '+erc.unconnectedLeads.map(esc).join(',')+'</span>');
+if(erc.floatingPowerPins.length)eb.push('<span class="ng">'+tr('電源ピン浮き')+' '+erc.floatingPowerPins.map(esc).join(',')+'</span>');
+if(preachbad.length)eb.push('<span class="ng">'+tr('電源未到達')+' '+preachbad.map(esc).join(',')+'</span>');
+if(erc.duplicateIds.length)eb.push('<span class="ng">'+tr('重複ID')+' '+erc.duplicateIds.map(esc).join(',')+'</span>');
+if(polbad.length)eb.push('<span class="ng">'+tr('極性逆')+' '+polbad.map(esc).join(',')+'</span>');
+if(erc.singleLeadNets.length)eb.push('<span class="wr">'+tr('単一リード')+' '+erc.singleLeadNets.map(esc).join(',')+'</span>');
+if(erc.undrivenNets.length)eb.push('<span class="wr">'+tr('未駆動入力')+' '+erc.undrivenNets.map(esc).join(',')+'</span>');
+if(erc.clampRisk.length)eb.push('<span class="wr">'+tr('入力クランプ')+' '+erc.clampRisk.map(function(x){return esc(x.pin);}).join(',')+'</span>');
+if(erc.railShort.some(function(x){return !x.ok;}))eb.push('<span class="wr">'+tr('レール過電流')+' '+erc.railShort.filter(function(x){return !x.ok;}).map(function(x){return esc(x.part+' '+x.ma+'mA');}).join(',')+'</span>');
+if(erc.railReff.some(function(x){return !x.ok;}))eb.push('<span class="wr">'+tr('レール実効短絡')+' '+erc.railReff.filter(function(x){return !x.ok;}).map(function(x){return esc(x.pair.join('-')+' '+x.ohms+'Ω');}).join(',')+'</span>');
+if(erc.unclassifiedNets.length)eb.push('<span class="wr">'+tr('未分類')+' '+erc.unclassifiedNets.map(esc).join(',')+'</span>');
 if(erc.keepAway.length)eb.push('<span class="wr">'+tr('離隔違反')+' '+erc.keepAway.length+'</span>');
 addRow(tr('ERC'),eb.length?eb.join(' '):'<span class="ok">'+tr('クリーン')+' ✓</span>');
 var topo=topoAudit();
 var tb=[];
-topo.grounding.forEach(function(gr){tb.push((gr.daisyReturn?'<span class="wr">':'<span class="mut2">')+gr.net+' '+gr.topology+'('+tr('深')+gr.maxDepth+')</span>');});
-if(topo.guard.length)tb.push('<span class="mut2">'+tr('高Zガード推奨')+' '+topo.guard.map(function(x){return x.net+'('+tr('穴')+x.ringHoles.length+')';}).join(',')+'</span>');
+topo.grounding.forEach(function(gr){tb.push((gr.daisyReturn?'<span class="wr">':'<span class="mut2">')+esc(gr.net)+' '+gr.topology+'('+tr('深')+gr.maxDepth+')</span>');});
+if(topo.guard.length)tb.push('<span class="mut2">'+tr('高Zガード推奨')+' '+topo.guard.map(function(x){return esc(x.net)+'('+tr('穴')+x.ringHoles.length+')';}).join(',')+'</span>');
 if(topo.crosstalk)tb.push('<span class="mut2">'+tr('平行近接')+' '+topo.crosstalk+tr('対')+'</span>');
 addRow(tr('トポロジ'),tb.length?tb.join(' '):'<span class="ok">—</span>');
 addRow(tr('総合'),'<b>'+(ngsHard?'<span class="ng">NG '+ngsHard+tr('件')+'</span>':(ngs?'<span class="wr">'+tr('△ 配線長のみ（許容範囲）')+'</span>':'<span class="ok">'+tr('PASS ✓ 製作可')+'</span>'))+'</b>');
 var cm=craftMetrics(),_ci=cm.diag||cm.stretch||cm.jlong;
 addRow(tr('レイアウト品質'),trf('被覆線 中央{0}/最長{1}穴',cm.jmed,cm.jmax)+(cm.jlong?' <span class="wr">'+trf('長い線{0}',cm.jlong)+'</span>':'')+(cm.diag?' <span class="wr">'+trf('斜め抵抗{0}',cm.diag)+'</span>':'')+(cm.stretch?' <span class="wr">'+trf('過伸長{0}',cm.stretch)+'</span>':'')+(_ci?'':' <span class="ok">✓</span>'));
 var fixes=[];
-erc.openNets.forEach(function(n){fixes.push(tr('オープンネット')+' '+n+': '+tr('被覆線で接続'));});
-erc.netMerge.forEach(function(m){fixes.push(tr('ネット短絡')+' '+m.nets.join('/')+': '+tr('橋/配線を分離'));});
-erc.bridgeDangle.forEach(function(x){fixes.push(tr('ブリッジ宙ぶらりん')+' '+(x.tap||x.net)+': '+tr('橋の行き先を実パッド/穴に接続'));});
-erc.stripShorts.forEach(function(s){fixes.push(tr('ストリップ短絡')+' '+s.nets.join('/')+': '+tr('track cutで分離'));});
-erc.multipleDrivers.forEach(function(m){fixes.push(tr('出力競合')+' '+m.net+': '+tr('ドライバを1つに'));});
-erc.unconnectedLeads.forEach(function(l){fixes.push(tr('未接続')+' '+l+': '+tr('ネット割当'));});
-erc.duplicateIds.forEach(function(i2){fixes.push(tr('重複ID')+' '+i2+': '+tr('refdes一意化'));});
-erc.floatingPowerPins.forEach(function(pp){fixes.push(tr('電源ピン浮き')+' '+pp+': '+tr('電源へ接続'));});
-polbad.forEach(function(pb){fixes.push(tr('極性逆')+' '+pb+': '+tr('+を高電位へ'));});
-preachbad.forEach(function(nn){fixes.push(tr('電源未到達')+' '+nn+': '+tr('給電へ結線')
+erc.openNets.forEach(function(n){fixes.push(tr('オープンネット')+' '+esc(n)+': '+tr('被覆線で接続'));});
+erc.netMerge.forEach(function(m){fixes.push(tr('ネット短絡')+' '+esc(m.nets.join('/'))+': '+tr('橋/配線を分離'));});
+erc.bridgeDangle.forEach(function(x){fixes.push(tr('ブリッジ宙ぶらりん')+' '+esc(x.tap||x.net)+': '+tr('橋の行き先を実パッド/穴に接続'));});
+erc.stripShorts.forEach(function(s){fixes.push(tr('ストリップ短絡')+' '+esc(s.nets.join('/'))+': '+tr('track cutで分離'));});
+erc.multipleDrivers.forEach(function(m){fixes.push(tr('出力競合')+' '+esc(m.net)+': '+tr('ドライバを1つに'));});
+erc.unconnectedLeads.forEach(function(l){fixes.push(tr('未接続')+' '+esc(l)+': '+tr('ネット割当'));});
+erc.duplicateIds.forEach(function(i2){fixes.push(tr('重複ID')+' '+esc(i2)+': '+tr('refdes一意化'));});
+erc.floatingPowerPins.forEach(function(pp){fixes.push(tr('電源ピン浮き')+' '+esc(pp)+': '+tr('電源へ接続'));});
+polbad.forEach(function(pb){fixes.push(tr('極性逆')+' '+esc(pb)+': '+tr('+を高電位へ'));});
+preachbad.forEach(function(nn){fixes.push(tr('電源未到達')+' '+esc(nn)+': '+tr('給電へ結線')
 +' <button class="fixbtn" data-fixpwr="'+encodeURIComponent(nn)+'" style="font-size:10px;padding:1px 7px;margin-left:4px;cursor:pointer">'+tr('＋ 外部端子を追加')+'</button>');});
-erc.pinConflicts.forEach(function(c){fixes.push(tr('出力電源競合')+' '+c.net+': '+tr('出力を電源から分離'));});
-respbad.forEach(function(rb){fixes.push(tr('抵抗過負荷')+' '+rb+': '+tr('定格up/値見直し'));});
-erc.clampRisk.forEach(function(c){fixes.push(tr('入力クランプ')+' '+c.pin+': '+tr('直列抵抗/クランプを追加'));});
-erc.railShort.filter(function(x){return !x.ok;}).forEach(function(x){fixes.push(tr('レール過電流')+' '+x.part+': '+tr('R上げ/レール分離'));});
-erc.railReff.filter(function(x){return !x.ok;}).forEach(function(x){fixes.push(tr('レール実効短絡')+' '+x.pair.join('-')+': '+tr('実効抵抗を上げる/経路分離'));});
-D.wires.forEach(function(w){var wl=dist(w.a.hole,w.b.hole),mx=cdef(w.net).maxWire;if(wl>mx)fixes.push(tr('配線長')+' '+w.net+': '+tr('経路短縮/再配置'));});
+erc.pinConflicts.forEach(function(c){fixes.push(tr('出力電源競合')+' '+esc(c.net)+': '+tr('出力を電源から分離'));});
+respbad.forEach(function(rb){fixes.push(tr('抵抗過負荷')+' '+esc(rb)+': '+tr('定格up/値見直し'));});
+erc.clampRisk.forEach(function(c){fixes.push(tr('入力クランプ')+' '+esc(c.pin)+': '+tr('直列抵抗/クランプを追加'));});
+erc.railShort.filter(function(x){return !x.ok;}).forEach(function(x){fixes.push(tr('レール過電流')+' '+esc(x.part)+': '+tr('R上げ/レール分離'));});
+erc.railReff.filter(function(x){return !x.ok;}).forEach(function(x){fixes.push(tr('レール実効短絡')+' '+esc(x.pair.join('-'))+': '+tr('実効抵抗を上げる/経路分離'));});
+D.wires.forEach(function(w){var wl=dist(w.a.hole,w.b.hole),mx=cdef(w.net).maxWire;if(wl>mx)fixes.push(tr('配線長')+' '+esc(w.net)+': '+tr('経路短縮/再配置'));});
 if(fixes.length)rows.push('<div class="aud-row aud-fixes"><span class="aud-k">'+tr('修正提案')+'</span><div class="aud-v">'+fixes.map(function(x){return '<div class="mut2">• '+x+'</div>';}).join('')+'</div></div>');
 var h=noteLine+rows.join('');
 try{var ed=document.getElementById('eedump');if(ed)ed.textContent=JSON.stringify({wireLength:GEE.wireLength,decoupling:GEE.decoupling,padJoints:GEE.padJoints,bodyOverlaps:GEE.bodyOverlaps,grounding:topo.grounding,openNets:erc.openNets,singleLeadNets:erc.singleLeadNets,unconnectedLeads:erc.unconnectedLeads,duplicateIds:erc.duplicateIds,unclassifiedNets:erc.unclassifiedNets,polarity:erc.polarity,powerReach:erc.powerReach,floatingPowerPins:erc.floatingPowerPins,multipleDrivers:erc.multipleDrivers,undrivenNets:erc.undrivenNets,stripShorts:erc.stripShorts,resistorPower:erc.resistorPower,decouplingValueWarn:erc.decouplingValueWarn,pinConflicts:erc.pinConflicts,netMerge:erc.netMerge,bridgeDangle:erc.bridgeDangle,fabReady:ngs===0});}catch(e){}
@@ -1011,7 +1012,7 @@ E('rect',{x:0,y:0,width:W2,height:H2,fill:'rgba(5,8,12,0.76)','pointer-events':'
 try{drawStep(GUIDE.steps[GUIDE.i]);}catch(e){}}
 var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)direct++;});});
 var stStats=document.getElementById('st-stats');
-stStats.innerHTML=tr('被覆線')+' <b>'+D.wires.length+'</b> ('+tr('直付')+' '+direct+') / '+tr('警告')+' <b>'+warn+'</b> / '+tr('ズーム')+' '+Math.round(ZOOM*100)+'%'+(selPart?(' / '+tr('選択')+' <b>'+selPart.id+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'')+(ds?(' / '+tr('比較')+'[<b>'+DIFF.name+'</b>] '+tr('移動')+ds.mv+' '+tr('部品')+'+'+ds.pAdd+'−'+ds.pDel+' '+tr('線')+'+'+ds.wAdd+'−'+ds.wDel+' '+tr('橋')+'+'+ds.bAdd+'−'+ds.bDel):'');
+stStats.innerHTML=tr('被覆線')+' <b>'+D.wires.length+'</b> ('+tr('直付')+' '+direct+') / '+tr('警告')+' <b>'+warn+'</b> / '+tr('ズーム')+' '+Math.round(ZOOM*100)+'%'+(selPart?(' / '+tr('選択')+' <b>'+esc(selPart.id)+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'')+(ds?(' / '+tr('比較')+'[<b>'+esc(DIFF.name)+'</b>] '+tr('移動')+ds.mv+' '+tr('部品')+'+'+ds.pAdd+'−'+ds.pDel+' '+tr('線')+'+'+ds.wAdd+'−'+ds.wDel+' '+tr('橋')+'+'+ds.bAdd+'−'+ds.bDel):'');
 stStats.title=ds?tr('比較の見方: 移動=位置が変わった部品の数／部品・線・橋はそれぞれ「+追加数−削除数」'):'';
 if(selPart!==palLast){palLast=selPart;buildPalEdit();}
 saveLS();}
@@ -1098,8 +1099,8 @@ var sp=document.getElementById('st-pos'),sn=document.getElementById('st-net'),ne
 if(!h){sp.textContent='—';sn.style.display='none';}
 else{sp.innerHTML=trf('列 <b>{0}</b> 行 <b>{1}</b>',h[0],String.fromCharCode(64+h[1]));
 var lm=leadMap(),o=lm[key(h)],e2=endAt(h[0],h[1]);
-if(o){sn.innerHTML=trf('ネット <b>{0}</b>（{1}）',o.net,o.name);sn.style.display='';newNet=o.net;}
-else if(e2){sn.innerHTML=trf('被覆線端子 <b>{0}</b>',e2.w.net);sn.style.display='';newNet=e2.w.net;}
+if(o){sn.innerHTML=trf('ネット <b>{0}</b>（{1}）',esc(o.net),esc(o.name));sn.style.display='';newNet=o.net;}
+else if(e2){sn.innerHTML=trf('被覆線端子 <b>{0}</b>',esc(e2.w.net));sn.style.display='';newNet=e2.w.net;}
 else if(blockedIdx(h[0],h[1])>=0){sn.innerHTML='<span style="color:var(--wr)">'+tr('ブロック穴')+'</span>';sn.style.display='';}
 else{sn.innerHTML=tr('空き穴');sn.style.display='';}}
 if(newNet!==hoverNet){hoverNet=newNet;render();}});
@@ -1944,7 +1945,7 @@ var PHYS_PREVIEW={
  s+='<rect x="'+(gx+cw*0.15)+'" y="'+(gy+cw*0.15)+'" width="'+(cols*cw-cw*0.3)+'" height="'+(rws*cw-cw*0.3)+'" rx="5" fill="#16181c" stroke="#5edcff" stroke-width="1.3" opacity="0.93"/>';
  ks.forEach(function(k){s+='<circle cx="'+(gx+(pins[k][0]-minx)*cw+cw/2)+'" cy="'+(gy+(pins[k][1]-miny)*cw+cw/2)+'" r="2.6" fill="#ffd24d"/>';});
  var p1=pins['1'];if(p1)s+='<circle cx="'+(gx+(p1[0]-minx)*cw+cw/2)+'" cy="'+(gy+(p1[1]-miny)*cw+cw/2)+'" r="3.6" fill="none" stroke="#ff5d5d" stroke-width="1.4"/>';/* pin-1 マーカーは『1』キーの実位置（最小角に固定しない） */
- s+='<text x="'+(c.W/2)+'" y="'+(c.H-5)+'" font-size="10.5" fill="#5edcff" text-anchor="middle">'+(part.family?part.family+' · ':'')+ks.length+tr('ピン')+'</text>';return s;}
+ s+='<text x="'+(c.W/2)+'" y="'+(c.H-5)+'" font-size="10.5" fill="#5edcff" text-anchor="middle">'+(part.family?esc(part.family)+' · ':'')+ks.length+tr('ピン')+'</text>';return s;}
 };
 function drawPhysPreview(part){var el=document.getElementById('physpreview');if(!el||!CFG.physical)return;
 var kind=(part&&part.kind)||'r',PF=part?physFor(part):(CFG.physical.r||{});
@@ -2325,7 +2326,7 @@ function isoPick(ev){var pt=isoPt(ev);
 function isoStatus(){var el=document.getElementById('st-stats');if(!el)return;
  var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)direct++;});});
  el.innerHTML=tr('被覆線')+' <b>'+D.wires.length+'</b> ('+tr('直付')+' '+direct+') / 3D '+Math.round(ISO.S*10)/10+'px'+
-  (selPart?(' / '+tr('選択')+' <b>'+selPart.id+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'');}
+  (selPart?(' / '+tr('選択')+' <b>'+esc(selPart.id)+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'');}
 function setIso(v){if(v===ISO.on)return;ISO.on=v;
  var btn=document.getElementById('z-iso');if(btn)btn.className=v?'on':'';
  if(v&&MIRROR)setMirror(false);
