@@ -1844,7 +1844,7 @@ render();auditSoon();}},
 {n:'ズーム アウト',k:'zoom out',f:function(){document.getElementById('z-out').click();}},
 {n:'ズーム 100%',k:'zoom fit',f:function(){document.getElementById('z-fit').click();}},
 {n:'3Dビュー 切替',k:'iso 3d view',f:function(){setIso(!ISO.on);}},
-{n:'3Dビュー 回転（90°）',k:'iso 3d view rotate 90 yaw camera turntable',f:function(){isoRotate(1);}},
+{n:'3Dビュー 回転（90°）',k:'iso 3d view rotate 90 yaw camera turntable',f:function(){if(GL3D.on)gl3dSnapRotate();else isoRotate(1);}},
 {n:'レイヤー: 実寸法 切替',k:'layer footprint',f:function(){LY.foot=!LY.foot;render();}},
 {n:'レイヤー: 被覆線 切替',k:'layer wires',f:function(){LY.wires=!LY.wires;render();}},
 {n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}},
@@ -2693,8 +2693,9 @@ var GL3D={on:false,ok:null,gl:null,canvas:null,
     には一切触れない設計(gl3dUpdateHL参照)。 */
  tagPart:[],tagNet:[],netList:[],
  geomKey:'',needFit:true,
- /* 90°スナップ回転(z-isorot流用)のトゥイーン。ドラッグ開始で即座にキャンセルする(gl3dBindEvents)。 */
- rotRaf:null,
+ /* 90°スナップ回転(z-isorot流用)のトゥイーン。ドラッグ開始で即座にキャンセルする(gl3dBindEvents)。
+    rotTarget=直前に確定させた目標yaw(連打時の逆戻り防止に使う。ドラッグ開始でundefinedへ戻す)。 */
+ rotRaf:null,rotTarget:undefined,
  yaw:45*Math.PI/180,pitch:30*Math.PI/180,dist:400,tx:0,ty:0,drag:null,raf:null,dpr:1};
 function m4ident(){return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);}
 function m4mul(a,b){var o=new Float32Array(16);for(var c=0;c<4;c++)for(var r=0;r<4;r++){var s=0;for(var k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s;}return o;}
@@ -3226,8 +3227,12 @@ function gl3dUpdateHL(gl){
    といった操作のたびにジオメトリが正しく再構築される。LY.labels/LY.cautはラベル
    アトラスの内容に、GL3D.dprはアトラスの解像度に効くのでキーに含める(要件6)。 */
 function gl3dGeomKey(){var bt=D.grid.type||'perf';
+ /* CFG.pitchをキーに含める(推奨修正): configの再取込み等でピッチ(穴間隔mm)が変わっても、
+    curI/ISOREV等の他要素が不変だと3Dメッシュが旧ピッチのスケールのまま残ってしまう
+    3D固有のキャッシュ漏れがあった(2Dのisoは自身のCFG.pitch依存箇所を都度再計算するため
+    この種の漏れが無い)。 */
  return [curI,ISOREV,cols,rows,bt,D.grid.stripAxis,LY.blocked?1:0,LY.parts?1:0,LY.wires?1:0,
-  LY.labels?1:0,LY.caut?1:0,LY.bridges?1:0,LY.ends?1:0,GL3D.dpr||1,
+  LY.labels?1:0,LY.caut?1:0,LY.bridges?1:0,LY.ends?1:0,GL3D.dpr||1,CFG.pitch,
   (D.blockedHoles||[]).map(key).join(';'),
   (D.trackCuts||[]).map(function(cc,ci){return (cc&&cc[0]&&cc[1])?(key(cc[0])+'-'+key(cc[1])):('x'+ci);}).join(';'),LANG].join('|');}
 function gl3dRebuildIfNeeded(gl){var ck=gl3dGeomKey();if(GL3D.geomKey===ck)return;GL3D.geomKey=ck;
@@ -3560,9 +3565,18 @@ function gl3dSnapRotate(){
     2回目以降delta<1e-4で早期returnし恒久的に無反応になっていた(headless実機検証で確認)。
     現在yawが直近の倍数から有意にズレている(=自由回転直後)場合だけ最寄りへスナップし、
     既に倍数に揃っている(=前回のスナップ/初期値からの継続押下)場合は+90°進める。 */
- var step=Math.PI/2,nearest=Math.round(GL3D.yaw/step)*step,from=GL3D.yaw;
- var target=(Math.abs(from-nearest)>1e-4)?nearest:nearest+step,delta=target-from;
+ /* トゥイーン中の連打対策(必須修正): トゥイーン継続中(GL3D.rotRaf有効)は、その時点の
+    GL3D.yaw(まだ90°の倍数に達していない中間値)から「最も近い倍数」を再計算すると、
+    トゥイーン前半での連打時に出発点側へ丸められ回転が逆戻りして見える。トゥイーン中は
+    直前に確定させた目標値GL3D.rotTargetを基準に+90°するので、連打しても必ず前進する。
+    ドラッグでの手動回転(pointerdown)はGL3D.rotTargetを破棄するので、その後の押下は
+    ドラッグ後の新しいyawから改めて最寄りの倍数へスナップする。 */
+ var step=Math.PI/2,from=GL3D.yaw,target;
+ if(GL3D.rotRaf&&GL3D.rotTarget!==undefined){target=GL3D.rotTarget+step;}
+ else{var nearest=Math.round(from/step)*step;target=(Math.abs(from-nearest)>1e-4)?nearest:nearest+step;}
+ var delta=target-from;
  if(Math.abs(delta)<1e-4)return;
+ GL3D.rotTarget=target;
  if(GL3D.rotRaf){cancelAnimationFrame(GL3D.rotRaf);GL3D.rotRaf=null;}
  var t0=(window.performance&&performance.now)?performance.now():Date.now(),dur=260;
  function step2(){
@@ -3578,6 +3592,7 @@ function gl3dSnapRotate(){
 function gl3dBindEvents(){var cv=GL3D.canvas;
  cv.addEventListener('pointerdown',function(ev){
   if(GL3D.rotRaf){cancelAnimationFrame(GL3D.rotRaf);GL3D.rotRaf=null;}
+  GL3D.rotTarget=undefined;/* 手動ドラッグでスナップトゥイーンの目標値を無効化(次回の90°スナップは新しいyawから再計算) */
   GL3D.drag=[ev.clientX,ev.clientY,GL3D.yaw,GL3D.pitch,false];try{cv.setPointerCapture(ev.pointerId);}catch(e){}});
  cv.addEventListener('pointermove',function(ev){
   if(!GL3D.drag){gl3dHoverMove(ev);return;}
