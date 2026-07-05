@@ -2890,6 +2890,45 @@ function gl3dPushEllipsoid(pV,pN,pC,pTP,pTN,tagP,tagN,cx,cy,cz,rx,ry,rz,col,segU
    var a=pt(u0,v0),b=pt(u1,v0),c=pt(u1,v1),d=pt(u0,v1);
    push(a);push(b);push(c);push(a);push(c);push(d);}}
 }
+/* 楕円体をワールドXZ平面内で任意方向(ux,uz=「厚み」軸の単位ベクトル)へ向けた版。
+   gl3dPushOrientedBoxと同じ考え方(px,pz=垂直な水平基底)をgl3dPushEllipsoidの
+   球パラメータ化に適用したもの。円板コンデンサを「リード方向だけ薄い、縦に立った
+   コイン」として描く(要件C: 横倒しのM&M型からの脱却)ために新設。
+   rAlong=ux,uz方向の半径(厚み)/rPerp=px,pz方向の半径/rY=垂直(Y軸)方向の半径。
+   法線はgl3dPushEllipsoidと同じ「勾配をrAlong*rPerp*rYでスケールした版」をローカル
+   基底(along,y,perp)で求めてからワールド基底(ux/uz, Y, px/pz)へ射影する。 */
+function gl3dPushEllipsoidOriented(pV,pN,pC,pTP,pTN,tagP,tagN,cx,cy,cz,ux,uz,rAlong,rPerp,rY,col,segU,segV){
+ var px=-uz,pz=ux;
+ function pt(u,v){var su=Math.sin(v),cu=Math.cos(v),ca=Math.cos(u),sa=Math.sin(u);
+  var na=su*ca,ny=cu,np=su*sa;
+  var wx=cx+ux*na*rAlong+px*np*rPerp,wy=cy+ny*rY,wz=cz+uz*na*rAlong+pz*np*rPerp;
+  var gA=na*rY*rPerp,gY=ny*rAlong*rPerp,gP=np*rAlong*rY;
+  return {p:[wx,wy,wz],n:[ux*gA+px*gP,gY,uz*gA+pz*gP]};}
+ function push(q){var l=Math.hypot(q.n[0],q.n[1],q.n[2])||1;
+  pV.push(q.p[0],q.p[1],q.p[2]);pN.push(q.n[0]/l,q.n[1]/l,q.n[2]/l);pC.push(col[0],col[1],col[2]);
+  pTP.push(tagP);pTN.push(tagN);}
+ for(var i=0;i<segV;i++){var v0=Math.PI*i/segV,v1=Math.PI*(i+1)/segV;
+  for(var j=0;j<segU;j++){var u0=6.2831853*j/segU,u1=6.2831853*(j+1)/segU;
+   var a=pt(u0,v0),b=pt(u1,v0),c=pt(u1,v1),d=pt(u0,v1);
+   push(a);push(b);push(c);push(a);push(c);push(d);}}
+}
+/* 共有: リード成形(部品本体の出射点socketから基板の穴まで、曲げを持つ2区間の
+   折れ線円柱で接続する)。垂直な一本棒より遥かに「本物らしく」見える(ユーザー指摘の
+   「C11が宙に浮いた丸に見える」への直接対応)。中間の曲げ点は水平方向を穴側へ半分、
+   高さを本体側の45%まで下げた位置に置く(実物のリード成形に近い折れ角)。穴側の終点は
+   y=-0.8として穴に少し差し込まれた見た目にする。全kind共通で再利用する前提の関数。 */
+function gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,sy,sz,hx,hz,lw,col){
+ var bx=sx+(hx-sx)*0.5,bz=sz+(hz-sz)*0.5,by=sy*0.45;
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,sx,sy,sz,bx,by,bz,lw,lw,col,6,false,false);
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,bx,by,bz,hx,-0.8,hz,lw,lw,col,6,false,false);
+}
+/* 共有: はんだフィレット(穴の位置に小さな円錐台。上=リード径に近い細さ、下(基板面)=
+   広がったはんだの盛り上がり)。「基板に実装されている」という知覚の大部分はこの一点が
+   担う(専門家統合案より)。全kind共通で再利用する前提の関数。 */
+function gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw){
+ var topR=lw*1.6,botR=lw*3.2,h=0.7;
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,hx,h,hz,hx,0,hz,topR,botR,hex2rgb01('#9aa0a6'),8,false,true);
+}
 /* 部品ごとのバウンディングボックス(mm、盤面中心原点のワールドXZ)。ピッキング(AABBとの
    交差判定)と接地影の足跡の両方が共有する判定用ジオメトリ(見た目用メッシュは
    GL3D_MESH各関数が別途生成する。役割分離: これは常にAABB=判定用)。斜め配置のr/filmでも
@@ -2904,7 +2943,11 @@ function gl3dPartBox(p,PF){
  var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L,px=-uz,pz=ux;
  switch(p.kind){
   case 'elec':{var r=(PF.dia||6.5)/2;return {cx:mid[0],cz:mid[1],hw:r,hd:r};}
-  case 'disc':{var r2=(PF.bodyLen||5)/2;return {cx:mid[0],cz:mid[1],hw:r2,hd:r2};}
+  case 'disc':{/* 縦立ちコイン化(要件C)によりdiscのフットプリントも「リード方向=薄い厚み・
+   垂直方向=満径」の向きを持つ。filmと同じ手法でux,uz(リード方向)/px,pz(その垂直水平方向)へ
+   投影したAABBを返す(円形フットプリントの決め打ちをやめる)。 */
+   var thick2=(PF.bodyWid||2.5)/2,r2=(PF.bodyLen||5)/2;
+   return {cx:mid[0],cz:mid[1],hw:Math.abs(ux)*thick2+Math.abs(px)*r2,hd:Math.abs(uz)*thick2+Math.abs(pz)*r2};}
   case 'film':{var hl=(PF.bodyLen||10)/2,hw2=(PF.bodyWid||4.5)/2;
    return {cx:mid[0],cz:mid[1],hw:Math.abs(ux)*hl+Math.abs(px)*hw2,hd:Math.abs(uz)*hl+Math.abs(pz)*hw2};}
   case 'r':{var standing=!!p.standing||dist(a,b)<2.05;
@@ -2957,10 +3000,24 @@ function gl3dMeshElec(p,PF,pV,pN,pC,pTP,pTN,idx){
 }
 function gl3dMeshDisc(p,PF,pV,pN,pC,pTP,pTN,idx){
  var a=p.leads[0],b=p.leads[1],wa=[gl3dWX(a[0]),gl3dWZ(a[1])],wb=[gl3dWX(b[0]),gl3dWZ(b[1])];
- var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2,dia=PF.bodyLen||5,r=dia/2,zc=Math.max(3,dia*0.6);
- gl3dPushEllipsoid(pV,pN,pC,pTP,pTN,idx,-1,cx,zc,cz,r,r*0.62,r,hex2rgb01('#b5651d'),12,7);
+ var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
+ var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2,dia=PF.bodyLen||5,r=dia/2;
+ /* 縦立ちコイン化(要件C・3専門家統合案): 実物のセラミック円板コンデンサはリード方向の
+    厚みが薄く、それに垂直な面内では満径まで広がる「縦に立ったコイン」形状。従来は
+    Y軸を潰した扁平球(横倒しのM&M型)で描いており、基板に接地する文脈が失われ
+    「宙に浮いた丸」に見えていた(ユーザー指摘)。厚み(rAlong)には、これまで3D側で
+    未参照だった実測値PF.bodyWid(config.example.json/DEFCFGのdisc.body_wid_mm)を
+    流用する(値を新設せず、既存の未使用データを活かす=専門家統合案の指摘)。
+    standoff=基板からの浮き量(実装時の一般的なクリアランス)。 */
+ var thick=(PF.bodyWid||2.5)/2,standoff=1.0,cy=standoff+r;
+ gl3dPushEllipsoidOriented(pV,pN,pC,pTP,pTN,idx,-1,cx,cy,cz,ux,uz,thick,r,r,hex2rgb01('#b5651d'),12,7);
  var lw=0.3,lcol=hex2rgb01('#cfd8df');
- [wa,wb].forEach(function(wq){gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,wq[0],0,wq[1],wq[0],zc,wq[1],lw,lw,lcol,6,false,false);});
+ [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
+  /* リードの出射点(socket)は本体の下端付近、厚み方向にわずかにオフセットした位置
+     (実物のリードが円板の縁から出て穴へ曲がって伸びる様子に対応)。 */
+  var sx=cx+ux*thick*0.85*sign,sz=cz+uz*thick*0.85*sign,sy=standoff+r*0.15;
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,sy,sz,wq[0],wq[1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
 }
 function gl3dMeshFilm(p,PF,pV,pN,pC,pTP,pTN,idx){
  var a=p.leads[0],b=p.leads[1],wa=[gl3dWX(a[0]),gl3dWZ(a[1])],wb=[gl3dWX(b[0]),gl3dWZ(b[1])];
@@ -3497,7 +3554,7 @@ function gl3dRayAABB(ray,cx,cz,hw,hd,y0,y1){
    円柱中心(bw/2+0.6)+半径(bw/2)。他kindはisoPartHeightがそのままメッシュ天面と一致
    済み(gl3dMeshElec/Film/IC/立てr参照)なのでそのまま流用する。 */
 function gl3dPickTopH(p,PF){
- if(p.kind==='disc'){var dia=PF.bodyLen||5,r=dia/2;return Math.max(3,dia*0.6)+r*0.62;}
+ if(p.kind==='disc'){var dia=PF.bodyLen||5,r=dia/2;return 1.0+2*r;}/* =standoff+2r。gl3dMeshDiscのstandoff/cy(=standoff+r)と同期させること */
  if(p.kind==='r'&&!(p.standing||dist(p.leads[0],p.leads[1])<2.05)){var bw=PF.bodyWid||2.5;return bw+0.6;}
  return isoPartHeight(p,PF);}
 /* 地面(y=0)交点→グリッド穴座標。gl3dPick(部品AABBも判定するフルピック)と
