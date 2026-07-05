@@ -39,8 +39,8 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 #canvas::-webkit-scrollbar-thumb{background:rgba(255,255,255,.10);border-radius:5px}
 #pw-svg.mode-bridge,#pw-svg.mode-block,#pw-svg.mode-cut{cursor:crosshair}
 #pw-svg.mode-probe{cursor:help}
-#pw-iso{display:none;width:100%;height:100%;cursor:grab}
-#pw-iso:active{cursor:grabbing}
+#pw-iso,#pw-iso3d{display:none;width:100%;height:100%;cursor:grab}
+#pw-iso:active,#pw-iso3d:active{cursor:grabbing}
 #ztools{position:absolute;top:12px;right:16px;display:flex;gap:6px;z-index:5}
 #ztools button{backdrop-filter:blur(10px);background:rgba(18,22,27,.7)}
 #ztools button.on{background:linear-gradient(135deg,#11a8e0,#0c7fb3);color:#06222e;font-weight:600}
@@ -74,7 +74,7 @@ summary{cursor:pointer;font-size:13px;font-weight:600}
 .note{color:var(--acc);border-bottom:1px dashed rgba(94,220,255,.3);display:block;margin-bottom:3px;padding-bottom:3px}
 textarea{width:100%;height:62px;background:rgba(0,0,0,.35);color:var(--tx);border:1px solid var(--bd);border-radius:8px;font:11px Consolas,monospace;padding:6px}
 aside input[type=text]{background:#171c22;color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:5px 8px;font-size:12.5px;width:100%;margin:2px 0}
-@media print{header,aside,#status,#ztools,#guide,#prog,#cpov,#pw-flow,#welcome,#pw-iso{display:none!important}body{background:#fff!important}.layout{display:block}main{display:block}#canvas{overflow:visible;position:static}svg{margin:0}}
+@media print{header,aside,#status,#ztools,#guide,#prog,#cpov,#pw-flow,#welcome,#pw-iso,#pw-iso3d{display:none!important}body{background:#fff!important}.layout{display:block}main{display:block}#canvas{overflow:visible;position:static}svg{margin:0}}
 .hint{font-size:11.5px;color:var(--mut);line-height:1.55;margin:5px 0}
 .netrow{display:flex;align-items:center;gap:7px;font-size:12px;margin:3px 0}
 .netrow .dot{width:10px;height:10px;border-radius:3px;flex:none}
@@ -190,6 +190,7 @@ svg{display:block;margin:16px auto}
 </div>
 <svg id="pw-svg" style="touch-action:none" role="application" tabindex="0" aria-label="基板配線図。矢印キーで部品を選択、Shift+矢印キーで1穴移動。"></svg>
 <canvas id="pw-iso" style="display:none;touch-action:none" aria-label="基板3Dビュー"></canvas>
+<canvas id="pw-iso3d" style="display:none;touch-action:none" aria-label="基板3Dビュー（自由回転）"></canvas>
 </div>
 <footer id="status"><span class="chip" id="st-mode"></span><span class="chip" id="st-pos">—</span><span class="chip" id="st-net" style="display:none"></span><span class="chip" id="st-stats"></span><span class="chip" id="st-lasttoast" style="display:inline-block;max-width:26vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle"></span></footer>
 </main>
@@ -282,6 +283,7 @@ var JE={
 '戻す操作はありません。':'Nothing to undo.','やり直す操作はありません。':'Nothing to redo.','元に戻しました。':'Undone.','やり直しました。':'Redone.',
 '盤面を斜め上から見る3Dビュー（閲覧専用・編集は2Dに戻って行います）':'3D view of the board from above (view-only — go back to 2D to edit)',
 '3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。編集は2Dに戻って行います。':'3D view: a view-only isometric overview. Click to select, drag to pan, Ctrl+wheel to zoom. Go back to 2D to edit.',
+'3Dビュー: ドラッグで自由に回転、ホイールでズーム。編集は2Dに戻って行います。':'3D view: drag to freely rotate, wheel to zoom. Go back to 2D to edit.',
 '3Dビュー 切替':'Toggle 3D view',
 '3Dビューを90°回転（見る角度が変わるだけ。基板の天面はそのまま表示されます）':'Rotate the 3D view 90° (changes only the viewing angle — the board\'s top face stays shown)',
 '3Dビュー 回転（90°）':'Rotate 3D view (90°)','回転 {0}°':'Rotated {0}°',
@@ -438,7 +440,7 @@ var JE={
 '盤面図のみ縮小（文字全体を拡大するにはブラウザの Ctrl -）':'Zooms the board diagram only (for the whole page, use your browser\'s Ctrl -)',
 '盤面図のみ拡大縮小（文字全体を拡大するにはブラウザの Ctrl +）':'Zooms the board diagram only (for the whole page, use your browser\'s Ctrl +)',
 '盤面図のみ拡大（文字全体を拡大するにはブラウザの Ctrl +）':'Zooms the board diagram only (for the whole page, use your browser\'s Ctrl +)',
-'基板配線図':'perfboard wiring diagram','基板3Dビュー':'perfboard 3D view','コマンドパレット':'Command palette'};
+'基板配線図':'perfboard wiring diagram','基板3Dビュー':'perfboard 3D view','基板3Dビュー（自由回転）':'perfboard 3D view (free orbit)','コマンドパレット':'Command palette'};
 function tr(s){return LANG==='en'&&Object.prototype.hasOwnProperty.call(JE,s)?JE[s]:s;}
 function scrollBehavior(){return (window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)?'auto':'smooth';}
 function trf(s){var t=tr(s),a=arguments;return t.replace(/\{(\d+)\}/g,function(m,i){var v=a[+i+1];return v===undefined?m:v;});}
@@ -2607,12 +2609,130 @@ function setIso(v){if(v===ISO.on)return;ISO.on=v;
  var btn=document.getElementById('z-iso');if(btn)btn.className=v?'on':'';
  var rb=document.getElementById('z-isorot');if(rb)rb.style.display=v?'':'none';/* 回転ボタンは3D表示中のみ意味を持つ */
  if(v&&MIRROR)setMirror(false);
- svg.style.display=v?'none':'';var cv=document.getElementById('pw-iso');if(cv)cv.style.display=v?'block':'none';
+ svg.style.display=v?'none':'';
+ var cv=document.getElementById('pw-iso'),cv3=document.getElementById('pw-iso3d');
+ /* WebGLを既定パスとし、コンテキスト取得に失敗した環境(古いブラウザ・ソフトウェアレンダ無効化等)
+    のみ既存Canvas 2D等角ビューへ無言で縮退する(Fable設計: 3専門家+敵対的レビュー確定方針)。
+    gl3dInit()はメモ化されるため2回目以降の3Dビュー開閉では初期化を再試行しない。 */
+ if(v&&gl3dInit()){
+  if(cv)cv.style.display='none';if(cv3)cv3.style.display='block';
+  showHelp(tr('3Dビュー: ドラッグで自由に回転、ホイールでズーム。編集は2Dに戻って行います。'));
+  renderGl3d();return;}
+ if(cv)cv.style.display=v?'block':'none';if(cv3)cv3.style.display='none';
  if(v){ISO.S=0;ISO.bakeKey='';ISO.listKey='';
   showHelp(tr('3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。編集は2Dに戻って行います。'));}
  render();}
 document.getElementById('z-iso').onclick=function(){setIso(!ISO.on);};
 document.getElementById('z-isorot').onclick=function(){isoRotate(1);};
+/* ============================================================================
+   WEBGL3D (Phase 0: walking skeleton). 自由オービットカメラ(ドラッグで任意角度)を
+   実現するための自作WebGL 1.0レンダラ。外部依存ゼロ(Three.js等は使わない)＝
+   ブラウザ組込APIのみで単一ファイル制約を保つ。Fable設計(ゲーム制作実装者/CG理論/
+   Web3D専門家3者一致→敵対的レビューでR2-R5指摘を反映済み)。
+   Phase 0時点では箱1個のみ(基板・部品・ワイヤ等の本実装はPhase 1以降)。
+   既存のCanvas 2D等角ビュー(ISO/renderIso等)には一切手を入れない＝完全並行実装。
+   WebGLコンテキスト取得は3Dビューを開いた時点で遅延初期化する(ページ読み込み時に
+   即座に取得を試みない)。parity_headless.mjsはページを読み込むだけでheadless実行
+   されるため、ここで即座に失敗する初期化を走らせるとゲートを道連れにするため。 */
+var GL3D={on:false,ok:null,gl:null,canvas:null,prog:null,aPos:-1,aNrm:-1,uProj:null,uView:null,uModel:null,uLight:null,uColor:null,
+ yaw:45*Math.PI/180,pitch:30*Math.PI/180,dist:400,tx:0,ty:0,drag:null,vbuf:null,nbuf:null,vcount:0,raf:null,dpr:1};
+function m4ident(){return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);}
+function m4mul(a,b){var o=new Float32Array(16);for(var c=0;c<4;c++)for(var r=0;r<4;r++){var s=0;for(var k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s;}return o;}
+function m4ortho(l,r,b,t,n,f){var o=m4ident();o[0]=2/(r-l);o[5]=2/(t-b);o[10]=-2/(f-n);
+ o[12]=-(r+l)/(r-l);o[13]=-(t+b)/(t-b);o[14]=-(f+n)/(f-n);return o;}
+function m4lookAt(eye,ctr,up){
+ var zx=eye[0]-ctr[0],zy=eye[1]-ctr[1],zz=eye[2]-ctr[2],zl=Math.hypot(zx,zy,zz)||1;zx/=zl;zy/=zl;zz/=zl;
+ var xx=up[1]*zz-up[2]*zy,xy=up[2]*zx-up[0]*zz,xz=up[0]*zy-up[1]*zx,xl=Math.hypot(xx,xy,xz)||1;xx/=xl;xy/=xl;xz/=xl;
+ var yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;
+ var o=m4ident();o[0]=xx;o[4]=xy;o[8]=xz;o[1]=yx;o[5]=yy;o[9]=yz;o[2]=zx;o[6]=zy;o[10]=zz;
+ o[12]=-(xx*eye[0]+xy*eye[1]+xz*eye[2]);o[13]=-(yx*eye[0]+yy*eye[1]+yz*eye[2]);o[14]=-(zx*eye[0]+zy*eye[1]+zz*eye[2]);
+ return o;}
+/* orbitカメラ: yaw(水平回転・非有界)/pitch(仰角・実用下限は穴/ラベルが読める範囲でクランプ)/
+   dist(ズーム)から、注視点周りのカメラ位置をSphericalに算出。upはワールドYaxis固定
+   (ジンバルロック回避のため、pitchを[20°,85°]にクランプ=水平線・真上付近には到達させない)。 */
+function gl3dEye(){var cp=Math.cos(GL3D.pitch),sp=Math.sin(GL3D.pitch);
+ return [GL3D.tx+GL3D.dist*cp*Math.sin(GL3D.yaw),GL3D.dist*sp,GL3D.ty+GL3D.dist*cp*Math.cos(GL3D.yaw)];}
+var GL3D_VS='attribute vec3 aPos;attribute vec3 aNormal;uniform mat4 uProj,uView,uModel;varying vec3 vNormal;'+
+ 'void main(){gl_Position=uProj*uView*uModel*vec4(aPos,1.0);vNormal=mat3(uModel)*aNormal;}';
+var GL3D_FS='precision mediump float;varying vec3 vNormal;uniform vec3 uLight;uniform vec3 uColor;'+
+ 'void main(){vec3 n=normalize(vNormal);float d=max(0.0,dot(n,normalize(uLight)));'+
+ 'float f=min(1.0,0.35+d);gl_FragColor=vec4(uColor*f,1.0);}';
+function gl3dShader(gl,type,src){var s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+ if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){var log=gl.getShaderInfoLog(s);gl.deleteShader(s);throw new Error('shader compile: '+log);}
+ return s;}
+function gl3dProgram(gl,vsSrc,fsSrc){var vs=gl3dShader(gl,gl.VERTEX_SHADER,vsSrc),fs=gl3dShader(gl,gl.FRAGMENT_SHADER,fsSrc);
+ var p=gl.createProgram();gl.attachShader(p,vs);gl.attachShader(p,fs);gl.linkProgram(p);
+ if(!gl.getProgramParameter(p,gl.LINK_STATUS)){var log=gl.getProgramInfoLog(p);gl.deleteProgram(p);throw new Error('program link: '+log);}
+ return p;}
+/* 単位立方体(中心原点、辺長1)の頂点+法線。24頂点(面ごとに複製=面法線をflatに保つ)。Phase 1で
+   実部品ジオメトリに置き換える。indexは使わず単純なgl.TRIANGLES(36頂点)で描く。 */
+function gl3dBoxGeom(){
+ var faces=[
+  [[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1],[0,0,1]],   /* +z */
+  [[1,-1,-1],[-1,-1,-1],[-1,1,-1],[1,1,-1],[0,0,-1]],/* -z */
+  [[1,-1,1],[1,-1,-1],[1,1,-1],[1,1,1],[1,0,0]],   /* +x */
+  [[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,1,-1],[-1,0,0]],/* -x */
+  [[-1,1,1],[1,1,1],[1,1,-1],[-1,1,-1],[0,1,0]],   /* +y */
+  [[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1],[0,-1,0]] /* -y */
+ ];
+ var pos=[],nrm=[];
+ faces.forEach(function(f){var n=f[4],q=[f[0],f[1],f[2],f[3]];
+  [[0,1,2],[0,2,3]].forEach(function(tri){tri.forEach(function(i){pos.push(q[i][0],q[i][1],q[i][2]);nrm.push(n[0],n[1],n[2]);});});});
+ return {pos:new Float32Array(pos),nrm:new Float32Array(nrm),count:pos.length/3};}
+function ensureGl3dCanvas(){if(!GL3D.canvas)GL3D.canvas=document.getElementById('pw-iso3d');
+ var cv=GL3D.canvas,cw=Math.max(1,cv.clientWidth),ch=Math.max(1,cv.clientHeight);
+ GL3D.dpr=window.devicePixelRatio||1;var w=Math.max(1,Math.round(cw*GL3D.dpr)),h=Math.max(1,Math.round(ch*GL3D.dpr));
+ if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}
+ return {cw:cw,ch:ch,w:w,h:h};}
+/* WebGL初期化: 失敗したら例外を投げず null を返す(呼び出し側がCanvas 2Dフォールバックへ切替える)。
+   ここが3Dビューを開いた瞬間にだけ呼ばれる遅延初期化＝ページ読み込み時のheadless実行
+   (parity_headless.mjs等)には一切影響しない。 */
+function gl3dInit(){if(GL3D.ok!==null)return GL3D.ok;
+ try{ensureGl3dCanvas();var gl=GL3D.canvas.getContext('webgl',{antialias:true,preserveDrawingBuffer:true})||
+  GL3D.canvas.getContext('experimental-webgl',{antialias:true,preserveDrawingBuffer:true});
+ if(!gl)throw new Error('no webgl context');
+ GL3D.gl=gl;GL3D.prog=gl3dProgram(gl,GL3D_VS,GL3D_FS);
+ GL3D.aPos=gl.getAttribLocation(GL3D.prog,'aPos');GL3D.aNrm=gl.getAttribLocation(GL3D.prog,'aNormal');
+ GL3D.uProj=gl.getUniformLocation(GL3D.prog,'uProj');GL3D.uView=gl.getUniformLocation(GL3D.prog,'uView');
+ GL3D.uModel=gl.getUniformLocation(GL3D.prog,'uModel');GL3D.uLight=gl.getUniformLocation(GL3D.prog,'uLight');
+ GL3D.uColor=gl.getUniformLocation(GL3D.prog,'uColor');
+ var box=gl3dBoxGeom();GL3D.vcount=box.count;
+ GL3D.vbuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.vbuf);gl.bufferData(gl.ARRAY_BUFFER,box.pos,gl.STATIC_DRAW);
+ GL3D.nbuf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.nbuf);gl.bufferData(gl.ARRAY_BUFFER,box.nrm,gl.STATIC_DRAW);
+ gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.clearColor(0.051,0.059,0.071,1);
+ GL3D.ok=true;}catch(e){GL3D.ok=false;GL3D.gl=null;}
+ return GL3D.ok;}
+function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;var ext=ensureGl3dCanvas();
+ gl.viewport(0,0,ext.w,ext.h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+ var aspect=ext.w/ext.h,h=GL3D.dist*0.6,proj=m4ortho(-h*aspect,h*aspect,-h,h,1,4000);
+ var eye=gl3dEye(),view=m4lookAt(eye,[GL3D.tx,0,GL3D.ty],[0,1,0]);
+ gl.useProgram(GL3D.prog);
+ gl.uniformMatrix4fv(GL3D.uProj,false,proj);gl.uniformMatrix4fv(GL3D.uView,false,view);
+ /* Phase 0のプレースホルダー箱は単位立方体(辺長2)なので、GL3D.dist(mm相当スケール)に対して
+    見える大きさへ拡大する。Phase 1で実基板サイズのジオメトリに置き換えたらこの拡大は不要になる。 */
+ var mdl=m4ident();mdl[0]=mdl[5]=mdl[10]=60;
+ gl.uniformMatrix4fv(GL3D.uModel,false,mdl);
+ gl.uniform3f(GL3D.uLight,0.43,0.65,0.20);/* 既存Canvas2D版のLIGHT(du,dz,dv)を流用(向きの体感を揃える) */
+ gl.uniform3f(GL3D.uColor,0.17,0.43,0.28);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.vbuf);gl.enableVertexAttribArray(GL3D.aPos);gl.vertexAttribPointer(GL3D.aPos,3,gl.FLOAT,false,0,0);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.nbuf);gl.enableVertexAttribArray(GL3D.aNrm);gl.vertexAttribPointer(GL3D.aNrm,3,gl.FLOAT,false,0,0);
+ gl.drawArrays(gl.TRIANGLES,0,GL3D.vcount);}
+function gl3dInvalidate(){if(GL3D.raf)return;GL3D.raf=requestAnimationFrame(function(){GL3D.raf=null;gl3dDraw();});}
+function gl3dBindEvents(){var cv=GL3D.canvas;
+ cv.addEventListener('pointerdown',function(ev){GL3D.drag=[ev.clientX,ev.clientY,GL3D.yaw,GL3D.pitch];try{cv.setPointerCapture(ev.pointerId);}catch(e){}});
+ cv.addEventListener('pointermove',function(ev){if(!GL3D.drag)return;
+  var dx=ev.clientX-GL3D.drag[0],dy=ev.clientY-GL3D.drag[1];
+  GL3D.yaw=GL3D.drag[2]+dx*0.01;
+  GL3D.pitch=Math.max(20*Math.PI/180,Math.min(85*Math.PI/180,GL3D.drag[3]-dy*0.01));
+  gl3dInvalidate();});
+ function panEnd(){GL3D.drag=null;}
+ cv.addEventListener('pointerup',panEnd);cv.addEventListener('pointercancel',panEnd);
+ cv.addEventListener('wheel',function(e){e.preventDefault();
+  GL3D.dist=Math.max(50,Math.min(2000,GL3D.dist*(e.deltaY<0?0.9:1/0.9)));gl3dInvalidate();},{passive:false});
+}
+var _gl3dBound=false;
+function renderGl3d(){if(!_gl3dBound){gl3dBindEvents();_gl3dBound=true;}gl3dInvalidate();}
+window.__dbg3d={GL3D:GL3D,gl3dInit:gl3dInit,redraw:gl3dDraw,glError:function(){return GL3D.gl?GL3D.gl.getError():null;}};
 function tgl(box,label,k){label=tr(label);var d=document.createElement('label');d.className='tgl';
 var i=document.createElement('input');i.type='checkbox';i.checked=LY[k];
 i.onchange=function(){LY[k]=i.checked;render();};
