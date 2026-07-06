@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.6.11] — 2026-07-06
+
+### Added
+- **WebGL orbit 3D view.** A new, dependency-free WebGL renderer replaces the fixed-angle
+  Canvas 2D isometric view as the primary "3D" toggle: drag to orbit freely (any yaw, pitch
+  clamped 20°–85° to avoid gimbal lock), wheel to zoom, click to select (synced with the 2D
+  editor's selection state), 90°-snap rotation button retained. Falls back silently to the
+  existing Canvas 2D isometric view if WebGL context creation fails (old hardware, disabled
+  software rendering) — that code path is unchanged and untouched.
+- **Realistic per-part geometry.** All 5 built-in kinds (elec/disc/film/r/ic) get bent leads
+  from a body-side socket to their board hole plus a solder fillet at the hole, instead of a
+  bare box with straight vertical stubs — the single biggest fix for parts reading as "shapes
+  floating over the board" rather than "components soldered to it." A generic fallback
+  (`gl3dMeshGeneric`) applies the same lead-forming/fillet treatment to any part kind outside
+  the 5 built-ins, so a future new kind never regresses to a disconnected-looking box.
+- **Wire obstacle clearance.** A wire's rendered arc height now rises to clear any part it
+  passes over (derived from that part's true rendered top height, including kinds using the
+  package system below), instead of visually piercing through it. The wire's horizontal path
+  is unchanged — only the height of the existing parabolic arc is affected — so it still
+  matches the 2D routing plan exactly.
+- **Package/shape appearance channel** (`part.pkg` / `part.phys3d`, optional, visual-only —
+  read only by the 3D view, never by `solver.py` or ERC). Naming a known package token
+  (`to92`/`to220`/`led3`/`led5`/`do41`/`tact6`/`header254`/`trimpot3386`/`buzzer12`) draws a
+  part in its real silhouette (TO-92's standing cylinder, TO-220's heatsink tab, an LED's
+  dome, a pin header's individual pins, etc.) instead of settling for a generic box; a
+  per-instance `phys3d` override (`shape`/dimensions/`color`/`source`/`confidence`) covers
+  parts with no matching standard package. Design and data-provenance discipline mirror the
+  existing `config.physical` convention (cite a source, flag an estimate honestly) — see
+  `.claude/skills/perfwire/SKILL.md` for the full field reference and the resolution ladder
+  for agents populating it. A part with `confidence:"estimate"`/`"todo"` shows a standing
+  "visual dimensions are an estimate" disclosure in the 3D status bar while selected.
+- **Focus+context decluttering for dense boards.** Hovering or click-pinning a net (new,
+  3D-view-only) ghosts (opaque desaturation) unrelated wires and parts so the board stays
+  readable once part/wire counts climb; wire-body hover detection (not just hole-adjacent
+  hover) was added alongside it.
+
+### Fixed
+- Several issues surfaced by headless-Chrome verification and adversarial review during this
+  feature's development, before they could ship as regressions: a command-palette rotation
+  action that crashed while the WebGL view was open; a 90°-snap-rotate stack that could
+  reverse direction on rapid repeated presses; a stale geometry-cache key that could leave
+  meshes at the wrong scale after a config reload; and a genuinely dead `Escape`-key code path
+  (an existing, unrelated `if(ISO.on)` check always ran first and returned, since WebGL
+  success also sets that flag — folded the fix into the existing branch instead of adding an
+  unreachable sibling one).
+- `tools/ci_smoke.py` gained a regression lock asserting that a part carrying `pkg`/`phys3d`
+  survives `solver.py`'s round-trip with those fields byte-identical — the case the whole
+  appearance channel depends on.
+
 ## [0.6.10] — 2026-07-03
 
 ### Fixed
