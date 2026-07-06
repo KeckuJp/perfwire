@@ -12,7 +12,7 @@
 
 [![CI](https://github.com/KeckuJp/perfwire/actions/workflows/ci.yml/badge.svg)](https://github.com/KeckuJp/perfwire/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/KeckuJp/perfwire)](https://github.com/KeckuJp/perfwire/releases)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 ![single file](https://img.shields.io/badge/app-single%20HTML%20file-success)
 ![zero deps](https://img.shields.io/badge/dependencies-0-success)
 
@@ -205,4 +205,4 @@ Claude Codeで使っていて何か気づいたら、AIに一言どうぞ——�
 
 ## ライセンス
 
-MIT
+Apache License 2.0 — [`LICENSE`](LICENSE) と [`NOTICE`](NOTICE) を参照。

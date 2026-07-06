@@ -73,4 +73,4 @@ planned. If you're adding or updating a translation:
 
 ## License
 
-MIT — see `LICENSE`. By contributing, you agree your contribution is licensed under the same terms.
+Apache License 2.0 — see `LICENSE` and `NOTICE`. By contributing, you agree your contribution is licensed under the same terms.

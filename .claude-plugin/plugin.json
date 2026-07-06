@@ -5,7 +5,7 @@
   "author": { "name": "Yusuke Arai", "email": "yusuke.arai@kecku.com" },
   "homepage": "https://github.com/KeckuJp/perfwire",
   "repository": "https://github.com/KeckuJp/perfwire",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["perfboard", "protoboard", "universal-board", "wiring", "solder", "kicad", "electronics"],
   "skills": "./.claude/skills"
 }
