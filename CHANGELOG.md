@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.6.12] — 2026-07-06
+
+### Added
+- **Public-launch readiness**: repository preparation for publishing under the KeckuJp GitHub
+  organization. `README.md` restructured (problem statement and a Mermaid agent↔human loop
+  diagram moved up front, ERC/EE findings pulled into a scannable "What it checks before you
+  solder" table, install/troubleshooting detail collapsed into `<details>`) with a first
+  translation, `README.ja.md`, cross-linked via a language switcher at the top of both files
+  (more languages planned; see `CONTRIBUTING.md`'s translation guide).
+- **`SAFETY.md`**: states plainly that the ERC/`fabReady` audit is advisory, not a safety
+  certification, and calls out hazards the audit doesn't model (mains wiring, Li-ion charging).
+- **Feedback mechanism**: `.github/ISSUE_TEMPLATE/` gained three structured forms (bug report,
+  ERC/audit verdict dispute — a first-class category given the deterministic-audit design, and
+  feature request) plus `CONTRIBUTING.md`. The bundled skill (`.claude/skills/perfwire/SKILL.md`)
+  now documents a conversational flow for filing one of these on a user's behalf when they
+  report a problem or request — draft first, get explicit approval before `gh issue create`,
+  never file silently, with a non-`gh` fallback and guidance on redacting local paths/board data
+  before anything is shared.
+- **`tools/check_manifests.mjs`** gained a lightweight structural check that `README.md` and
+  `README.ja.md` cross-link each other and that the Japanese translation carries a `SYNC:`
+  marker — existence and linkage only, not a content-sync requirement (translations are allowed
+  to lag by design).
+
 ## [0.6.11] — 2026-07-06
 
 ### Added

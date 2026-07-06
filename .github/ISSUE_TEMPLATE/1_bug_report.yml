@@ -1,0 +1,81 @@
+name: Bug report / バグ報告
+description: Something in perfwire (editor, solver.py, or the Claude Code skill) isn't working as documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        perfwire is young (v0.x) and early reports directly shape what gets fixed next. / perfwireはまだ若いプロジェクト（v0.x）で、初期の報告がそのままロードマップになります。
+
+        This is a small, mostly-solo project — replies may take a few days, but every report is read. / 小さなプロジェクトです。返信に数日かかることがありますが、すべての報告に目を通しています。
+  - type: dropdown
+    id: usage-mode
+    attributes:
+      label: How are you using perfwire? / 利用形態
+      options:
+        - Claude Code plugin (installed via marketplace)
+        - Clone-and-open (cloned the repo, opened as a Claude Code project)
+        - Browser only (standalone, no AI agent)
+        - solver.py CLI
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / バージョン
+      description: >
+        If installed as a plugin, the folder name under `~/.claude/plugins/cache/*/perfwire/<version>/`.
+        If cloned, `git rev-parse --short HEAD`. If you're not sure, just ask your agent —
+        it can read this for you.
+      placeholder: "e.g. 0.6.11 or a commit hash"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment / 環境
+      description: OS, browser, Python version (if using solver.py), Claude Code version.
+      placeholder: "e.g. Windows 11, Chrome 126, Python 3.11, Claude Code 2.x"
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce / 再現手順
+      description: The exact commands you ran or clicks you made, in order.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected-actual
+    attributes:
+      label: Expected vs. actual / 期待した結果と実際の結果
+    validations:
+      required: true
+  - type: textarea
+    id: board-state
+    attributes:
+      label: Board state (state JSON or a #z= link) / 盤面データ
+      description: >
+        perfwire's audit is deterministic, so attaching the board state is usually the fastest way
+        to get an exact repro. **Privacy note: the board state describes your circuit design.**
+        If you can't share it, ask your agent to build a minimal synthetic board that still
+        reproduces the bug, and attach that instead.
+      render: json
+  - type: textarea
+    id: output
+    attributes:
+      label: Console / stderr output / コンソール出力
+      render: shell
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting / 送信前の確認
+      options:
+        - label: >
+            I confirmed this still happens on the latest version
+            (`/plugin marketplace update perfwire` or `git pull`).
+          required: true
+        - label: The board state I pasted above (if any) is OK to be public.
+          required: false

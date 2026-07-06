@@ -39,8 +39,26 @@ if (market) {
   }
 }
 
+// README i18n structure gate (lightweight — existence + cross-link only, no content-sync
+// enforcement: README.ja.md is allowed to lag one release behind per CONTRIBUTING.md's Tier
+// policy, so this deliberately does NOT diff the two files or check the SYNC version number).
+const readText = (rel) => {
+  try { return readFileSync(new URL(rel, root), 'utf8'); }
+  catch (e) { fail.push(`cannot read ${rel}: ${e.message}`); return null; }
+};
+const readmeEn = readText('README.md');
+const readmeJa = readText('README.ja.md');
+if (readmeEn && !/README\.ja\.md/.test(readmeEn.split('\n').slice(0, 3).join('\n')))
+  fail.push('README.md: first 3 lines must link to README.ja.md (language switcher)');
+if (readmeJa) {
+  if (!/README\.md/.test(readmeJa.split('\n').slice(0, 3).join('\n')))
+    fail.push('README.ja.md: first 3 lines must link back to README.md (language switcher)');
+  if (!/SYNC:\s*README\.md\s*@/.test(readmeJa))
+    fail.push('README.ja.md: missing a "SYNC: README.md @ <version>" marker near the top');
+}
+
 if (fail.length) {
   console.error('NG: manifest checks failed:\n  - ' + fail.join('\n  - '));
   process.exit(1);
 }
-console.log(`OK: plugin.json + marketplace.json valid and in agreement (v${plugin.version}); skill found at ${plugin.skills || 'skills'}/perfwire/SKILL.md`);
+console.log(`OK: plugin.json + marketplace.json valid and in agreement (v${plugin.version}); skill found at ${plugin.skills || 'skills'}/perfwire/SKILL.md; README.md/README.ja.md cross-linked`);

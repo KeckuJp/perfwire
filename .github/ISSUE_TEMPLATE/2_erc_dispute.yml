@@ -1,0 +1,81 @@
+name: ERC / audit verdict dispute / 監査判定への異議
+description: The electrical rule check (ERC) or fab-ready audit gave a verdict you believe is wrong.
+labels: ["erc-dispute"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        perfwire's audit engine is deterministic — it isn't a language model's opinion, it's a rule
+        engine that ships identically in the browser (JS) and `solver.py` (Python), checked in CI.
+        If a verdict is wrong, that's a bug in the rules, and reporting it improves the checker
+        itself, not just your board.
+
+        監査エンジンは決定論的なルールエンジンです（LLMの判断ではありません）。判定が誤っている場合、
+        それはルール自体のバグであり、報告はチェッカーそのものの改善につながります。
+  - type: dropdown
+    id: finding
+    attributes:
+      label: Which finding? / どの監査項目か
+      description: The `ee` block key this concerns (ask your agent if you're not sure which key fired).
+      options:
+        - openNets
+        - singleLeadNets
+        - unconnectedLeads
+        - duplicateIds
+        - polarity
+        - powerReach
+        - keepAway
+        - decouplingCoverage
+        - floatingPowerPins
+        - multipleDrivers
+        - undrivenNets
+        - stripShorts
+        - resistorPower
+        - decouplingValueWarn
+        - pinConflicts
+        - clampRisk
+        - netMerge
+        - railShort
+        - railReff
+        - bridgeDangle
+        - grounding
+        - guard
+        - crosstalk
+        - fabReady (overall gate)
+        - Other / not in this list
+    validations:
+      required: true
+  - type: dropdown
+    id: dispute-type
+    attributes:
+      label: What's wrong with it? / 何がおかしいか
+      options:
+        - False positive (flagged something that's actually fine)
+        - False negative (missed something that should have been flagged)
+        - Browser and solver.py disagree (parity violation — please mark this high priority)
+        - The threshold/limit itself seems wrong
+    validations:
+      required: true
+  - type: textarea
+    id: board-state
+    attributes:
+      label: Board state (state JSON or a #z= link) / 盤面データ
+      description: >
+        Required — the audit is deterministic, so without the exact board state this can't be
+        reproduced. **Privacy note: the board state describes your circuit design.** If you can't
+        share the real board, ask your agent to build a minimal synthetic board that still
+        reproduces the disputed verdict.
+      render: json
+    validations:
+      required: true
+  - type: textarea
+    id: electrical-rationale
+    attributes:
+      label: Why you believe the verdict is wrong / なぜ誤りだと考えるか
+      description: A datasheet citation, an industry norm, an actual measurement — whatever grounds the claim.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-verdict
+    attributes:
+      label: What the audit should have said instead / 期待する判定

@@ -1,0 +1,48 @@
+name: Feature request / 機能要望
+description: Suggest an improvement or a new capability.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        perfwire is deliberately a single offline HTML file with a deterministic (non-LLM) rule
+        engine — see the README's "Deterministic by design" section. Proposals that push against
+        that are still welcome; we'll discuss the trade-off honestly rather than reject them outright.
+
+        perfwireは意図的に、単一のオフラインHTMLファイル＋決定論的（LLMに頼らない）ルールエンジンとして
+        設計されています。これに反する提案も歓迎しますが、トレードオフは正直に議論させてください。
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category / カテゴリ
+      options:
+        - Editor UI
+        - 3D view
+        - Solver / placement
+        - ERC / audit
+        - Claude Code integration
+        - Component / footprint support
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do, and what's in the way? / 何をしたくて、何に困っているか
+      description: Describe the problem first, not the solution — it's easier to evaluate and may have a simpler fix than you expect.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution (optional) / 提案する解決策（任意）
+  - type: dropdown
+    id: usage-mode
+    attributes:
+      label: How are you using perfwire? / 利用形態
+      options:
+        - Claude Code plugin (installed via marketplace)
+        - Clone-and-open (cloned the repo, opened as a Claude Code project)
+        - Browser only (standalone, no AI agent)
+        - solver.py CLI
