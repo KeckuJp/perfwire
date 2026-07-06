@@ -223,10 +223,10 @@ var DEFCFG={pitch:2.54,allowStanding:true,
  OUT:{nets:['TRIG_SIG','RELAY_CTL','BUZZ_CTL','PUMP_HOT','Q_BASE','COIL_LO','AIN1','AIN2','BIN1','BIN2','AOUT1','AOUT2','BOUT1','BOUT2'],maxWire:99,adjPen:2,keepAway:['HIZ'],keepHoles:2},
  PWR:{nets:['V3V3','GND','V5','VM'],maxWire:99,adjPen:1,keepAway:[],keepHoles:0}},
  decoupling:[{cap:'C11',pin:'U1.VSYS_IN',max:3},{cap:'C1',pin:'U2.VM',max:3},{cap:'C2',pin:'U2.V3V3',max:2}],
- weights:{bridgeBonus:20,wireLen:1.0,cautionBase:1.5,hizMult:3.0,keepAwayPen:6.0,diagPen:30.0,spanPen:15.0,standPen:30.0},
- profiles:{easy:{ja:'組みやすさ優先',beginner:true,descJa:'直交・寝かせ・最小スパン・ゆとりある間隔。手はんだと目視確認のしやすさを最優先（初心者おすすめ）',weights:{bridgeBonus:14,wireLen:1.0,cautionBase:2.5,hizMult:3.0,keepAwayPen:4.0,diagPen:50.0,spanPen:20.0,standPen:50.0}},
- analog:{ja:'アナログ・高感度優先',descJa:'高Z入力を短く、入出力を強く分離、デカップリング近接。オペアンプ/オーディオ/センサなど発振・ノイズに弱い回路向け',weights:{bridgeBonus:20,wireLen:1.0,cautionBase:1.5,hizMult:3.0,keepAwayPen:6.0,diagPen:30.0,spanPen:15.0,standPen:30.0}},
- compact:{ja:'省スペース優先',descJa:'ブリッジ多用で被覆線最少、立て実装可、密でも可。小さい基板に詰めたい上級者向け',weights:{bridgeBonus:30,wireLen:1.5,cautionBase:1.0,hizMult:2.0,keepAwayPen:3.0,diagPen:1.5,spanPen:0.5,standPen:0.3}}},
+ weights:{bridgeBonus:20,wireLen:1.0,cautionBase:1.5,hizMult:3.0,keepAwayPen:6.0,diagPen:30.0,spanPen:15.0,standPen:30.0,pwrAttract:0.2},
+ profiles:{easy:{ja:'組みやすさ優先',beginner:true,descJa:'直交・寝かせ・最小スパン・ゆとりある間隔。手はんだと目視確認のしやすさを最優先（初心者おすすめ）',weights:{bridgeBonus:14,wireLen:1.0,cautionBase:2.5,hizMult:3.0,keepAwayPen:4.0,diagPen:50.0,spanPen:20.0,standPen:50.0,pwrAttract:0.2}},
+ analog:{ja:'アナログ・高感度優先',descJa:'高Z入力を短く、入出力を強く分離、デカップリング近接。オペアンプ/オーディオ/センサなど発振・ノイズに弱い回路向け',weights:{bridgeBonus:20,wireLen:1.0,cautionBase:1.5,hizMult:3.0,keepAwayPen:6.0,diagPen:30.0,spanPen:15.0,standPen:30.0,pwrAttract:0.2}},
+ compact:{ja:'省スペース優先',descJa:'ブリッジ多用で被覆線最少、立て実装可、密でも可。小さい基板に詰めたい上級者向け',weights:{bridgeBonus:30,wireLen:1.5,cautionBase:1.0,hizMult:2.0,keepAwayPen:3.0,diagPen:1.5,spanPen:0.5,standPen:0.3,pwrAttract:1.0}}},
  defaultProfile:'analog',
  order:['C1','C2']};
 var CFG=deep(DEFCFG),LSKEY='perfwire_v1',APPVER='0.3.0';
@@ -631,7 +631,11 @@ var s=standing?(W.standPen||0.5):0;
 if(!standing){var _dx=Math.abs(p2[0]-p1[0]),_dy=Math.abs(p2[1]-p1[1]);if(_dx&&_dy)s+=(W.diagPen||0);var _mh=((CFG.physical[p.kind]&&CFG.physical[p.kind].bodyLen)||6.5)/CFG.pitch,_sh=Math.hypot(_dx,_dy);if(_sh>_mh)s+=(W.spanPen||0)*(_sh-_mh);}/* craft: prefer clean orthogonal, minimally-spanned placement (mirrors solver.py) */
 [[p1,n1],[p2,n2]].forEach(function(t2){var q=t2[0],nn=t2[1],nodes=ctx.placed[nn];
 if(nodes&&nodes.length){var adjHit=false,mind=99;nodes.forEach(function(m){var dd=dist(q,m);if(dd<mind)mind=dd;if(adj(q,m))adjHit=true;});
-s+=adjHit?-W.bridgeBonus:W.wireLen*mind;}
+/* PWR クラス(電源/GNDレール)は基板上に既設タップが散在しがちで、素の引力だと最寄りタップへの
+   「重力井戸」に部品を捕獲し、機能的に近い信号ネット同士の凝集を圧殺する。pwrAttract で
+   PWR ネットへの引力(ボーナス/距離罰則とも)だけを減衰させる(keepAway 等の安全罰則は不変、solver.py と同一)。*/
+var pwrScale=(clsOf(nn)==='PWR')?(W.pwrAttract==null?1.0:W.pwrAttract):1.0;
+s+=adjHit?-W.bridgeBonus*pwrScale:W.wireLen*pwrScale*mind;}
 var cd=cdef(nn);
 Object.keys(ctx.placed).forEach(function(on){if(on===nn)return;var ocl=clsOf(on);
 ctx.placed[on].forEach(function(m){var md=cheb(q,m);

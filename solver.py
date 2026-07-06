@@ -1184,10 +1184,16 @@ def solve(state, cfg, propose=False):
                         for q, nn in ((p1, n1), (p2, n2)):
                             nodes = placed.get(nn)
                             if nodes:
+                                # PWR クラスのネット（電源/GND レール）は基板上に大量の既設タップを
+                                # 持ちがちで、素の引力項だとどれか最寄りのタップへの「重力井戸」に
+                                # 部品を捕獲し、機能的に関連する信号ネット側の引力（凝集）を圧殺する。
+                                # pwr_attract で PWR ネットへの引力（ボーナス/距離罰則とも）だけを
+                                # 減衰させ、keep_away 等の安全罰則には触れない（EMC 段は不変）。
+                                pwr_scale = W.get("pwr_attract", 1.0) if bd.cls(nn) == "PWR" else 1.0
                                 if any(nb in nodes for nb in neighbors(q)):
-                                    s -= W["bridge_bonus"]
+                                    s -= W["bridge_bonus"] * pwr_scale
                                 else:
-                                    s += W["wire_len"] * min(dist(q, m) for m in nodes)
+                                    s += W["wire_len"] * pwr_scale * min(dist(q, m) for m in nodes)
                             cd = bd.cdef(nn)
                             ka, kh = cd.get("keep_away_from", []), cd.get("keep_away_holes", 0)
                             for on, ons in placed.items():
