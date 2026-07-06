@@ -544,15 +544,29 @@ D.padBridges=pads;D.wires=wires;return warn;}
 function preparePropose(){var g0=geom();
 var movable=D.parts.filter(function(p){return p.kind!=='ic'&&!p.locked;});
 var fixedIds={};D.parts.forEach(function(p){if(p.kind==='ic'||p.locked)fixedIds[p.id]=1;});
-var ctx={movable:movable,placed:{},occ:{},bodySet:{},icSet:g0.icSet};
-D.parts.forEach(function(p){if(!fixedIds[p.id])return;partLeads(p).forEach(function(L){var n=D.leads[L.name]?D.leads[L.name].net:null;if(n)(ctx.placed[n]=ctx.placed[n]||[]).push(L.pos.slice());ctx.occ[key(L.pos)]=1;});
-var f=g0.foots[p.id];if(f)f.cells.forEach(function(q){ctx.bodySet[key(q)]=1;});});
+var ctx={movable:movable,placed:{},occ:{},bodySet:{},icSet:g0.icSet,foots:g0.foots};
+// occ/bodySet は全部品（fixed+movable）の現占有から構築する（fixed のみだと、まだ処理していない/
+// 探索失敗した movable の実セルが「空き」に見えて後続部品が重なって配置される事故につながる）。
+// g0（geom()）は元々全部品から leadPos/bodySet を作っているので、それをそのままコピーする。
+Object.keys(g0.occ).forEach(function(k){ctx.occ[k]=1;});
+Object.keys(g0.bodySet).forEach(function(k){ctx.bodySet[k]=1;});
+// placed（引力ターゲット）の意味は変えない＝fixed 部品と既設ワイヤのみ。movable は含めない。
+D.parts.forEach(function(p){if(!fixedIds[p.id])return;partLeads(p).forEach(function(L){var n=D.leads[L.name]?D.leads[L.name].net:null;if(n)(ctx.placed[n]=ctx.placed[n]||[]).push(L.pos.slice());});});
 Object.keys(D.leads).forEach(function(k){if(k.slice(0,2)==='W.'){var n=D.leads[k].net;(ctx.placed[n]=ctx.placed[n]||[]).push(D.leads[k].at.slice());ctx.occ[key(D.leads[k].at)]=1;}});
 ctx.movable.sort(function(a,b){var ia=CFG.order.indexOf(a.id),ib=CFG.order.indexOf(b.id);return(ia<0?99:ia)-(ib<0?99:ib);});
 return ctx;}
 function placePart(ctx,p){var W=CFG.weights;
 function usable2(c,r){var k=c+','+r;return inb(c,r)&&!ctx.occ[k]&&blockedIdx(c,r)<0&&!ctx.icSet[k]&&!ctx.bodySet[k];}
 var nm=p.leadNames,n1=D.leads[nm[0]].net,n2=D.leads[nm[1]].net;
+// 自分の現占有（旧フットプリント）を退避し、自分の探索のためだけに ctx.occ/ctx.bodySet から一時除去する。
+// 探索に失敗した場合（!best）は下で丸ごと復元する＝後続部品が自分の実セルを空きと誤認して
+// 重なって配置される（bodyOverlaps/pad 衝突の再提案直後 NG）事故を防ぐ（solver.py と同一ロジック）。
+var oldLeads=[p.leads[0].slice(),p.leads[1].slice()];
+var oldKeys=[key(oldLeads[0]),key(oldLeads[1])];
+oldKeys.forEach(function(k){delete ctx.occ[k];});
+var oldFoot=ctx.foots[p.id]||{cells:[]};
+var oldFootKeys=oldFoot.cells.map(key);
+oldFootKeys.forEach(function(k){delete ctx.bodySet[k];});
 var dec=CFG.decoupling.filter(function(d){return d.cap===p.id;})[0],anchor=null,anchorNet=null;
 if(dec){var ap=null;D.parts.forEach(function(q){partLeads(q).forEach(function(L){if(L.name===dec.pin)ap=L.pos;});});if(!ap&&D.leads[dec.pin])ap=D.leads[dec.pin].at;
 if(ap){anchor=ap;anchorNet=D.leads[dec.pin]?D.leads[dec.pin].net:null;}}
@@ -575,7 +589,14 @@ ctx.placed[on].forEach(function(m){var md=cheb(q,m);
 if(md===1){var pen=Math.max(cd.adjPen||1,cdef(on).adjPen||1)*W.cautionBase;if(clsOf(nn)==='HIZ'||ocl==='HIZ')pen*=W.hizMult;s+=pen;}
 if(cd.keepAway.indexOf(ocl)>=0&&md<=cd.keepHoles)s+=W.keepAwayPen;});});});
 if(!best||s<best[0])best=[s,p1,p2,standing];}}
-if(!best)return;
+if(!best){
+// 探索失敗：旧位置へ完全復元（occ・bodySet・placed 引力ターゲットの3点とも）。
+oldKeys.forEach(function(k){ctx.occ[k]=1;});
+oldFootKeys.forEach(function(k){ctx.bodySet[k]=1;});
+(ctx.placed[n1]=ctx.placed[n1]||[]).push(oldLeads[0].slice());
+(ctx.placed[n2]=ctx.placed[n2]||[]).push(oldLeads[1].slice());
+return;
+}
 p.leads=[best[1],best[2]];if(best[3])p.standing=true;else delete p.standing;
 D.leads[nm[0]].at=best[1].slice();D.leads[nm[1]].at=best[2].slice();
 ctx.occ[key(best[1])]=1;ctx.occ[key(best[2])]=1;

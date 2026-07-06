@@ -1133,21 +1133,20 @@ def solve(state, cfg, propose=False):
                 placed.setdefault(bd.net_of_lead.get(lead), set()).add(xyv)
         order = cfg.get("propose_order") or []
         movable.sort(key=lambda p: order.index(p["id"]) if p["id"] in order else 99)
-        for p in movable:
-            names = p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
-            for nm in names:
-                bd.occupied.discard(bd.lead_pos[nm])
-            bd.body[p["id"]] = (set(), False)
-            bd.rebuild_body_cells = None
-        bd.body_cells = set()
-        for pid, (cells, _t) in bd.body.items():
-            bd.body_cells |= cells
         hiz_leads = []
         for p in movable:
             names = p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
             n1, n2 = bd.net_of_lead.get(names[0]), bd.net_of_lead.get(names[1])
-            if n1 is None or n2 is None:  # 未接続の足を持つ部品は再配置対象外（ERC で報告）
+            if n1 is None or n2 is None:  # 未接続の足を持つ部品は再配置対象外（ERC で報告）。占有はそのまま。
                 continue
+            # この部品の現占有（旧フットプリント）を退避してから、自分の探索のためだけに一時クリアする。
+            # 一括クリア（bugfix 前）だと、探索に失敗した部品の実セルが「空き」のまま残り、後続の
+            # 部品がそこへ重なって配置される（bodyOverlaps/pad 衝突の再提案直後 NG）事故が起きていた。
+            old_leads = [bd.lead_pos[nm] for nm in names]
+            old_cells, old_tall = bd.body.get(p["id"], (set(), False))
+            bd.occupied -= set(old_leads)
+            bd.body[p["id"]] = (set(), False)
+            bd.body_cells -= old_cells
             dec = decoup.get(p["id"])
             anchor = None
             if dec and dec.get("pin") in bd.lead_pos:
@@ -1209,6 +1208,13 @@ def solve(state, cfg, propose=False):
                         if best is None or s < best[0]:
                             best = (s, p1, p2, standing)
             if best is None:
+                # 探索失敗：旧位置へ完全復元（占有・footprint・placed 引力ターゲットの3点とも）。
+                # 復元しないと、この部品の実セルが後続部品から「空き」に見えてしまう。
+                bd.occupied |= set(old_leads)
+                bd.body[p["id"]] = (old_cells, old_tall)
+                bd.body_cells |= old_cells
+                placed.setdefault(n1, set()).add(old_leads[0])
+                placed.setdefault(n2, set()).add(old_leads[1])
                 continue
             _s, p1, p2, standing = best
             p["leads"] = [list(p1), list(p2)]
