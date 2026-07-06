@@ -434,6 +434,7 @@ var JE={
 ' / 壊れた部品を{0}個スキップしました。':' / Skipped {0} malformed part(s).',
 '設定（重み/物理寸法など）を取り込みました。盤面は変更していません。':'Imported settings (weights/physical dimensions, etc). The board itself is unchanged.',
 '列 <b>{0}</b> 行 <b>{1}</b>':'Col <b>{0}</b> Row <b>{1}</b>','ネット <b>{0}</b>（{1}）':'Net <b>{0}</b> ({1})','被覆線端子 <b>{0}</b>':'Jumper wire end <b>{0}</b>','空き穴':'Empty hole',
+'ネット <b>{0}</b>':'Net <b>{0}</b>','ネット <b>{0}</b>（固定中・Escで解除）':'Net <b>{0}</b> (pinned — Esc to release)',
 '✓ 完了':'✓ done','コピー済み':'Copied',' ロック中':' locked','監査エラー: {0}':'Audit error: {0}',
 '導通 ✓ {0}':'Continuity ✓ {0}','非導通 ⚠ 同ネット {0} が計画上未接続':'No continuity ⚠ same net {0} not connected in plan','非導通 ✗ {0} / {1}':'No continuity ✗ {0} / {1}','空き':'empty',
 ' 直付け':' direct-solder','案':'Proposal','案 {0}':'Proposal {0}','比較: {0}':'Diff: {0}','KiCADインポート':'KiCAD import',
@@ -1889,7 +1890,15 @@ if(e.key==='Escape'){guideEnd();return;}}
 if(e.ctrlKey&&e.key.toLowerCase()==='z'&&!e.shiftKey){e.preventDefault();undo();return;}
 if((e.ctrlKey&&e.key.toLowerCase()==='y')||(e.ctrlKey&&e.shiftKey&&e.key.toLowerCase()==='z')){e.preventDefault();redo();return;}
 CMDS.forEach(function(c){if(c.key===e.key)c.f();});
-if(ISO.on){if(e.key==='Escape'){selClear();render();}return;}/* 閲覧専用: ロック/削除キーは無効（Esc=選択解除・Ctrl+Zは上のundoで既に許可済み） */
+if(ISO.on){if(e.key==='Escape'){
+  /* ISO.onは「3D/等角ビューが開いている」を表すフラグで、WebGL成功時もGL3D.onと同時にtrueになる
+   (setIso参照)。このためこの分岐が常に先に来てreturnし、GL3D.on専用の分岐を後ろに置いても
+   絶対に届かない(実機検証で発見: Escapeがdocument.dispatchEventでもpinnedNetを消さなかった
+   バグの実体はここだった)。WebGL表示中は1回目のEscapeでネット固定(pinnedNet)を解除、
+   2回目で選択解除、という優先順位(要件2敵対的レビュー指摘)をここで扱う。 */
+  if(GL3D.on&&GL3D.pinnedNet){GL3D.pinnedNet=null;gl3dInvalidate();gl3dStatus();}
+  else{selClear();render();if(GL3D.on){gl3dInvalidate();gl3dStatus();}}}
+ return;}/* 閲覧専用: ロック/削除キーは無効（Esc=選択解除・Ctrl+Zは上のundoで既に許可済み） */
 /* 盤面編集がポインタ専用（キーボード経路0%）だったのを埋める最小実装。SVG自体を1つのTabストップにし（tabindex=0）、
    その中は矢印キーで部品選択を巡回・Shift+矢印キーで選択部品を1穴移動、という複合ウィジェットの標準作法（Tabで出入り・矢印で内部移動）。 */
 if(!GUIDE.on&&document.activeElement===svg&&mode==='move'&&D.parts.length&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].indexOf(e.key)>=0){
@@ -2696,6 +2705,11 @@ var GL3D={on:false,ok:null,gl:null,canvas:null,
  /* 90°スナップ回転(z-isorot流用)のトゥイーン。ドラッグ開始で即座にキャンセルする(gl3dBindEvents)。
     rotTarget=直前に確定させた目標yaw(連打時の逆戻り防止に使う。ドラッグ開始でundefinedへ戻す)。 */
  rotRaf:null,rotTarget:undefined,
+ /* pinnedNet: クリックでネットを固定表示するための3Dビュー専用状態(要件2)。ホバーの
+    ように離すと消えず、Escか空クリックで解除するまで居座る。2D/等角ビューの描画
+    コードは一切参照しない(3D限定のスコープ。既存2D/等角には触れないという絶対制約に
+    正面から抵触するため、あえて3ビュー共有にはしない=敵対的レビューの必須修正)。 */
+ pinnedNet:null,wireHoverCache:null,
  yaw:45*Math.PI/180,pitch:30*Math.PI/180,dist:400,tx:0,ty:0,drag:null,raf:null,dpr:1};
 function m4ident(){return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);}
 function m4mul(a,b){var o=new Float32Array(16);for(var c=0;c<4;c++)for(var r=0;r<4;r++){var s=0;for(var k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s;}return o;}
@@ -2735,12 +2749,16 @@ var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;va
  /* uLight is intentionally NOT normalized here: its magnitude is calibrated to match
     the 2D isometric normalShade() model (dot(n,LIGHT)/|n|, LIGHT itself unnormalized)
     so the two views render the same brightness for the same face. */
- /* vHL (0..1, per-vertex): 0=normal, ~0.6=hovered net, 1.0=selected part. Mixed toward
-    the same cyan accent (#5edcff-ish) the 2D isometric view uses for its dashed
-    selection outline, so the two views share one highlight language. */
+ /* vHL (-1..1、頂点ごと): 0=通常、~0.65=注目中のネット、1.0=選択部品(2D等角ビューの
+    シアン破線選択と同じアクセント色に寄せる=表現言語の統一)、負値=ゴースティング
+    (要件2敵対的レビュー承認済み設計: 注目ネットがある間、無関係な配線は-0.85・
+    無関係な部品は-0.45で不透明・無彩色寄りに沈める。透明合成はtriangle-soup+
+    深度テスト設計を壊すため使わず、輝度ベースの不透明減光で「focus+context」を
+    実現する)。 */
  'void main(){vec3 n=normalize(vNormal);float d=max(0.0,dot(n,uLight));'+
  'float f=min(1.0,uAmb+d);vec3 base=vColor*f;'+
- 'vec3 tinted=mix(base,vec3(0.37,0.86,1.0),vHL*0.55);'+
+ 'vec3 tinted;if(vHL>=0.0){tinted=mix(base,vec3(0.37,0.86,1.0),vHL*0.55);}'+
+ 'else{float lum=dot(base,vec3(0.299,0.587,0.114));tinted=mix(base,vec3(lum*0.35),-vHL);}'+
  'gl_FragColor=vec4(tinted,1.0);}';
 /* テクスチャパス(基板天面のみ)。天面は平面なので正射影下でも普通の画像として貼れる。 */
 var GL3D_VS_TEX='attribute vec3 aPos;attribute vec3 aNormal;attribute vec2 aUV;'+
@@ -2979,7 +2997,7 @@ var GL3D_PART_COL={r:'#d9b38c',ic:'#1c1e22',elec:'#1a2230',disc:'#b5651d',film:'
    鉛直面内にあるため、帯の幅方向(水平面内の垂直ベクトル)は弧全体で一定でよい
    (ねじれない)。法線は帯の実ジオメトリから外積で求める(弧の起伏に応じて自然に
    陰影が変化する)。tagN=net index(gl3dUpdateHLのホバー判定用、要件4)。 */
-function gl3dPushWire(pV,pN,pC,pTP,pTN,tagN,w,obst){
+function gl3dPushWire(pV,pN,pC,pTP,pTN,tagN,w,obst,hoverCache){
  var col=hex2rgb01(D.netColors[w.net]||'#999999');
  var pa=w.a.direct?w.a.pad:w.a.hole,pb=w.b.direct?w.b.pad:w.b.hole;
  var Lmm=dist(pa,pb)*CFG.pitch,apex=Math.min(9,Math.max(3,2.5+0.3*Lmm));
@@ -3010,6 +3028,12 @@ function gl3dPushWire(pV,pN,pC,pTP,pTN,tagN,w,obst){
   var q=Math.min(lo2*(1-lo2),hi2*(1-hi2));
   apex=Math.max(apex,(o.top+1.2)/(4*q));});
  apex=Math.min(apex,14);/* 上限(異常系でアーチが屋根のように高くなり過ぎないためのクランプ) */
+ /* ホバーピック用キャッシュ(敵対的レビュー指摘R2対応): 障害物クリアランスで
+    引き上げた後の「最終apex」をそのまま保存する。ホバー側が基本式(2.5+0.3*Lmm)を
+    再計算すると、密集盤面ほどアーチが高く引き上げられているのにサンプル点が
+    低いままになり、狙いのシーンでこそピックが実際の見た目の下に外れる
+    (描画とピックの二重実装によるドリフト)。 */
+ if(hoverCache)hoverCache.push({wa:wa,wb:wb,apex:apex,net:w.net});
  var NS=Math.min(20,Math.max(12,Math.round(6+apex))),prevL=null,prevR=null;
  for(var i=0;i<=NS;i++){var t=i/NS;
   var cx=wa[0]+dx*t,cz=wa[1]+dz*t,cy=4*apex*t*(1-t);
@@ -3175,7 +3199,9 @@ function gl3dBuildSolidGeom(){
      毎フレームの描画には影響しない。 */
   var obst=D.parts.map(function(p){var PF=physFor(p),b=gl3dPartBox(p,PF);
    return {id:p.id,cx:b.cx,cz:b.cz,hw:b.hw+1.5,hd:b.hd+1.5,top:gl3dPickTopH(p,PF)};});
-  (D.wires||[]).forEach(function(w){gl3dPushWire(pV,pN,pC,pTP,pTN,netIdOf(w.net),w,obst);});}
+  GL3D.wireHoverCache=[];
+  (D.wires||[]).forEach(function(w){gl3dPushWire(pV,pN,pC,pTP,pTN,netIdOf(w.net),w,obst,GL3D.wireHoverCache);});}
+ else GL3D.wireHoverCache=[];
  /* はんだブリッジ帯・宙ぶらりん警告(敵対的レビュー指摘1)。既存Canvas 2D等角の
     buildIsoList(L2338-2350: padBridges/配線端のbridgeTo自動追従/直付NG警告)と同じ
     読み取り専用の情報源(D.padBridges/D.wires)を、平置きの円柱としてWebGL側にも
@@ -3365,15 +3391,27 @@ function gl3dUpdateHL(gl){
  /* 毎フレーム無条件にO(頂点数)の再計算+全量bufferDataをしていたのを、選択/ホバー/
     ジオメトリ世代(GL3D.geomKey、gl3dDraw内でgl3dRebuildIfNeededの直後に呼ばれるので
     ここで見る値は必ず今フレームのもの)が前回と同じならskipするよう変更。selSetは
-    通常ごく少数なのでキー生成自体はO(選択数)で軽い。 */
- var hk=GL3D.geomKey+'|'+selSet.map(function(p){return p.id;}).join(',')+'|'+(hoverNet||'');
+    通常ごく少数なのでキー生成自体はO(選択数)で軽い。pinnedNetを必ずキーに含める
+    (含め忘れると「1操作遅れ」の既知バグ類型の再演になる、と敵対的レビューが指摘)。 */
+ var focusNet=GL3D.pinnedNet||hoverNet;
+ var hk=GL3D.geomKey+'|'+selSet.map(function(p){return p.id;}).join(',')+'|'+(hoverNet||'')+'|'+(GL3D.pinnedNet||'');
  if(GL3D_HLKEY.v===hk)return;
  GL3D_HLKEY.v=hk;
  var tp=GL3D.tagPart,tn=GL3D.tagNet,n=tp.length,hl=new Float32Array(n);
- for(var i=0;i<n;i++){var v=0,pi=tp[i];
-  if(pi>=0){var pp=D.parts[pi];if(pp&&inSel(pp))v=1;}
-  var ni=tn[i];
-  if(ni>=0&&hoverNet&&GL3D.netList[ni]===hoverNet)v=Math.max(v,0.65);
+ /* focusNet(注目ネット)がある間のゴースティング用: 部品ごとに「この部品のリード/
+    ピンがfocusNetに繋がっているか」を頂点ループの外で1回だけ判定する(partLeadsで
+    名前を取りD.leadsのnetを引く。既存のtagPart/tagNetだけでは部品→ネット所属が
+    分からないため、要望2の統合案が指摘した追加実装)。 */
+ var partOnFocus=null;
+ if(focusNet){partOnFocus={};D.parts.forEach(function(p,pi){
+  var names=partLeads(p);
+  for(var i2=0;i2<names.length;i2++){var Ld=D.leads[names[i2].name];if(Ld&&Ld.net===focusNet){partOnFocus[pi]=1;break;}}});}
+ for(var i=0;i<n;i++){var v=0,pi=tp[i],ni=tn[i];
+  if(pi>=0){var pp=D.parts[pi];
+   if(pp&&inSel(pp))v=1;
+   else if(focusNet)v=partOnFocus[pi]?0:-0.45;}
+  else if(ni>=0&&focusNet){
+   v=(GL3D.netList[ni]===focusNet)?0.65:-0.85;}
   hl[i]=v;}
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.hlbuf);gl.bufferData(gl.ARRAY_BUFFER,hl,gl.DYNAMIC_DRAW);}
 /* 盤面構造が変わった時だけジオメトリ/テクスチャを再構築する(既存isoEnsureBakeの
@@ -3647,6 +3685,25 @@ function gl3dRayAABB(ray,cx,cz,hw,hd,y0,y1){
   var t1=(mins[k]-o)/d,t2=(maxs[k]-o)/d;if(t1>t2){var tmp=t1;t1=t2;t2=tmp;}
   if(t1>lo)lo=t1;if(t2<hi)hi=t2;if(lo>hi)return null;}
  return lo;}
+/* 点からレイ(無限直線)までの距離。正射影ではray.dirが画面全体で一定なので、
+   dirに直交する平面内での距離=通常の点と直線の距離公式で求まる(要件2: ワイヤ本体の
+   ホバー判定用)。 */
+function gl3dRayPointDist(ray,px,py,pz){
+ var dx=px-ray.origin[0],dy=py-ray.origin[1],dz=pz-ray.origin[2],d=ray.dir;
+ var dot=dx*d[0]+dy*d[1]+dz*d[2];
+ var cx=dx-d[0]*dot,cy=dy-d[1]*dot,cz=dz-d[2]*dot;
+ return Math.hypot(cx,cy,cz);}
+/* ワイヤ本体のホバー判定(敵対的レビュー指摘R2対応): gl3dPushWireが構築時に記録した
+   「最終apex」(障害物クリアランス込み)をそのまま使って弧をサンプルするので、描画と
+   ピックが常に一致する(基本式を再計算しない)。thresholdWorldは画面px閾値を
+   ワールドmmへ換算した値(呼び出し側でGL3D.dist*1.2/canvasHeightPxから求める)。 */
+function gl3dWireHoverNet(ray,thresholdWorld){
+ var cache=GL3D.wireHoverCache||[],bestNet=null,bestD=Infinity;
+ for(var wi=0;wi<cache.length;wi++){var c=cache[wi],dx=c.wb[0]-c.wa[0],dz=c.wb[1]-c.wa[1];
+  for(var i=0;i<=10;i++){var t=i/10;
+   var x=c.wa[0]+dx*t,z=c.wa[1]+dz*t,y=4*c.apex*t*(1-t);
+   var d=gl3dRayPointDist(ray,x,y,z);if(d<bestD){bestD=d;bestNet=c.net;}}}
+ return (bestD<=thresholdWorld)?bestNet:null;}
 /* pick専用の視覚天面高さ。isoPartHeight()はisoBakeExtent/buildIsoList等の2D等角ビューと
    共有しているためそちらの見た目定義は変えず、ここでだけkind別の実ジオメトリ天面
    (gl3dMeshDisc/gl3dMeshRと同期)を返す。disc=楕円体の中心+半軸(0.62倍)、寝かせr=
@@ -3676,7 +3733,15 @@ function gl3dClick(ev){var pt=gl3dPt(ev),cw=GL3D.canvas.clientWidth,ch=GL3D.canv
   if(ev.shiftKey){var ix=selSet.indexOf(hit.part);if(ix<0)selSet.push(hit.part);else selSet.splice(ix,1);}
   else selSet=[hit.part];
   selPart=selSet.length?selSet[selSet.length-1]:null;}
- else{selSet=[];selPart=null;}
+ else{
+  selSet=[];selPart=null;
+  /* 部品に当たらなかった場合、ワイヤ本体に当たっていれば要望2の「ネット固定
+     (pinnedNet)」をトグルする(同じネットを再クリックで解除)。ワイヤにも当たらない
+     完全な空クリックはpinnedNetも解除する(ホバーのように離すと消えず、
+     クリックで明示的に固定/解除する3Dビュー専用の状態)。 */
+  var thresholdWorld=6*1.2*GL3D.dist/ch;
+  var wireNet=gl3dWireHoverNet(gl3dRayFromScreen(pt[0],pt[1],cw,ch),thresholdWorld);
+  GL3D.pinnedNet=(wireNet&&wireNet!==GL3D.pinnedNet)?wireNet:null;}
  /* 2D等角(renderIso)/平面図(render)と同じpalLast追従(敵対的レビュー指摘3＝CG理論
     レビューでも独立指摘。2つの独立レビューが揃って検出した同一バグ)。これが無いと
     3Dで部品を選び直しても左パネルの部品エディタが直前の別部品のまま残り、
@@ -3691,8 +3756,14 @@ function gl3dClick(ev){var pt=gl3dPt(ev),cw=GL3D.canvas.clientWidth,ch=GL3D.canv
    丸ごとskipする(毎pointermoveでの無条件フルpick+innerHTML書換を解消)。 */
 var GL3D_HOVER_LAST={key:undefined};
 function gl3dHoverMove(ev){var pt=gl3dPt(ev),cw=GL3D.canvas.clientWidth,ch=GL3D.canvas.clientHeight;
- var hole=gl3dGroundHole(gl3dRayFromScreen(pt[0],pt[1],cw,ch));
- var hk=hole?(hole[0]+','+hole[1]):'';
+ var ray=gl3dRayFromScreen(pt[0],pt[1],cw,ch),hole=gl3dGroundHole(ray);
+ /* キャッシュキーに量子化した画面座標(4px格子)を含める(敵対的レビュー指摘R3対応):
+    旧実装は「同じ穴なら丸ごとskip」だったが、ワイヤ本体は穴と穴の間の空中を通るため、
+    同じ穴の上のまま(またはどの穴にも当たらないまま)ワイヤの上をなぞってもホバーが
+    一切更新されない不具合があった。4px量子化はskip最適化の効果をほぼ保ちつつ
+    ワイヤ本体の検出粒度を確保する。 */
+ var qx=Math.floor(pt[0]/4),qy=Math.floor(pt[1]/4);
+ var hk=(hole?(hole[0]+','+hole[1]):'x')+'|'+qx+','+qy;
  if(hk===GL3D_HOVER_LAST.key)return;
  GL3D_HOVER_LAST.key=hk;
  var sp=document.getElementById('st-pos');
@@ -3700,14 +3771,26 @@ function gl3dHoverMove(ev){var pt=gl3dPt(ev),cw=GL3D.canvas.clientWidth,ch=GL3D.
  var newNet=null;
  if(hole)D.wires.some(function(w){var pa=w.a.direct?w.a.pad:w.a.hole,pb=w.b.direct?w.b.pad:w.b.hole;
   if((pa[0]===hole[0]&&pa[1]===hole[1])||(pb[0]===hole[0]&&pb[1]===hole[1])){newNet=w.net;return true;}return false;});
- if(newNet!==hoverNet){hoverNet=newNet;gl3dInvalidate();}}
+ /* 穴に当たらなければワイヤ本体への距離判定にフォールバック(要件2: 配線が密集した
+    盤面で「どのネットを見ているか」をアーチの途中でも把握できるようにする)。
+    gl3dPushWireが記録した実際の最終apex(障害物クリアランス込み)でサンプルするため、
+    描画されているアーチと必ず一致する(基本式の再計算によるドリフトが無い)。 */
+ if(!newNet){var thresholdWorld=6*1.2*GL3D.dist/ch;newNet=gl3dWireHoverNet(ray,thresholdWorld);}
+ if(newNet!==hoverNet){hoverNet=newNet;gl3dInvalidate();gl3dStatus();}}
 /* #st-stats を2D等角ビューのisoStatus()相当に更新する(要件5)。回転はここでは自由/
    90°スナップの両方があり得るのでISO.rot表記の代わりに現在のyaw角度を出す。 */
 function gl3dStatus(){var el=document.getElementById('st-stats');if(!el)return;
  var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)direct++;});});
  el.innerHTML=tr('被覆線')+' <b>'+D.wires.length+'</b> ('+tr('直付')+' '+direct+') / 3D '+
   Math.round(((GL3D.yaw%(2*Math.PI))+2*Math.PI)%(2*Math.PI)*180/Math.PI)+'°'+
-  (selPart?(' / '+tr('選択')+' <b>'+esc(selPart.id)+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'');}
+  (selPart?(' / '+tr('選択')+' <b>'+esc(selPart.id)+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'');
+ /* #st-net(2D版と共有するチップ)に注目ネット(ホバー中またはクリック固定中)を表示する
+    (要望2: 密集盤面で「今どのネットを見ているか」を明示する)。2D版と同じ要素・同じ
+    tr()パターンを再利用するので新規UI言語は最小限(ネット名のみの版+固定中の版を追加)。 */
+ var sn=document.getElementById('st-net');
+ if(sn){if(GL3D.pinnedNet){sn.innerHTML=trf('ネット <b>{0}</b>（固定中・Escで解除）',esc(GL3D.pinnedNet));sn.style.display='';}
+  else if(hoverNet){sn.innerHTML=trf('ネット <b>{0}</b>',esc(hoverNet));sn.style.display='';}
+  else sn.style.display='none';}}
 function gl3dEaseOutCubic(t){return 1-Math.pow(1-t,3);}
 /* 90°スナップ回転(要件7)。既存#z-isorotボタンをWebGL表示中はこの動作に再定義する
    (Canvas 2D等角ビュー専用のisoRotate()には一切触れない、完全に別の関数)。GL3D.yawを
@@ -3796,7 +3879,8 @@ window.__dbg3d={GL3D:GL3D,gl3dInit:gl3dInit,redraw:gl3dDraw,
     重宝した: pins構造をkind!=='ic'で使っている等、D.parts自体の形が想定外だと
     3D側は無関係にpartがD.partsから欠落する場合がある。まずここでpad有無を確認する)。 */
  _debugParts:function(){return D.parts.map(function(p){var PF=physFor(p);var box=gl3dPartBox(p,PF);
-  return {id:p.id,kind:p.kind,hasLeads:!!p.leads,hasPins:!!p.pins,pads:gl3dPadPts(p),box:box,h:isoPartHeight(p,PF)};});}};
+  return {id:p.id,kind:p.kind,hasLeads:!!p.leads,hasPins:!!p.pins,pads:gl3dPadPts(p),box:box,h:isoPartHeight(p,PF)};});},
+ status:gl3dStatus,hoverNet:function(){return hoverNet;}};
 function tgl(box,label,k){label=tr(label);var d=document.createElement('label');d.className='tgl';
 var i=document.createElement('input');i.type='checkbox';i.checked=LY[k];
 i.onchange=function(){LY[k]=i.checked;render();};
