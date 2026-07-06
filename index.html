@@ -435,6 +435,7 @@ var JE={
 '設定（重み/物理寸法など）を取り込みました。盤面は変更していません。':'Imported settings (weights/physical dimensions, etc). The board itself is unchanged.',
 '列 <b>{0}</b> 行 <b>{1}</b>':'Col <b>{0}</b> Row <b>{1}</b>','ネット <b>{0}</b>（{1}）':'Net <b>{0}</b> ({1})','被覆線端子 <b>{0}</b>':'Jumper wire end <b>{0}</b>','空き穴':'Empty hole',
 'ネット <b>{0}</b>':'Net <b>{0}</b>','ネット <b>{0}</b>（固定中・Escで解除）':'Net <b>{0}</b> (pinned — Esc to release)',
+'外観寸法は推定':'Visual dimensions are an estimate','（{0}）':'({0})',
 '✓ 完了':'✓ done','コピー済み':'Copied',' ロック中':' locked','監査エラー: {0}':'Audit error: {0}',
 '導通 ✓ {0}':'Continuity ✓ {0}','非導通 ⚠ 同ネット {0} が計画上未接続':'No continuity ⚠ same net {0} not connected in plan','非導通 ✗ {0} / {1}':'No continuity ✗ {0} / {1}','空き':'empty',
 ' 直付け':' direct-solder','案':'Proposal','案 {0}':'Proposal {0}','比較: {0}':'Diff: {0}','KiCADインポート':'KiCAD import',
@@ -3176,6 +3177,138 @@ function gl3dMeshGeneric(p,PF,pV,pN,pC,pTP,pTN,idx){
   gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});
 }
 var GL3D_MESH={elec:gl3dMeshElec,disc:gl3dMeshDisc,film:gl3dMeshFilm,r:gl3dMeshR,ic:gl3dMeshIC};
+/* ============================================================
+   package中間層(要望1: BOM/仕様取得フローの改善、4専門家パネル+敵対的レビュー確定案)。
+   物理チャネル(CFG.physical→physFor→配置/ERC、既存のまま一切変更しない)とは別に、
+   外観チャネル(part.pkg=パッケージ規格トークンの文字列、part.phys3d=個体上書き)を新設。
+   ercAudit・solver.pyはこれらのフィールドを一切読まない(round-tripでは丸ごと
+   温存されるだけ)ので、parity/監査には構造的に無風。GL3D_PKGはDEFCFG/config.example.json
+   ではなくindex.html内定数に置く(敵対的レビュー裁定: solverが読まないデータを
+   parity_check対象に含めない)。
+   仕様の出所はAIエージェント(Claude Code)が設計時にdatasheet等を調べてpkg/phys3dへ
+   書き込む、という運用(SKILL.md参照)。perfwire自体は実行時に一切外部通信しない。 */
+var GL3D_PKG={
+ to92:{shape:'dcyl',dia_mm:5.2,h_mm:4.5,color:'#2b2f36',source:'JEDEC TO-92 standard envelope'},
+ to220:{shape:'tab_box',len_mm:10.0,wid_mm:4.5,h_mm:8.6,tabH_mm:5.5,color:'#2b2f36',source:'JEDEC TO-220AB standard envelope'},
+ led3:{shape:'dome',dia_mm:3.0,h_mm:5.0,color:'#e0453f',source:'generic 3mm THT LED envelope'},
+ led5:{shape:'dome',dia_mm:5.0,h_mm:8.6,color:'#e0453f',source:'generic 5mm THT LED envelope'},
+ do41:{shape:'axial',dia_mm:2.7,len_mm:5.2,color:'#2b2f36',bandColor:'#d8d8d8',source:'JEDEC DO-41 standard envelope'},
+ tact6:{shape:'plunger_box',len_mm:6.0,wid_mm:6.0,h_mm:3.5,plungerH_mm:1.2,color:'#2b2f36',source:'generic 6x6mm tactile switch envelope'},
+ header254:{shape:'header',pitch_mm:2.54,pinW_mm:0.64,bodyH_mm:2.5,color:'#1a1a1a',source:'0.1in (2.54mm) pin header standard envelope'},
+ trimpot3386:{shape:'box',len_mm:9.5,wid_mm:4.8,h_mm:5.0,color:'#1f6feb',source:'Bourns 3386 trimpot datasheet envelope'},
+ buzzer12:{shape:'cyl',dia_mm:12.0,h_mm:7.5,color:'#1f2733',source:'generic 12mm active buzzer envelope'},
+ custom:{shape:'box',len_mm:10,wid_mm:8,h_mm:6,color:'#8a8f98',source:'no package match — generic box, confidence should be estimate/todo'}};
+/* pkgトークン+個体上書き(phys3d)を解決した寸法オブジェクトを返す。phys3dは任意の
+   全フィールドを部分的に上書きできる(要件1: エージェントが標準から外れる寸法だけ
+   個別に書ける設計)。confidenceが無指定ならestimate扱い(検証済みと誤解させない)。 */
+function gl3dResolvePkg(p){
+ var d={shape:'box',len_mm:10,wid_mm:8,h_mm:6,dia_mm:6,color:'#8a8f98',standoff_mm:1.0,confidence:'estimate'};
+ var pk=p.pkg&&GL3D_PKG[p.pkg];if(pk)Object.assign(d,pk);
+ if(p.phys3d)Object.assign(d,p.phys3d);
+ return d;}
+/* 8種の形状ジェネレータ(2専門家案の統合案を1本化)。既存語彙(gl3dPushCyl/Box/
+   OrientedBox/EllipsoidOriented+gl3dFormLeads+gl3dSolderFillet)の合成のみで書く
+   (新規プリミティブは追加しない)。パッケージの追加は今後このテーブルへのデータ
+   追記のみで足り、コード変更を伴わない。 */
+function gl3dShapeDome(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ var pts=gl3dPadPts(p);if(pts.length<2)return;
+ var r=pk.dia_mm/2,standoff=pk.standoff_mm,bodyH=Math.max(1.5,pk.h_mm*0.55),lw=0.3,lcol=hex2rgb01('#cfd8df');
+ var wa=[gl3dWX(pts[0][0]),gl3dWZ(pts[0][1])],wb=[gl3dWX(pts[1][0]),gl3dWZ(pts[1][1])];
+ var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2,col=hex2rgb01(pk.color);
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,cx,standoff,cz,cx,standoff+bodyH,cz,r,r,col,12,true,false);
+ gl3dPushEllipsoid(pV,pN,pC,pTP,pTN,idx,-1,cx,standoff+bodyH+r*0.15,cz,r,r*0.95,r,col,10,6);
+ var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L,dSock=Math.min(L/2,r*0.85);
+ [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,cx+ux*dSock*sign,standoff,cz+uz*dSock*sign,wq[0],wq[1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});}
+function gl3dShapeDcyl(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ /* TO-92のDフラット断面は簡略化して円柱で近似する(単純な三角ソープ合成では
+    断面欠き取りに追加プリミティブが要るため、今回の投資対効果からは見送り。
+    「3本足・丸みを帯びた縦立ち本体」という支配的な視覚的手がかりは円柱で十分捉わる)。 */
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var r=pk.dia_mm/2,h=pk.h_mm,col=hex2rgb01(pk.color),lw=0.28,lcol=hex2rgb01('#cfd8df');
+ var box=gl3dPartBox(p,PF),cx=box.cx,cz=box.cz;
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,cx,0,cz,cx,h,cz,r,r,col,10,false,true);
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,cx,0,cz,hx,hz,lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+function gl3dShapeTabBox(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var box=gl3dPartBox(p,PF),col=hex2rgb01(pk.color),lw=0.3,lcol=hex2rgb01('#cfd8df');
+ var hl=pk.len_mm/2,hw=pk.wid_mm/2,h=pk.h_mm,tabH=pk.tabH_mm||h*0.6;
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-hl,box.cx+hl,0,h,box.cz-hw,box.cz+hw,col,{});
+ /* 放熱タブ板: 本体背面から上へ突き出す薄い板 */
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-hl*0.7,box.cx+hl*0.7,h,tabH,box.cz-hw*0.15,box.cz+hw*0.15,hex2rgb01('#c7cdd4'),{});
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  var sx=Math.max(box.cx-hl*0.8,Math.min(box.cx+hl*0.8,hx));
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,0,box.cz+hw*0.9,hx,hz,lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+function gl3dShapeAxial(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ /* 寝かせ抵抗(gl3dMeshRの寝かせケース)と同じ「両端からリード、本体は円柱」構成に
+    極性帯(カソードマーク)を1本足す。ダイオードの表現として再利用する設計
+    (専門家案: 既存rの寝かせロジックを流用)。 */
+ var pts=gl3dPadPts(p);if(pts.length<2)return;
+ var wa=[gl3dWX(pts[0][0]),gl3dWZ(pts[0][1])],wb=[gl3dWX(pts[1][0]),gl3dWZ(pts[1][1])];
+ var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
+ var r=pk.dia_mm/2,bl=Math.min(L-1,pk.len_mm),y=r+0.6,col=hex2rgb01(pk.color);
+ var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2;
+ var a=[cx-ux*bl/2,y,cz-uz*bl/2],b=[cx+ux*bl/2,y,cz+uz*bl/2];
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,a[0],a[1],a[2],b[0],b[1],b[2],r,r,col,10,true,true);
+ /* カソード側(pins.cが指す側、無指定ならb側)に色帯を1本 */
+ var kSide=(p.plus===1)?a:b,bandLen=bl*0.12,kDir=(p.plus===1)?-1:1;
+ var bandOuter=[kSide[0]-ux*bandLen*kDir,y,kSide[2]-uz*bandLen*kDir];
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,kSide[0],kSide[1],kSide[2],bandOuter[0],bandOuter[1],bandOuter[2],r*1.02,r*1.02,hex2rgb01(pk.bandColor||'#d8d8d8'),10,false,false);
+ var lw=0.3,lcol=hex2rgb01('#cfd8df');
+ [[wa,a],[wb,b]].forEach(function(pr){gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,pr[1][0],pr[1][1],pr[1][2],pr[0][0],pr[0][1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,pr[0][0],pr[0][1],lw);});}
+function gl3dShapePlungerBox(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var box=gl3dPartBox(p,PF),col=hex2rgb01(pk.color),lw=0.28,lcol=hex2rgb01('#cfd8df');
+ var hl=pk.len_mm/2,hw=pk.wid_mm/2,h=pk.h_mm,plungerH=pk.plungerH_mm||h*0.35;
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-hl,box.cx+hl,0,h,box.cz-hw,box.cz+hw,col,{});
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,box.cx,h,box.cz,box.cx,h+plungerH,box.cz,Math.min(hl,hw)*0.45,Math.min(hl,hw)*0.4,hex2rgb01('#e8e8e8'),8,false,true);
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  var sx=Math.max(box.cx-hl*0.85,Math.min(box.cx+hl*0.85,hx)),sz=Math.max(box.cz-hw*0.85,Math.min(box.cz+hw*0.85,hz));
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,0,sz,hx,hz,lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+function gl3dShapeHeader(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var box=gl3dPartBox(p,PF),bodyH=pk.bodyH_mm,pinW=pk.pinW_mm,col=hex2rgb01(pk.color);
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-box.hw,box.cx+box.hw,0,bodyH,box.cz-box.hd,box.cz+box.hd,col,{});
+ var pinCol=hex2rgb01('#c7a34d');
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,hx-pinW/2,hx+pinW/2,-0.8,bodyH+pinW*3,hz-pinW/2,hz+pinW/2,pinCol,{});});}
+function gl3dShapeBoxPkg(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ /* gl3dMeshGenericと同じ構成(向き付き箱 or AABB箱+リード成形)だがpkgの色/寸法を使う。
+    リレー/モジュール/半固定VR/ターミナル等、規格化された標準形状が無い部品の
+    「箱で妥協はするが、少なくとも部品固有の色は正しく出す」受け皿(要件1)。 */
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var col=hex2rgb01(pk.color),lw=0.3,lcol=hex2rgb01('#cfd8df'),y0=1.0,h=pk.h_mm;
+ if(p.leads&&p.leads.length===2){
+  var wa=[gl3dWX(p.leads[0][0]),gl3dWZ(p.leads[0][1])],wb=[gl3dWX(p.leads[1][0]),gl3dWZ(p.leads[1][1])];
+  var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
+  var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2,bl=pk.len_mm||Math.max(4,L-2),bw=pk.wid_mm||3;
+  gl3dPushOrientedBox(pV,pN,pC,pTP,pTN,idx,-1,cx,cz,ux,uz,bl/2,bw/2,y0,y0+h,col,{});
+  var dSock=Math.min(L/2,bl/2*0.9);
+  [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
+   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,cx+ux*dSock*sign,y0,cz+uz*dSock*sign,wq[0],wq[1],lw,lcol);
+   gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+  return;}
+ var box=gl3dPartBox(p,PF),hl=(pk.len_mm||box.hw*2)/2,hw=(pk.wid_mm||box.hd*2)/2;
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-hl,box.cx+hl,y0,y0+h,box.cz-hw,box.cz+hw,col,{});
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  var sx=Math.max(box.cx-hl*0.85,Math.min(box.cx+hl*0.85,hx)),sz=Math.max(box.cz-hw*0.85,Math.min(box.cz+hw*0.85,hz));
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,y0,sz,hx,hz,lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+function gl3dShapeCyl(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var box=gl3dPartBox(p,PF),r=pk.dia_mm/2,h=pk.h_mm,standoff=pk.standoff_mm,col=hex2rgb01(pk.color),lw=0.3,lcol=hex2rgb01('#cfd8df');
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,box.cx,standoff,box.cz,box.cx,standoff+h,box.cz,r,r,col,14,true,true);
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,box.cx,standoff,box.cz,hx,hz,lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+var GL3D_SHAPE={dome:gl3dShapeDome,dcyl:gl3dShapeDcyl,tab_box:gl3dShapeTabBox,axial:gl3dShapeAxial,
+ plunger_box:gl3dShapePlungerBox,header:gl3dShapeHeader,box:gl3dShapeBoxPkg,cyl:gl3dShapeCyl};
 /* ソリッドパス全体(スラブ側面/底面＋部品(kind別実形状)＋配線帯)を1本のtriangle soupへ
    構築する。D.parts/D.wires/D.grid/CFGは読み取り専用(ee/ERCには一切触れない)。
    LY.parts/LY.wiresレイヤートグルは2D(render/renderIso)と同じ意味論で3Dのジオメトリ
@@ -3186,10 +3319,16 @@ function gl3dBuildSolidGeom(){
  var pV=[],pN=[],pC=[],pTP=[],pTN=[],ext=gl3dSlabExtent(),bt=D.grid.type||'perf';
  var slabHex=bt==='strip'?'#3a2a1c':((bt==='mesh'||bt==='breadboard'||bt==='cluster'||bt==='custom')?'#402b1a':'#2c6e46');
  gl3dPushBox(pV,pN,pC,pTP,pTN,-1,-1,-ext.hw,ext.hw,-1.6,0,-ext.hd,ext.hd,hex2rgb01(slabHex),{top:false,bottom:false});
- /* 未知kind(GL3D_MESHに無い種別)はgl3dMeshGenericへ(要件2): 裸箱ではなく
-    リード成形+はんだフィレット付きの「実装された箱」として描く。 */
- if(LY.parts)D.parts.forEach(function(p,idx){var PF=physFor(p),fn=GL3D_MESH[p.kind]||gl3dMeshGeneric;
-  fn(p,PF,pV,pN,pC,pTP,pTN,idx);});
+/* 3段ディスパッチ(要望1): p.phys3d.shape(個体上書き) → GL3D_PKG[p.pkg].shape
+   (規格既定) → GL3D_MESH[p.kind](既存5種の専用メッシュ) → gl3dMeshGeneric(裸箱でも
+   最低限リード成形+フィレット付き)。pkg/phys3d未指定の既存盤面は完全後方互換で
+   旧経路(kind別 or generic)のまま描かれる。未知kind(GL3D_MESHに無い種別)で
+   pkgも無ければ、リード成形+はんだフィレット付きの「実装された箱」として描く。 */
+ if(LY.parts)D.parts.forEach(function(p,idx){var PF=physFor(p);
+  var shapeName=(p.phys3d&&p.phys3d.shape)||(p.pkg&&GL3D_PKG[p.pkg]&&GL3D_PKG[p.pkg].shape);
+  var shapeFn=shapeName&&GL3D_SHAPE[shapeName];
+  if(shapeFn)shapeFn(p,PF,gl3dResolvePkg(p),pV,pN,pC,pTP,pTN,idx);
+  else(GL3D_MESH[p.kind]||gl3dMeshGeneric)(p,PF,pV,pN,pC,pTP,pTN,idx);});
  var netList=[],netIdx={};
  function netIdOf(nm){if(!Object.prototype.hasOwnProperty.call(netIdx,nm)){netIdx[nm]=netList.length;netList.push(nm);}return netIdx[nm];}
  if(LY.wires){
@@ -3784,6 +3923,13 @@ function gl3dStatus(){var el=document.getElementById('st-stats');if(!el)return;
  el.innerHTML=tr('被覆線')+' <b>'+D.wires.length+'</b> ('+tr('直付')+' '+direct+') / 3D '+
   Math.round(((GL3D.yaw%(2*Math.PI))+2*Math.PI)%(2*Math.PI)*180/Math.PI)+'°'+
   (selPart?(' / '+tr('選択')+' <b>'+esc(selPart.id)+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'');
+ /* 要望1・敵対的レビュー指摘R5: phys3d/pkgの外観寸法がconfidence='estimate'|'todo'の
+    場合、選択中はここに常時開示する(会話での開示定型文だけに頼らない、UI側の
+    フェイルセーフ)。ERC/配置は物理チャネル(physFor)のみを見るため汚染されないが、
+    「この見た目は検証済みではない」という事実は使う人に常に見えているべき。 */
+ if(selPart&&(selPart.pkg||selPart.phys3d)){var pk=gl3dResolvePkg(selPart);
+  if(pk.confidence==='estimate'||pk.confidence==='todo'){
+   el.innerHTML+=' / <span class="wr">'+tr('外観寸法は推定')+(pk.source?trf('（{0}）',esc(pk.source)):'')+'</span>';}}
  /* #st-net(2D版と共有するチップ)に注目ネット(ホバー中またはクリック固定中)を表示する
     (要望2: 密集盤面で「今どのネットを見ているか」を明示する)。2D版と同じ要素・同じ
     tr()パターンを再利用するので新規UI言語は最小限(ネット名のみの版+固定中の版を追加)。 */
