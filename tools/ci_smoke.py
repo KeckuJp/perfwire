@@ -132,10 +132,55 @@ def check_pico_plant_sitter(failures):
                 failures.append(f"{name}: expected fabReady=true, got ee={ee}")
 
 
+def check_pkg_phys3d_roundtrip(failures):
+    """Regression lock for the 3D 'appearance channel' (pkg/phys3d, see SKILL.md).
+
+    These fields are visual-only and solver.py never reads them, but the whole
+    design (see index.html's gl3dResolvePkg/GL3D_PKG) depends on solver.py's
+    known-kind round-trip preserving them untouched -- and, separately, on a
+    part with a legitimate kind actually surviving the round-trip at all
+    (adversarial review found that a part with an *invented* kind is silently
+    dropped by solver.py's known-kind filter; this asserts the correct, known-kind
+    case is NOT similarly lost, which is the case the appearance channel relies on).
+    """
+    state = {
+        "grid": {"cols": 10, "rows": 8, "type": "perf"},
+        "netColors": {"A": "#f00", "B": "#0f0"},
+        "leads": {
+            "D1.a": {"net": "A", "at": [3, 3]},
+            "D1.b": {"net": "B", "at": [3, 5]},
+            "W.EXTA": {"net": "A", "at": [7, 3]},
+            "W.EXTB": {"net": "B", "at": [7, 5]},
+        },
+        "parts": [
+            {
+                "id": "D1", "kind": "r", "family": "Diode 1N4148",
+                "leads": [[3, 3], [3, 5]], "leadNames": ["D1.a", "D1.b"],
+                "pkg": "do41",
+                "phys3d": {"color": "#333333", "source": "1N4148 datasheet", "confidence": "verified"},
+            },
+        ],
+        "padBridges": [], "wires": [], "blockedHoles": [], "trackCuts": [],
+    }
+    res = run_solver("pkg/phys3d round-trip", state, failures)
+    if res is None:
+        return
+    parts = res.get("parts", [])
+    d1 = next((p for p in parts if p.get("id") == "D1"), None)
+    if d1 is None:
+        failures.append(f"pkg/phys3d round-trip: part D1 (known kind 'r') vanished on round-trip, got parts={parts}")
+        return
+    if d1.get("pkg") != "do41":
+        failures.append(f"pkg/phys3d round-trip: expected pkg='do41' preserved, got {d1.get('pkg')!r}")
+    if d1.get("phys3d") != state["parts"][0]["phys3d"]:
+        failures.append(f"pkg/phys3d round-trip: phys3d not preserved verbatim, got {d1.get('phys3d')!r}")
+
+
 def main() -> None:
     failures = []
     check_pico_motor_driver(failures)
     check_pico_plant_sitter(failures)
+    check_pkg_phys3d_roundtrip(failures)
     if failures:
         print("\n".join("NG: " + f for f in failures))
         sys.exit(1)

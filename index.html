@@ -39,8 +39,8 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 #canvas::-webkit-scrollbar-thumb{background:rgba(255,255,255,.10);border-radius:5px}
 #pw-svg.mode-bridge,#pw-svg.mode-block,#pw-svg.mode-cut{cursor:crosshair}
 #pw-svg.mode-probe{cursor:help}
-#pw-iso{display:none;width:100%;height:100%;cursor:grab}
-#pw-iso:active{cursor:grabbing}
+#pw-iso,#pw-iso3d{display:none;width:100%;height:100%;cursor:grab}
+#pw-iso:active,#pw-iso3d:active{cursor:grabbing}
 #ztools{position:absolute;top:12px;right:16px;display:flex;gap:6px;z-index:5}
 #ztools button{backdrop-filter:blur(10px);background:rgba(18,22,27,.7)}
 #ztools button.on{background:linear-gradient(135deg,#11a8e0,#0c7fb3);color:#06222e;font-weight:600}
@@ -74,7 +74,7 @@ summary{cursor:pointer;font-size:13px;font-weight:600}
 .note{color:var(--acc);border-bottom:1px dashed rgba(94,220,255,.3);display:block;margin-bottom:3px;padding-bottom:3px}
 textarea{width:100%;height:62px;background:rgba(0,0,0,.35);color:var(--tx);border:1px solid var(--bd);border-radius:8px;font:11px Consolas,monospace;padding:6px}
 aside input[type=text]{background:#171c22;color:var(--tx);border:1px solid var(--bd);border-radius:8px;padding:5px 8px;font-size:12.5px;width:100%;margin:2px 0}
-@media print{header,aside,#status,#ztools,#guide,#prog,#cpov,#pw-flow,#welcome,#pw-iso{display:none!important}body{background:#fff!important}.layout{display:block}main{display:block}#canvas{overflow:visible;position:static}svg{margin:0}}
+@media print{header,aside,#status,#ztools,#guide,#prog,#cpov,#pw-flow,#welcome,#pw-iso,#pw-iso3d{display:none!important}body{background:#fff!important}.layout{display:block}main{display:block}#canvas{overflow:visible;position:static}svg{margin:0}}
 .hint{font-size:11.5px;color:var(--mut);line-height:1.55;margin:5px 0}
 .netrow{display:flex;align-items:center;gap:7px;font-size:12px;margin:3px 0}
 .netrow .dot{width:10px;height:10px;border-radius:3px;flex:none}
@@ -190,6 +190,7 @@ svg{display:block;margin:16px auto}
 </div>
 <svg id="pw-svg" style="touch-action:none" role="application" tabindex="0" aria-label="基板配線図。矢印キーで部品を選択、Shift+矢印キーで1穴移動。"></svg>
 <canvas id="pw-iso" style="display:none;touch-action:none" aria-label="基板3Dビュー"></canvas>
+<canvas id="pw-iso3d" style="display:none;touch-action:none" aria-label="基板3Dビュー（自由回転）"></canvas>
 </div>
 <footer id="status"><span class="chip" id="st-mode"></span><span class="chip" id="st-pos">—</span><span class="chip" id="st-net" style="display:none"></span><span class="chip" id="st-stats"></span><span class="chip" id="st-lasttoast" style="display:inline-block;max-width:26vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle"></span></footer>
 </main>
@@ -282,9 +283,13 @@ var JE={
 '戻す操作はありません。':'Nothing to undo.','やり直す操作はありません。':'Nothing to redo.','元に戻しました。':'Undone.','やり直しました。':'Redone.',
 '盤面を斜め上から見る3Dビュー（閲覧専用・編集は2Dに戻って行います）':'3D view of the board from above (view-only — go back to 2D to edit)',
 '3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。編集は2Dに戻って行います。':'3D view: a view-only isometric overview. Click to select, drag to pan, Ctrl+wheel to zoom. Go back to 2D to edit.',
+'3Dビュー: ドラッグで自由に回転、ホイールでズーム。編集は2Dに戻って行います。':'3D view: drag to freely rotate, wheel to zoom. Go back to 2D to edit.',
 '3Dビュー 切替':'Toggle 3D view',
 '3Dビューを90°回転（見る角度が変わるだけ。基板の天面はそのまま表示されます）':'Rotate the 3D view 90° (changes only the viewing angle — the board\'s top face stays shown)',
+'3Dビュー(自由回転)を最も近い90°へスナップ回転（見る角度が変わるだけ）':'Snap the free-orbit 3D view to the nearest 90° (changes only the viewing angle)',
 '3Dビュー 回転（90°）':'Rotate 3D view (90°)','回転 {0}°':'Rotated {0}°',
+'3Dビューの表示が一時的に中断しました（自動的に復旧します）。':'3D view rendering was temporarily interrupted (it will recover automatically).',
+'3Dビューの表示が復旧しました。':'3D view rendering has recovered.',
 'モード':'Mode','({0}-{1}キー)':'(keys {0}-{1})','レイヤー':'Layers','写真下絵':'Photo underlay','しきい値':'Thresholds','部品':'Parts','監査':'Audit','— ライブ更新':'— live','データ':'Data',
 '端子':'Ends','ブリッジ':'Bridges','穴×':'Block','テスター':'Probe',
 'ロック切替':'Toggle lock','案をリセット':'Reset proposal','設定を既定値に戻す':'Reset config to defaults','コピー':'Copy','インポート':'Import','導通リスト':'Continuity list','印刷 1:1':'Print 1:1','新規（空の基板）':'New (blank board)','新しい空の基板を案として追加します':'Adds a new blank board as a proposal','サンプル復元':'Restore sample','保存データ消去':'Clear saved data',
@@ -429,6 +434,8 @@ var JE={
 ' / 壊れた部品を{0}個スキップしました。':' / Skipped {0} malformed part(s).',
 '設定（重み/物理寸法など）を取り込みました。盤面は変更していません。':'Imported settings (weights/physical dimensions, etc). The board itself is unchanged.',
 '列 <b>{0}</b> 行 <b>{1}</b>':'Col <b>{0}</b> Row <b>{1}</b>','ネット <b>{0}</b>（{1}）':'Net <b>{0}</b> ({1})','被覆線端子 <b>{0}</b>':'Jumper wire end <b>{0}</b>','空き穴':'Empty hole',
+'ネット <b>{0}</b>':'Net <b>{0}</b>','ネット <b>{0}</b>（固定中・Escで解除）':'Net <b>{0}</b> (pinned — Esc to release)',
+'外観寸法は推定':'Visual dimensions are an estimate','（{0}）':'({0})',
 '✓ 完了':'✓ done','コピー済み':'Copied',' ロック中':' locked','監査エラー: {0}':'Audit error: {0}',
 '導通 ✓ {0}':'Continuity ✓ {0}','非導通 ⚠ 同ネット {0} が計画上未接続':'No continuity ⚠ same net {0} not connected in plan','非導通 ✗ {0} / {1}':'No continuity ✗ {0} / {1}','空き':'empty',
 ' 直付け':' direct-solder','案':'Proposal','案 {0}':'Proposal {0}','比較: {0}':'Diff: {0}','KiCADインポート':'KiCAD import',
@@ -438,7 +445,7 @@ var JE={
 '盤面図のみ縮小（文字全体を拡大するにはブラウザの Ctrl -）':'Zooms the board diagram only (for the whole page, use your browser\'s Ctrl -)',
 '盤面図のみ拡大縮小（文字全体を拡大するにはブラウザの Ctrl +）':'Zooms the board diagram only (for the whole page, use your browser\'s Ctrl +)',
 '盤面図のみ拡大（文字全体を拡大するにはブラウザの Ctrl +）':'Zooms the board diagram only (for the whole page, use your browser\'s Ctrl +)',
-'基板配線図':'perfboard wiring diagram','基板3Dビュー':'perfboard 3D view','コマンドパレット':'Command palette'};
+'基板配線図':'perfboard wiring diagram','基板3Dビュー':'perfboard 3D view','基板3Dビュー（自由回転）':'perfboard 3D view (free orbit)','コマンドパレット':'Command palette'};
 function tr(s){return LANG==='en'&&Object.prototype.hasOwnProperty.call(JE,s)?JE[s]:s;}
 function scrollBehavior(){return (window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches)?'auto':'smooth';}
 function trf(s){var t=tr(s),a=arguments;return t.replace(/\{(\d+)\}/g,function(m,i){var v=a[+i+1];return v===undefined?m:v;});}
@@ -909,7 +916,7 @@ if(over)E('circle',{cx:v[0],cy:v[1],r:PITCH*0.4,fill:'none',stroke:'#ff5d5d','st
 function vizPreview(fn){tempViz=fn;render();clearTimeout(vizTimer);vizTimer=setTimeout(function(){tempViz=null;render();},1600);}
 function render(){
 if(!D)return;
-if(ISO.on){renderIso();return;}
+if(ISO.on){if(GL3D.on){renderGl3d();}else{renderIso();}return;}
 PITCH=BASE*ZOOM;
 while(svg.firstChild)svg.removeChild(svg.firstChild);
 var W2=OX+(cols-1)*PITCH+34,H2=OY+(rows-1)*PITCH+34,c,r;
@@ -1839,7 +1846,7 @@ render();auditSoon();}},
 {n:'ズーム アウト',k:'zoom out',f:function(){document.getElementById('z-out').click();}},
 {n:'ズーム 100%',k:'zoom fit',f:function(){document.getElementById('z-fit').click();}},
 {n:'3Dビュー 切替',k:'iso 3d view',f:function(){setIso(!ISO.on);}},
-{n:'3Dビュー 回転（90°）',k:'iso 3d view rotate 90 yaw camera turntable',f:function(){isoRotate(1);}},
+{n:'3Dビュー 回転（90°）',k:'iso 3d view rotate 90 yaw camera turntable',f:function(){if(GL3D.on)gl3dSnapRotate();else isoRotate(1);}},
 {n:'レイヤー: 実寸法 切替',k:'layer footprint',f:function(){LY.foot=!LY.foot;render();}},
 {n:'レイヤー: 被覆線 切替',k:'layer wires',f:function(){LY.wires=!LY.wires;render();}},
 {n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}},
@@ -1884,7 +1891,15 @@ if(e.key==='Escape'){guideEnd();return;}}
 if(e.ctrlKey&&e.key.toLowerCase()==='z'&&!e.shiftKey){e.preventDefault();undo();return;}
 if((e.ctrlKey&&e.key.toLowerCase()==='y')||(e.ctrlKey&&e.shiftKey&&e.key.toLowerCase()==='z')){e.preventDefault();redo();return;}
 CMDS.forEach(function(c){if(c.key===e.key)c.f();});
-if(ISO.on){if(e.key==='Escape'){selClear();render();}return;}/* 閲覧専用: ロック/削除キーは無効（Esc=選択解除・Ctrl+Zは上のundoで既に許可済み） */
+if(ISO.on){if(e.key==='Escape'){
+  /* ISO.onは「3D/等角ビューが開いている」を表すフラグで、WebGL成功時もGL3D.onと同時にtrueになる
+   (setIso参照)。このためこの分岐が常に先に来てreturnし、GL3D.on専用の分岐を後ろに置いても
+   絶対に届かない(実機検証で発見: Escapeがdocument.dispatchEventでもpinnedNetを消さなかった
+   バグの実体はここだった)。WebGL表示中は1回目のEscapeでネット固定(pinnedNet)を解除、
+   2回目で選択解除、という優先順位(要件2敵対的レビュー指摘)をここで扱う。 */
+  if(GL3D.on&&GL3D.pinnedNet){GL3D.pinnedNet=null;gl3dInvalidate();gl3dStatus();}
+  else{selClear();render();if(GL3D.on){gl3dInvalidate();gl3dStatus();}}}
+ return;}/* 閲覧専用: ロック/削除キーは無効（Esc=選択解除・Ctrl+Zは上のundoで既に許可済み） */
 /* 盤面編集がポインタ専用（キーボード経路0%）だったのを埋める最小実装。SVG自体を1つのTabストップにし（tabindex=0）、
    その中は矢印キーで部品選択を巡回・Shift+矢印キーで選択部品を1穴移動、という複合ウィジェットの標準作法（Tabで出入り・矢印で内部移動）。 */
 if(!GUIDE.on&&document.activeElement===svg&&mode==='move'&&D.parts.length&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].indexOf(e.key)>=0){
@@ -2605,14 +2620,1413 @@ function isoStatus(){var el=document.getElementById('st-stats');if(!el)return;
   (selPart?(' / '+tr('選択')+' <b>'+esc(selPart.id)+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'');}
 function setIso(v){if(v===ISO.on)return;ISO.on=v;
  var btn=document.getElementById('z-iso');if(btn)btn.className=v?'on':'';
- var rb=document.getElementById('z-isorot');if(rb)rb.style.display=v?'':'none';/* 回転ボタンは3D表示中のみ意味を持つ */
+ var rb=document.getElementById('z-isorot');/* 表示可否は分岐後に決める(下記参照): WebGLパスは
+    isoCvが未生成(null)のままなのでisoRotate()が呼ばれるとTypeErrorになる。回転ボタンは
+    Canvas 2D等角ビューでのみ意味を持つ。 */
  if(v&&MIRROR)setMirror(false);
- svg.style.display=v?'none':'';var cv=document.getElementById('pw-iso');if(cv)cv.style.display=v?'block':'none';
+ svg.style.display=v?'none':'';
+ var cv=document.getElementById('pw-iso'),cv3=document.getElementById('pw-iso3d');
+ /* WebGLを既定パスとし、コンテキスト取得に失敗した環境(古いブラウザ・ソフトウェアレンダ無効化等)
+    のみ既存Canvas 2D等角ビューへ無言で縮退する(Fable設計: 3専門家+敵対的レビュー確定方針)。
+    gl3dInit()はメモ化されるため2回目以降の3Dビュー開閉では初期化を再試行しない。
+    &&GL3D.gl(Phase3要件1): gl3dInit()は一度成功したら未来永劫trueを返すが、その後
+    webglcontextlostが起きて復旧(webglcontextrestored)がまだ来ていない間はGL3D.glが
+    一時的にnullになる。この状態でWebGLパスへ入ると何も描かれない黒いキャンバスに
+    なる(gl3dDrawがglなしで即returnするため)ので、その間だけ既存のCanvas 2D等角
+    ビューへ一時退避する(復旧すれば次回オープン時に自然とWebGLへ戻る)。 */
+ if(v&&gl3dInit()&&GL3D.gl){
+  GL3D.on=true;/* renderの分岐(L914相当)が2D等角レンダラでなくWebGLを再描画対象に選ぶための唯一のフラグ */
+  if(cv)cv.style.display='none';if(cv3)cv3.style.display='block';
+  /* 回転ボタンはWebGL表示中も見せる(要件7): #z-isorotのクリックハンドラがGL3D.onを見て
+     isoRotate()でなくgl3dSnapRotate()(現在のyawを最も近い90°へトゥイーン)へ分岐する。
+     タイトルもWebGL版の挙動に合わせて差し替える(2Dへ戻った時に元のJA/EN文言へ戻す、
+     下のelse節参照)。 */
+  if(rb){rb.style.display='';rb.title=tr('3Dビュー(自由回転)を最も近い90°へスナップ回転（見る角度が変わるだけ）');}
+  showHelp(tr('3Dビュー: ドラッグで自由に回転、ホイールでズーム。編集は2Dに戻って行います。'));
+  GL3D.needFit=true;/* 開くたびにカメラを盤面へ再フィットする(既存ISO.S=0によるisoFit()再実行と同じ考え方) */
+  renderGl3d();return;}
+ GL3D.on=false;/* 3Dを閉じる/gl3dInit失敗でCanvas 2D等角にフォールバックする経路は全てWebGL非アクティブ */
+ if(GL3D.rotRaf){cancelAnimationFrame(GL3D.rotRaf);GL3D.rotRaf=null;}/* 90°スナップ回転トゥイーンが3Dクローズ後も回り続けないよう即キャンセル(gl3dSnapRotateのstep2ガードと二重の安全策) */
+ if(cv)cv.style.display=v?'block':'none';if(cv3)cv3.style.display='none';
+ if(rb){rb.style.display=v?'':'none';/* Canvas 2D等角ビュー表示中のみ回転ボタンを見せる */
+  rb.title=tr('3Dビューを90°回転（見る角度が変わるだけ。基板の天面はそのまま表示されます）');}
  if(v){ISO.S=0;ISO.bakeKey='';ISO.listKey='';
   showHelp(tr('3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。編集は2Dに戻って行います。'));}
  render();}
 document.getElementById('z-iso').onclick=function(){setIso(!ISO.on);};
-document.getElementById('z-isorot').onclick=function(){isoRotate(1);};
+document.getElementById('z-isorot').onclick=function(){if(GL3D.on)gl3dSnapRotate();else isoRotate(1);};
+/* ============================================================================
+   WEBGL3D (Phase 1: 実ジオメトリ). 自由オービットカメラ(ドラッグで任意角度)を
+   実現するための自作WebGL 1.0レンダラ。外部依存ゼロ(Three.js等は使わない)＝
+   ブラウザ組込APIのみで単一ファイル制約を保つ。
+   既存のCanvas 2D等角ビュー(ISO/renderIso等)には一切手を入れない＝完全並行実装
+   (WebGL初期化失敗時のフォールバックとして温存)。
+   WebGLコンテキスト取得は3Dビューを開いた時点で遅延初期化する(ページ読み込み時に
+   即座に取得を試みない)。parity_headless.mjsはページを読み込むだけでheadless実行
+   されるため、ここで即座に失敗する初期化を走らせるとゲートを道連れにするため。
+
+   ワールド座標系はY-up、1ワールド単位=1mm。グリッド座標(c,r)は盤面中心を原点として
+   gl3dWX(c)=(c-(cols+1)/2)*CFG.pitch, gl3dWZ(r)=(r-(rows+1)/2)*CFG.pitch でmm単位の
+   ワールドX/Zへ変換する(part/wire/textureの全ジオメトリが共有する単一の変換)。
+   天面をY=0とし、スラブはY=-1.6mmまで下方へ厚みを持つ(既存Canvas 2D版のz=0=天面
+   規約と同じ考え方)。
+   光源はワールド固定(視点非依存＝カメラを回しても光は動かない。2D版コメントに
+   ある「視点依存のヘッドライトは禁止」の原則をここでも踏襲する)。既存2D版の
+   LIGHT={amb,du,dv,dz}は「u=グリッドc軸, v=グリッドr軸, z=高さ」の3方向光線量を
+   表しており、Y-upワールドではc→X, r→Z, 高さ→Yに対応するため、ワールド光源方向は
+   [LIGHT.du, LIGHT.dz, LIGHT.dv]（非正規化、大きさが較正を担う）になる(gl3dDraw参照)。
+   CULL_FACEは有効にしない: オービットの仰角は[20°,85°]にクランプ済みで下方/裏側
+   から見ることは無く(見えない面はgl3dPushBoxのfaces引数で生成時に省く)、配線帯は
+   薄いので両面から見える必要がある。低ポリなシーン(ホビーボード規模)なので
+   culling省略のコストは無視できる(非力な統合GPUでも問題にならない)。 */
+var GL3D={on:false,ok:null,gl:null,canvas:null,
+ prog:null,aPos:-1,aNrm:-1,aCol:-1,aHL:-1,uProj:null,uView:null,uModel:null,uLight:null,uAmb:null,
+ progTex:null,aPosT:-1,aNrmT:-1,aUV:-1,uProjT:null,uViewT:null,uModelT:null,uLightT:null,uAmbT:null,uTex:null,
+ /* アウトライン(反転ハル)パス: 頂点シェーダでカメラ方向との内積を計算しvaryingで渡し、
+    フラグメント側でdiscardする(gl.cullFaceに頼らない設計。理由はgl3dPushBox等が任意の
+    向き/回転コーナー順で三角形を積むため、画面空間の巻き順(winding)の一致を保証できず、
+    ハードウェアcull_faceに頼ると三角形ごとに輪郭が出たり出なかったりする不具合が起こり得る。
+    法線ベースの判定なら頂点法線さえ外向きに正しければ巻き順に依存しない)。 */
+ progOut:null,aPosO:-1,aNrmO:-1,uProjO:null,uViewO:null,uViewDirO:null,uOutWO:null,uOutColO:null,
+ /* 接地影(乗算ブレンドの平面デカール)。深度書き込みOFF・DST_COLOR*ZEROの乗算合成。 */
+ progSh:null,aPosSh:-1,uProjSh:null,uViewSh:null,uColSh:null,shbuf:null,shcount:0,
+ /* ラベル(ビルボード)。中心位置(aCenter)＋ローカルコーナーオフセット(aCorner)をカメラの
+    right/up軸(uRight/uUp、フレームごとに再計算)で押し出す＝常にカメラを向く板。
+    テクスチャは1枚のCanvas 2Dアトラス(gl3dBakeLabelAtlas)にrefdes/外部端子名/注意マーク/
+    極性+マークを焼き込む。 */
+ progLbl:null,aCenterL:-1,aCornerL:-1,aUVL:-1,uProjL:null,uViewL:null,uRightL:null,uUpL:null,uTexL:null,
+ lblCBuf:null,lblOBuf:null,lblUBuf:null,lblTex:null,lblVcount:0,
+ vbuf:null,nbuf:null,cbuf:null,hlbuf:null,vcount:0,topVBuf:null,topNBuf:null,topUVBuf:null,tex:null,
+ /* tagPart/tagNet: 頂点ごとの所属(部品indexまたはnet index、どちらも無ければ-1)。ジオメトリ
+    再構築時のみ更新するCPU側の配列(GPUへは送らない)。選択/ホバー状態が変わるたびに毎フレーム
+    ここから小さなaHL(0..1)バッファだけを再計算してアップロードする＝ジオメトリ本体(位置/法線/色)
+    には一切触れない設計(gl3dUpdateHL参照)。 */
+ tagPart:[],tagNet:[],netList:[],
+ geomKey:'',needFit:true,
+ /* 90°スナップ回転(z-isorot流用)のトゥイーン。ドラッグ開始で即座にキャンセルする(gl3dBindEvents)。
+    rotTarget=直前に確定させた目標yaw(連打時の逆戻り防止に使う。ドラッグ開始でundefinedへ戻す)。 */
+ rotRaf:null,rotTarget:undefined,
+ /* pinnedNet: クリックでネットを固定表示するための3Dビュー専用状態(要件2)。ホバーの
+    ように離すと消えず、Escか空クリックで解除するまで居座る。2D/等角ビューの描画
+    コードは一切参照しない(3D限定のスコープ。既存2D/等角には触れないという絶対制約に
+    正面から抵触するため、あえて3ビュー共有にはしない=敵対的レビューの必須修正)。 */
+ pinnedNet:null,wireHoverCache:null,
+ yaw:45*Math.PI/180,pitch:30*Math.PI/180,dist:400,tx:0,ty:0,drag:null,raf:null,dpr:1};
+function m4ident(){return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);}
+function m4mul(a,b){var o=new Float32Array(16);for(var c=0;c<4;c++)for(var r=0;r<4;r++){var s=0;for(var k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s;}return o;}
+function m4ortho(l,r,b,t,n,f){var o=m4ident();o[0]=2/(r-l);o[5]=2/(t-b);o[10]=-2/(f-n);
+ o[12]=-(r+l)/(r-l);o[13]=-(t+b)/(t-b);o[14]=-(f+n)/(f-n);return o;}
+function m4lookAt(eye,ctr,up){
+ var zx=eye[0]-ctr[0],zy=eye[1]-ctr[1],zz=eye[2]-ctr[2],zl=Math.hypot(zx,zy,zz)||1;zx/=zl;zy/=zl;zz/=zl;
+ var xx=up[1]*zz-up[2]*zy,xy=up[2]*zx-up[0]*zz,xz=up[0]*zy-up[1]*zx,xl=Math.hypot(xx,xy,xz)||1;xx/=xl;xy/=xl;xz/=xl;
+ var yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;
+ var o=m4ident();o[0]=xx;o[4]=xy;o[8]=xz;o[1]=yx;o[5]=yy;o[9]=yz;o[2]=zx;o[6]=zy;o[10]=zz;
+ o[12]=-(xx*eye[0]+xy*eye[1]+xz*eye[2]);o[13]=-(yx*eye[0]+yy*eye[1]+yz*eye[2]);o[14]=-(zx*eye[0]+zy*eye[1]+zz*eye[2]);
+ return o;}
+/* orbitカメラ: yaw(水平回転・非有界)/pitch(仰角・実用下限は穴/ラベルが読める範囲でクランプ)/
+   dist(ズーム)から、注視点周りのカメラ位置をSphericalに算出。upはワールドYaxis固定
+   (ジンバルロック回避のため、pitchを[20°,85°]にクランプ=水平線・真上付近には到達させない)。 */
+function gl3dEye(){var cp=Math.cos(GL3D.pitch),sp=Math.sin(GL3D.pitch);
+ return [GL3D.tx+GL3D.dist*cp*Math.sin(GL3D.yaw),GL3D.dist*sp,GL3D.ty+GL3D.dist*cp*Math.cos(GL3D.yaw)];}
+/* グリッド座標→ワールドmm座標(盤面中心が原点)。part/wire/slab/textureの全ジオメトリが
+   共有する単一の変換。 */
+function gl3dWX(c){return (c-(cols+1)/2)*CFG.pitch;}
+function gl3dWZ(r){return (r-(rows+1)/2)*CFG.pitch;}
+/* スラブの外形(mm)。穴のある範囲(holeHW/holeHD)に物理的な縁マージンを足したものが
+   実際のスラブ半幅/半奥行き(hw/hd)＝天面テクスチャの外形とも一致させる。 */
+function gl3dSlabExtent(){var mgn=CFG.pitch*0.6,holeHW=(cols-1)/2*CFG.pitch,holeHD=(rows-1)/2*CFG.pitch;
+ return {holeHW:holeHW,holeHD:holeHD,hw:holeHW+mgn,hd:holeHD+mgn,margin:mgn};}
+function gl3dMaxPartH(){var h=0;D.parts.forEach(function(p){var v=isoPartHeight(p,physFor(p));if(v>h)h=v;});return h;}
+function hex2rgb01(hex){var hh=hex.charAt(0)==='#'?hex.slice(1):hex;if(hh.length===3)hh=hh[0]+hh[0]+hh[1]+hh[1]+hh[2]+hh[2];
+ var n=parseInt(hh,16)||0;return [((n>>16)&255)/255,((n>>8)&255)/255,(n&255)/255];}
+/* ソリッドパス(スラブ側面/底面・部品ボックス・配線帯)。単一のtriangle soupにまとめて
+   1 draw callで描く(弱いGPUでもdraw call数を増やさないための設計)。色は頂点属性
+   (aColor)で持つ＝オブジェクトごとにuColorを切り替える必要が無い。 */
+var GL3D_VS='attribute vec3 aPos;attribute vec3 aNormal;attribute vec3 aColor;attribute float aHL;'+
+ 'uniform mat4 uProj,uView,uModel;varying vec3 vNormal;varying vec3 vColor;varying float vHL;'+
+ 'void main(){gl_Position=uProj*uView*uModel*vec4(aPos,1.0);vNormal=mat3(uModel)*aNormal;vColor=aColor;vHL=aHL;}';
+var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;varying float vHL;'+
+ 'uniform vec3 uLight;uniform float uAmb;'+
+ /* uLight is intentionally NOT normalized here: its magnitude is calibrated to match
+    the 2D isometric normalShade() model (dot(n,LIGHT)/|n|, LIGHT itself unnormalized)
+    so the two views render the same brightness for the same face. */
+ /* vHL (-1..1、頂点ごと): 0=通常、~0.65=注目中のネット、1.0=選択部品(2D等角ビューの
+    シアン破線選択と同じアクセント色に寄せる=表現言語の統一)、負値=ゴースティング
+    (要件2敵対的レビュー承認済み設計: 注目ネットがある間、無関係な配線は-0.85・
+    無関係な部品は-0.45で不透明・無彩色寄りに沈める。透明合成はtriangle-soup+
+    深度テスト設計を壊すため使わず、輝度ベースの不透明減光で「focus+context」を
+    実現する)。 */
+ 'void main(){vec3 n=normalize(vNormal);float d=max(0.0,dot(n,uLight));'+
+ 'float f=min(1.0,uAmb+d);vec3 base=vColor*f;'+
+ 'vec3 tinted;if(vHL>=0.0){tinted=mix(base,vec3(0.37,0.86,1.0),vHL*0.55);}'+
+ 'else{float lum=dot(base,vec3(0.299,0.587,0.114));tinted=mix(base,vec3(lum*0.35),-vHL);}'+
+ 'gl_FragColor=vec4(tinted,1.0);}';
+/* テクスチャパス(基板天面のみ)。天面は平面なので正射影下でも普通の画像として貼れる。 */
+var GL3D_VS_TEX='attribute vec3 aPos;attribute vec3 aNormal;attribute vec2 aUV;'+
+ 'uniform mat4 uProj,uView,uModel;varying vec3 vNormal;varying vec2 vUV;'+
+ 'void main(){gl_Position=uProj*uView*uModel*vec4(aPos,1.0);vNormal=mat3(uModel)*aNormal;vUV=aUV;}';
+/* 精度指定(CG理論レビューFinding 1への対応、推奨事項3): vUVはテクスチャアトラス内の
+   矩形を指すvaryingなので、mediump varying補間の丸め誤差(真のFP16実装での相対誤差
+   目安2^-10)がアトラス境界付近で隣接領域を巻き込みうる。GL_FRAGMENT_PRECISION_HIGHが
+   定義されている(=フラグメントシェーダでhighpが実際に使える)環境でのみhighpへ昇格し、
+   定義されていない実装(古いモバイルGPU等)では従来通りmediumpにフォールバックするので
+   退行はない。ASCII のみ・GLSLプリプロセッサ行として改行必須(1行に連結不可)。 */
+var GL3D_FS_TEX='#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n'+
+ 'varying vec3 vNormal;varying vec2 vUV;'+
+ 'uniform vec3 uLight;uniform float uAmb;uniform sampler2D uTex;'+
+ /* see GL3D_FS above: uLight stays unnormalized to match the 2D calibration. */
+ 'void main(){vec3 n=normalize(vNormal);float d=max(0.0,dot(n,uLight));'+
+ 'float f=min(1.0,uAmb+d);vec4 c=texture2D(uTex,vUV);gl_FragColor=vec4(c.rgb*f,1.0);}';
+/* アウトライン(反転ハル)パス。頂点法線方向にごくわずかに膨らませ、カメラから見て背面
+   (=法線がカメラ方向と逆＝dot<=0)の頂点だけをフラグメントシェーダでdiscardせず残す。
+   凸形状(部品ボックス/円柱/楕円体、スラブ側面)では、内部は本体パス(通常の深度テスト)に
+   覆われ、輪郭(シルエット)付近だけがこの膨らませたジオメトリからわずかにはみ出して見える
+   ＝縁取りになる(古典的なinverted hull法)。gl.cullFaceでなくシェーダ内のdot判定で表裏を
+   決めるため、gl3dPushBox等が生成する三角形の巻き順(winding)が不揃いでも正しく動く。
+   正射影(orthographic)では視線方向は画面全体で共通(カメラ位置に依存しない)なので、
+   頂点ごとのuEye-aPosではなく、gl3dCamBasis().fwd(カメラが向いている一定方向)を
+   uViewDirとしてCPU側で1回だけ計算しuniformで渡す。透視投影用のtoEye=normalize(eye-aPos)
+   は正射影では不正確(ズームイン時にシルエット輪郭が欠け、裏面判定を誤った暗い面片が
+   本体表面に残る)ため使わない。 */
+var GL3D_VS_OUT='attribute vec3 aPos;attribute vec3 aNormal;'+
+ 'uniform mat4 uProj,uView;uniform vec3 uViewDir;uniform float uOutW;varying float vFacing;'+
+ 'void main(){vec3 n=normalize(aNormal);'+
+ 'vFacing=dot(n,-uViewDir);vec3 pos=aPos+n*uOutW;gl_Position=uProj*uView*vec4(pos,1.0);}';
+var GL3D_FS_OUT='precision mediump float;varying float vFacing;uniform vec3 uOutCol;'+
+ 'void main(){if(vFacing>0.0)discard;gl_FragColor=vec4(uOutCol,1.0);}';
+/* 接地影(平面デカール)。乗算ブレンド(blendFunc(DST_COLOR,ZERO)=src*dst)で描き、深度書き込み
+   はOFF(depthMask(false))にする＝影同士が重なっても深度バッファを汚さない。深度テストは
+   有効のまま(既に描画済みの部品/スラブに正しく隠れる、下記gl3dDraw参照)。 */
+var GL3D_VS_SH='attribute vec3 aPos;uniform mat4 uProj,uView;void main(){gl_Position=uProj*uView*vec4(aPos,1.0);}';
+var GL3D_FS_SH='precision mediump float;uniform vec3 uCol;void main(){gl_FragColor=vec4(uCol,1.0);}';
+/* ラベル(ビルボード)パス。aCenter(ワールド位置、四隅で共通)+aCorner(ローカルオフセット、
+   mm単位)をカメラのright/up軸(uRight/uUp、フレームごとにgl3dCamBasisから再計算)で押し出す
+   ことで常にカメラを向く板になる。テクスチャアルファ<0.04はdiscard(文字の外側の透明部分)。 */
+var GL3D_VS_LBL='attribute vec3 aCenter;attribute vec2 aCorner;attribute vec2 aUV;'+
+ 'uniform mat4 uProj,uView;uniform vec3 uRight,uUp;varying vec2 vUV;'+
+ 'void main(){vec3 pos=aCenter+uRight*aCorner.x+uUp*aCorner.y;'+
+ 'gl_Position=uProj*uView*vec4(pos,1.0);vUV=aUV;}';
+/* 精度指定(CG理論レビューFinding 1への対応、推奨事項3): 上のGL3D_FS_TEXと同じ理由。
+   ラベルアトラスは複数ラベルを縦に敷き詰めるため境界密度が高く、実害(下端の滲み)が
+   出得ると指摘されたのはこちら。真のmediump実装でも従来同値にフォールバックする。 */
+var GL3D_FS_LBL='#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n'+
+ 'varying vec2 vUV;uniform sampler2D uTex;'+
+ 'void main(){vec4 c=texture2D(uTex,vUV);if(c.a<0.04)discard;gl_FragColor=c;}';
+function gl3dShader(gl,type,src){var s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
+ if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){var log=gl.getShaderInfoLog(s);gl.deleteShader(s);throw new Error('shader compile: '+log);}
+ return s;}
+function gl3dProgram(gl,vsSrc,fsSrc){var vs=gl3dShader(gl,gl.VERTEX_SHADER,vsSrc),fs=gl3dShader(gl,gl.FRAGMENT_SHADER,fsSrc);
+ var p=gl.createProgram();gl.attachShader(p,vs);gl.attachShader(p,fs);
+ /* attribute locationをリンク前に明示固定する: これが無いとlocation割当はドライバの宣言順一致
+    に依存し、prog(ソリッド)とprogTex(テクスチャ)で同名属性(aPos/aNormal)が異なるlocationに
+    割り当てられるリスクがある(gl3dDrawは両方をenable/bindしたままprogを切替えるため)。名前が
+    そのシェーダに存在しない呼び出しはno-op(仕様上エラーにならない)なので両方呼んで安全。 */
+ gl.bindAttribLocation(p,0,'aPos');gl.bindAttribLocation(p,1,'aNormal');
+ gl.bindAttribLocation(p,2,'aColor');gl.bindAttribLocation(p,2,'aUV');gl.bindAttribLocation(p,3,'aHL');
+ /* progLbl(ビルボード)はaPos/aNormalの代わりにaCenter/aCornerを使うので同じ0/1へ固定する
+    (名前がそのシェーダに無い呼び出しはno-opなので他プログラムへの影響は無い)。 */
+ gl.bindAttribLocation(p,0,'aCenter');gl.bindAttribLocation(p,1,'aCorner');
+ gl.linkProgram(p);
+ if(!gl.getProgramParameter(p,gl.LINK_STATUS)){var log=gl.getProgramInfoLog(p);gl.deleteProgram(p);throw new Error('program link: '+log);}
+ return p;}
+/* 任意サイズの直方体を頂点配列へ追加する汎用ヘルパ。CULL_FACEを有効にしないため
+   面の巻き順は問わない(法線の向きだけが陰影/アウトライン判定に効く。GL3D_FS_OUT参照)。
+   facesで常にカメラから見えない面(底面等)を省いて三角形数を減らせる。
+   pTP/pTN: 頂点ごとの所属タグを位置/法線/色と並行して積む配列(部品index/net index、
+   対象外は-1)。選択/ホバーの色変調(gl3dUpdateHL)がこの並行配列だけを毎フレーム軽く
+   走査して小さなハイライト用バッファを作る＝ジオメトリ本体(位置/法線/色)には一切
+   触れない設計にするための唯一の目印(要件4)。 */
+function gl3dPushBox(pV,pN,pC,pTP,pTN,tagP,tagN,x0,x1,y0,y1,z0,z1,col,faces){
+ faces=faces||{};
+ var p000=[x0,y0,z0],p100=[x1,y0,z0],p010=[x0,y1,z0],p110=[x1,y1,z0];
+ var p001=[x0,y0,z1],p101=[x1,y0,z1],p011=[x0,y1,z1],p111=[x1,y1,z1];
+ function quad(a,b,c,d,n){[[a,b,c],[a,c,d]].forEach(function(tri){tri.forEach(function(v){
+  pV.push(v[0],v[1],v[2]);pN.push(n[0],n[1],n[2]);pC.push(col[0],col[1],col[2]);
+  pTP.push(tagP);pTN.push(tagN);});});}
+ if(faces.nx!==false)quad(p000,p001,p011,p010,[-1,0,0]);
+ if(faces.px!==false)quad(p100,p110,p111,p101,[1,0,0]);
+ if(faces.nz!==false)quad(p000,p010,p110,p100,[0,0,-1]);
+ if(faces.pz!==false)quad(p001,p101,p111,p011,[0,0,1]);
+ if(faces.bottom!==false)quad(p000,p100,p101,p001,[0,-1,0]);
+ if(faces.top!==false)quad(p010,p011,p111,p110,[0,1,0]);
+}
+/* 水平面内で任意方向(ux,uz=長手方向の単位ベクトル)を向いた直方体。film/寝かせ抵抗など
+   リード軸に沿って回転した本体の実形状に使う(gl3dPartBoxはAABBのままpicking/影の
+   足跡計算に残す＝役割を分離: AABBは判定用、oriented boxは見た目用)。 */
+function gl3dPushOrientedBox(pV,pN,pC,pTP,pTN,tagP,tagN,cx,cz,ux,uz,halfLen,halfWid,y0,y1,col,faces){
+ var px=-uz,pz=ux;
+ function corner(sL,sW){return [cx+ux*halfLen*sL+px*halfWid*sW, cz+uz*halfLen*sL+pz*halfWid*sW];}
+ var c00=corner(-1,-1),c10=corner(1,-1),c11=corner(1,1),c01=corner(-1,1);
+ var p000=[c00[0],y0,c00[1]],p100=[c10[0],y0,c10[1]],p010=[c00[0],y1,c00[1]],p110=[c10[0],y1,c10[1]];
+ var p001=[c01[0],y0,c01[1]],p101=[c11[0],y0,c11[1]],p011=[c01[0],y1,c01[1]],p111=[c11[0],y1,c11[1]];
+ faces=faces||{};
+ function quad(a,b,c,d,n){[[a,b,c],[a,c,d]].forEach(function(tri){tri.forEach(function(v){
+  pV.push(v[0],v[1],v[2]);pN.push(n[0],n[1],n[2]);pC.push(col[0],col[1],col[2]);
+  pTP.push(tagP);pTN.push(tagN);});});}
+ var nA=[-ux,0,-uz],nB=[ux,0,uz],nC=[-px,0,-pz],nD=[px,0,pz];
+ if(faces.a!==false)quad(p000,p001,p011,p010,nA);
+ if(faces.b!==false)quad(p100,p110,p111,p101,nB);
+ if(faces.c!==false)quad(p000,p010,p110,p100,nC);
+ if(faces.d!==false)quad(p001,p101,p111,p011,nD);
+ if(faces.bottom!==false)quad(p000,p100,p101,p001,[0,-1,0]);
+ if(faces.top!==false)quad(p010,p011,p111,p110,[0,1,0]);
+}
+/* 2点間の円柱/円錐台(r0/r1で始点/終点の半径を変えられる)。軸方向がY軸にほぼ平行なら
+   基準upを(1,0,0)、それ以外は(0,1,0)にして軸に垂直な2基底を作る＝縦立て部品(電解/
+   立て抵抗)にも寝かせ部品のリード足にも同じ関数で対応できる。segsは低くてよい
+   (ホビー基板規模で部品数十個が並んでもGPU負荷を無視できる程度に絞る)。 */
+function gl3dPushCyl(pV,pN,pC,pTP,pTN,tagP,tagN,x0,y0,z0,x1,y1,z1,r0,r1,col,segs,capA,capB){
+ var ax=x1-x0,ay=y1-y0,az=z1-z0,al=Math.hypot(ax,ay,az)||1;ax/=al;ay/=al;az/=al;
+ var upref=(Math.abs(ay)>0.98)?[1,0,0]:[0,1,0];
+ var rx=upref[1]*az-upref[2]*ay,ry=upref[2]*ax-upref[0]*az,rz=upref[0]*ay-upref[1]*ax,rl=Math.hypot(rx,ry,rz)||1;
+ rx/=rl;ry/=rl;rz/=rl;
+ var ux=ay*rz-az*ry,uy=az*rx-ax*rz,uz=ax*ry-ay*rx;
+ var ringA=[],ringB=[],nrm=[],i,j;
+ for(i=0;i<segs;i++){var a=i/segs*6.2831853,ca=Math.cos(a),sa=Math.sin(a);
+  var nx=rx*ca+ux*sa,ny=ry*ca+uy*sa,nz=rz*ca+uz*sa;
+  nrm.push([nx,ny,nz]);
+  ringA.push([x0+nx*r0,y0+ny*r0,z0+nz*r0]);
+  ringB.push([x1+nx*r1,y1+ny*r1,z1+nz*r1]);}
+ function push(v,n){pV.push(v[0],v[1],v[2]);pN.push(n[0],n[1],n[2]);pC.push(col[0],col[1],col[2]);pTP.push(tagP);pTN.push(tagN);}
+ for(i=0;i<segs;i++){j=(i+1)%segs;
+  push(ringA[i],nrm[i]);push(ringB[i],nrm[i]);push(ringB[j],nrm[j]);
+  push(ringA[i],nrm[i]);push(ringB[j],nrm[j]);push(ringA[j],nrm[j]);}
+ if(capA)for(i=0;i<segs;i++){j=(i+1)%segs;push([x0,y0,z0],[-ax,-ay,-az]);push(ringA[j],[-ax,-ay,-az]);push(ringA[i],[-ax,-ay,-az]);}
+ if(capB)for(i=0;i<segs;i++){j=(i+1)%segs;push([x1,y1,z1],[ax,ay,az]);push(ringB[i],[ax,ay,az]);push(ringB[j],[ax,ay,az]);}
+}
+/* UV球を(rx,ry,rz)にスケールした楕円体(円板コンデンサの扁平形状)。法線は暗黙関数
+   (x/rx)^2+(y/ry)^2+(z/rz)^2=1 の勾配方向、すなわち単位球法線(nx,ny,nz)を(1/rx,1/ry,1/rz)
+   でスケールした向き(定数倍はnormalize時に消えるのでrx*ry*rzを掛けた形で書ける)。 */
+function gl3dPushEllipsoid(pV,pN,pC,pTP,pTN,tagP,tagN,cx,cy,cz,rx,ry,rz,col,segU,segV){
+ function pt(u,v){var su=Math.sin(v),cu=Math.cos(v),ca=Math.cos(u),sa=Math.sin(u);
+  var nx=su*ca,ny=cu,nz=su*sa;
+  return {p:[cx+nx*rx,cy+ny*ry,cz+nz*rz],n:[nx*ry*rz,ny*rx*rz,nz*rx*ry]};}
+ function push(q){var l=Math.hypot(q.n[0],q.n[1],q.n[2])||1;
+  pV.push(q.p[0],q.p[1],q.p[2]);pN.push(q.n[0]/l,q.n[1]/l,q.n[2]/l);pC.push(col[0],col[1],col[2]);
+  pTP.push(tagP);pTN.push(tagN);}
+ for(var i=0;i<segV;i++){var v0=Math.PI*i/segV,v1=Math.PI*(i+1)/segV;
+  for(var j=0;j<segU;j++){var u0=6.2831853*j/segU,u1=6.2831853*(j+1)/segU;
+   var a=pt(u0,v0),b=pt(u1,v0),c=pt(u1,v1),d=pt(u0,v1);
+   push(a);push(b);push(c);push(a);push(c);push(d);}}
+}
+/* 楕円体をワールドXZ平面内で任意方向(ux,uz=「厚み」軸の単位ベクトル)へ向けた版。
+   gl3dPushOrientedBoxと同じ考え方(px,pz=垂直な水平基底)をgl3dPushEllipsoidの
+   球パラメータ化に適用したもの。円板コンデンサを「リード方向だけ薄い、縦に立った
+   コイン」として描く(要件C: 横倒しのM&M型からの脱却)ために新設。
+   rAlong=ux,uz方向の半径(厚み)/rPerp=px,pz方向の半径/rY=垂直(Y軸)方向の半径。
+   法線はgl3dPushEllipsoidと同じ「勾配をrAlong*rPerp*rYでスケールした版」をローカル
+   基底(along,y,perp)で求めてからワールド基底(ux/uz, Y, px/pz)へ射影する。 */
+function gl3dPushEllipsoidOriented(pV,pN,pC,pTP,pTN,tagP,tagN,cx,cy,cz,ux,uz,rAlong,rPerp,rY,col,segU,segV){
+ var px=-uz,pz=ux;
+ function pt(u,v){var su=Math.sin(v),cu=Math.cos(v),ca=Math.cos(u),sa=Math.sin(u);
+  var na=su*ca,ny=cu,np=su*sa;
+  var wx=cx+ux*na*rAlong+px*np*rPerp,wy=cy+ny*rY,wz=cz+uz*na*rAlong+pz*np*rPerp;
+  var gA=na*rY*rPerp,gY=ny*rAlong*rPerp,gP=np*rAlong*rY;
+  return {p:[wx,wy,wz],n:[ux*gA+px*gP,gY,uz*gA+pz*gP]};}
+ function push(q){var l=Math.hypot(q.n[0],q.n[1],q.n[2])||1;
+  pV.push(q.p[0],q.p[1],q.p[2]);pN.push(q.n[0]/l,q.n[1]/l,q.n[2]/l);pC.push(col[0],col[1],col[2]);
+  pTP.push(tagP);pTN.push(tagN);}
+ for(var i=0;i<segV;i++){var v0=Math.PI*i/segV,v1=Math.PI*(i+1)/segV;
+  for(var j=0;j<segU;j++){var u0=6.2831853*j/segU,u1=6.2831853*(j+1)/segU;
+   var a=pt(u0,v0),b=pt(u1,v0),c=pt(u1,v1),d=pt(u0,v1);
+   push(a);push(b);push(c);push(a);push(c);push(d);}}
+}
+/* 共有: リード成形(部品本体の出射点socketから基板の穴まで、曲げを持つ2区間の
+   折れ線円柱で接続する)。垂直な一本棒より遥かに「本物らしく」見える(ユーザー指摘の
+   「C11が宙に浮いた丸に見える」への直接対応)。中間の曲げ点は水平方向を穴側へ半分、
+   高さを本体側の45%まで下げた位置に置く(実物のリード成形に近い折れ角)。穴側の終点は
+   y=-0.8として穴に少し差し込まれた見た目にする。全kind共通で再利用する前提の関数。 */
+function gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,sy,sz,hx,hz,lw,col){
+ var bx=sx+(hx-sx)*0.5,bz=sz+(hz-sz)*0.5,by=sy*0.45;
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,sx,sy,sz,bx,by,bz,lw,lw,col,6,false,false);
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,bx,by,bz,hx,-0.8,hz,lw,lw,col,6,false,false);
+}
+/* 共有: はんだフィレット(穴の位置に小さな円錐台。上=リード径に近い細さ、下(基板面)=
+   広がったはんだの盛り上がり)。「基板に実装されている」という知覚の大部分はこの一点が
+   担う(専門家統合案より)。全kind共通で再利用する前提の関数。 */
+function gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw){
+ var topR=lw*1.6,botR=lw*3.2,h=0.7;
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,hx,h,hz,hx,0,hz,topR,botR,hex2rgb01('#9aa0a6'),8,false,true);
+}
+/* 部品ごとのバウンディングボックス(mm、盤面中心原点のワールドXZ)。ピッキング(AABBとの
+   交差判定)と接地影の足跡の両方が共有する判定用ジオメトリ(見た目用メッシュは
+   GL3D_MESH各関数が別途生成する。役割分離: これは常にAABB=判定用)。斜め配置のr/filmでも
+   正しく収まるよう、リード方向の単位ベクトルから軸並行AABBを算出する。 */
+/* pins(IC的な多足)/leads(2本足)のどちらでも全パッドのグリッド座標を返す共有ヘルパ。
+   未知kind・1本足の部品でも安全に扱えるようにする(要件2: 汎用フォールバックの基盤)。 */
+function gl3dPadPts(p){var pts=[];
+ if(p.pins)Object.keys(p.pins).forEach(function(k){pts.push(p.pins[k]);});
+ else if(p.leads)p.leads.forEach(function(q){pts.push(q);});
+ return pts;}
+function gl3dPartBox(p,PF){
+ if(p.kind==='ic'){var ks=Object.keys(p.pins),xs=ks.map(function(k){return p.pins[k][0];}),ys=ks.map(function(k){return p.pins[k][1];});
+  var x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs),y0=Math.min.apply(null,ys),y1=Math.max.apply(null,ys),pad=2;
+  var wx0=gl3dWX(x0)-pad,wx1=gl3dWX(x1)+pad,wz0=gl3dWZ(y0)-pad,wz1=gl3dWZ(y1)+pad;
+  return {cx:(wx0+wx1)/2,cz:(wz0+wz1)/2,hw:(wx1-wx0)/2,hd:(wz1-wz0)/2};}
+ if(p.leads&&p.leads.length>=2){
+  var a=p.leads[0],b=p.leads[1],wa=[gl3dWX(a[0]),gl3dWZ(a[1])],wb=[gl3dWX(b[0]),gl3dWZ(b[1])];
+  var mid=[(wa[0]+wb[0])/2,(wa[1]+wb[1])/2];
+  var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L,px=-uz,pz=ux;
+  switch(p.kind){
+   case 'elec':{var r=(PF.dia||6.5)/2;return {cx:mid[0],cz:mid[1],hw:r,hd:r};}
+   case 'disc':{/* 縦立ちコイン化(要件C)によりdiscのフットプリントも「リード方向=薄い厚み・
+    垂直方向=満径」の向きを持つ。filmと同じ手法でux,uz(リード方向)/px,pz(その垂直水平方向)へ
+    投影したAABBを返す(円形フットプリントの決め打ちをやめる)。 */
+    var thick2=(PF.bodyWid||2.5)/2,r2=(PF.bodyLen||5)/2;
+    return {cx:mid[0],cz:mid[1],hw:Math.abs(ux)*thick2+Math.abs(px)*r2,hd:Math.abs(uz)*thick2+Math.abs(pz)*r2};}
+   case 'film':{var hl=(PF.bodyLen||10)/2,hw2=(PF.bodyWid||4.5)/2;
+    return {cx:mid[0],cz:mid[1],hw:Math.abs(ux)*hl+Math.abs(px)*hw2,hd:Math.abs(uz)*hl+Math.abs(pz)*hw2};}
+   case 'r':{var standing=!!p.standing||dist(a,b)<2.05;
+    if(standing){var r3=(PF.bodyWid||2.5)/2;return {cx:wa[0],cz:wa[1],hw:r3,hd:r3};}
+    var hl2=(PF.bodyLen||6.5)/2,hw3=(PF.bodyWid||2.5)/2;
+    return {cx:mid[0],cz:mid[1],hw:Math.abs(ux)*hl2+Math.abs(px)*hw3,hd:Math.abs(uz)*hl2+Math.abs(pz)*hw3};}
+  }}
+ /* 汎用フォールバック(要件2・将来の未知kind対応): leadsが0/1本、またはkindが
+    elec/disc/film/r/ic以外の場合はここへ落ちる。円/直方体の決め打ちをせず、
+    gl3dPadPts()で得た全パッド位置のAABBを返す(パッドが無ければ既定の小箱)。 */
+ var pts=gl3dPadPts(p);
+ if(!pts.length)return {cx:0,cz:0,hw:2,hd:2};
+ var wxs=pts.map(function(q){return gl3dWX(q[0]);}),wzs=pts.map(function(q){return gl3dWZ(q[1]);});
+ var bx0=Math.min.apply(null,wxs)-1.5,bx1=Math.max.apply(null,wxs)+1.5,
+     bz0=Math.min.apply(null,wzs)-1.5,bz1=Math.max.apply(null,wzs)+1.5;
+ return {cx:(bx0+bx1)/2,cz:(bz0+bz1)/2,hw:(bx1-bx0)/2,hd:(bz1-bz0)/2};
+}
+/* 部品種別ごとの簡易色(GL3D_MESHが無いkindのフォールバックbox用)。 */
+var GL3D_PART_COL={r:'#d9b38c',ic:'#1c1e22',elec:'#1a2230',disc:'#b5651d',film:'#f2d22e'};
+/* 配線: isoWirePrimsと同じ放物線の弧の式(z=4*apex*t*(1-t))をワールドmmでそのまま
+   流用し、帯(リボン)ジオメトリとして押し出す。弧は常にpa→pbを結ぶ水平線を含む
+   鉛直面内にあるため、帯の幅方向(水平面内の垂直ベクトル)は弧全体で一定でよい
+   (ねじれない)。法線は帯の実ジオメトリから外積で求める(弧の起伏に応じて自然に
+   陰影が変化する)。tagN=net index(gl3dUpdateHLのホバー判定用、要件4)。 */
+function gl3dPushWire(pV,pN,pC,pTP,pTN,tagN,w,obst,hoverCache){
+ var col=hex2rgb01(D.netColors[w.net]||'#999999');
+ var pa=w.a.direct?w.a.pad:w.a.hole,pb=w.b.direct?w.b.pad:w.b.hole;
+ var Lmm=dist(pa,pb)*CFG.pitch,apex=Math.min(9,Math.max(3,2.5+0.3*Lmm));
+ var wa=[gl3dWX(pa[0]),gl3dWZ(pa[1])],wb=[gl3dWX(pb[0]),gl3dWZ(pb[1])];
+ var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,px=-dz/L,pz=dx/L,hw=0.45;
+ /* 障害物クリアランス(ユーザー指摘: 配線が部品を突き抜けて見える問題への対応)。
+    放物線y(t)=4*apex*t(1-t)が区間[t0,t1]で高さT以上を保つ条件は、凹関数t(1-t)が
+    区間端で最小になることから 4*apex*min(t0(1-t0),t1(1-t1)) >= T で導ける。
+    これを逆算し、配線が水平方向に通過する全部品のうち最も高いクリアランス要求へ
+    apexを引き上げる(水平経路=穴間の直線そのものは変えない。配線計画データ・2D
+    等角ビューと一致させる、という既存方針を維持するため)。自分自身が接続している
+    部品(tapのrefdesプレフィックス)は除外し、directにピン上へ降りる配線が
+    自部品を避けようとして暴発しないようにする。再構築時のみの計算(毎フレームの
+    描画コストには影響しない)。 */
+ function gl3dWireOwnPart(e){return e.tap&&e.tap.indexOf('.')>0?e.tap.slice(0,e.tap.indexOf('.')):null;}
+ var skipIds={},oa=gl3dWireOwnPart(w.a),ob=gl3dWireOwnPart(w.b);if(oa)skipIds[oa]=1;if(ob)skipIds[ob]=1;
+ (obst||[]).forEach(function(o){
+  if(skipIds[o.id])return;
+  var lo=0,hi=1,ok=true;
+  [[wa[0],dx,o.cx,o.hw],[wa[1],dz,o.cz,o.hd]].forEach(function(s){
+   var p0=s[0],d=s[1],c=s[2],hwd=s[3];
+   if(Math.abs(d)<1e-9){if(p0<c-hwd||p0>c+hwd)ok=false;return;}
+   var t1=(c-hwd-p0)/d,t2=(c+hwd-p0)/d;if(t1>t2){var tt=t1;t1=t2;t2=tt;}
+   if(t1>lo)lo=t1;if(t2<hi)hi=t2;});
+  if(!ok||lo>hi)return;
+  var lo2=Math.max(lo,0.1),hi2=Math.min(hi,0.9);/* 端点10%は降下ゾーン(穴へ向かう区間)として免除 */
+  if(lo2>hi2)return;
+  var q=Math.min(lo2*(1-lo2),hi2*(1-hi2));
+  apex=Math.max(apex,(o.top+1.2)/(4*q));});
+ apex=Math.min(apex,14);/* 上限(異常系でアーチが屋根のように高くなり過ぎないためのクランプ) */
+ /* ホバーピック用キャッシュ(敵対的レビュー指摘R2対応): 障害物クリアランスで
+    引き上げた後の「最終apex」をそのまま保存する。ホバー側が基本式(2.5+0.3*Lmm)を
+    再計算すると、密集盤面ほどアーチが高く引き上げられているのにサンプル点が
+    低いままになり、狙いのシーンでこそピックが実際の見た目の下に外れる
+    (描画とピックの二重実装によるドリフト)。 */
+ if(hoverCache)hoverCache.push({wa:wa,wb:wb,apex:apex,net:w.net});
+ var NS=Math.min(20,Math.max(12,Math.round(6+apex))),prevL=null,prevR=null;
+ for(var i=0;i<=NS;i++){var t=i/NS;
+  var cx=wa[0]+dx*t,cz=wa[1]+dz*t,cy=4*apex*t*(1-t);
+  var Lp=[cx+px*hw,cy,cz+pz*hw],Rp=[cx-px*hw,cy,cz-pz*hw];
+  if(prevL){
+   var e1x=Rp[0]-prevL[0],e1y=Rp[1]-prevL[1],e1z=Rp[2]-prevL[2];
+   var e2x=Lp[0]-prevL[0],e2y=Lp[1]-prevL[1],e2z=Lp[2]-prevL[2];
+   var nx=e1y*e2z-e1z*e2y,ny=e1z*e2x-e1x*e2z,nz=e1x*e2y-e1y*e2x,nl=Math.hypot(nx,ny,nz)||1;
+   nx/=nl;ny/=nl;nz/=nl;if(ny<0){nx=-nx;ny=-ny;nz=-nz;}
+   [[prevL,prevR,Rp],[prevL,Rp,Lp]].forEach(function(tri){tri.forEach(function(v){
+    pV.push(v[0],v[1],v[2]);pN.push(nx,ny,nz);pC.push(col[0],col[1],col[2]);
+    pTP.push(-1);pTN.push(tagN);});});}
+  prevL=Lp;prevR=Rp;}}
+/* --- 部品種別ごとの実ジオメトリ(要件1)。Canvas 2D版ISO_DRAWの見た目言語(電解=円柱+極性
+   マーカー、円板=扁平楕円体、film=箱、r=寝かせ/立てで異なる形状+カラーバンド、
+   ic=箱+ノッチ+ピン足)をWebGLメッシュへ移植する。寸法はphysFor/isoPartHeightを共有し、
+   色は2D版のhex値に揃えて見た目の一貫性を保つ。tagP=partIdx(pV等へそのまま並行push)。 */
+function gl3dMeshElec(p,PF,pV,pN,pC,pTP,pTN,idx){
+ var a=p.leads[0],b=p.leads[1],wa=[gl3dWX(a[0]),gl3dWZ(a[1])],wb=[gl3dWX(b[0]),gl3dWZ(b[1])];
+ var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2,dia=PF.dia||6.5,r=dia/2,H=Math.max(6,dia*1.15);
+ var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
+ /* リード成形展開(disc修正と同じ処方をelecへ): 缶をわずかに浮かせ(standoff)、
+    底キャップを追加した上で、缶底の縁寄りの出射点からgl3dFormLeads+
+    gl3dSolderFilletで穴へ接続する。垂直な一本棒(旧実装)より遥かに
+    「実装された部品」に見える。 */
+ var standoff=0.8;
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,cx,standoff,cz,cx,H,cz,r,r,hex2rgb01('#1a2230'),14,true,true);
+ var lw=0.35,lcol=hex2rgb01('#cfd8df'),dHole=L/2,dSock=Math.min(dHole,r*0.7);
+ [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
+  var sx=cx+ux*dSock*sign,sz=cz+uz*dSock*sign;
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,standoff,sz,wq[0],wq[1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+ /* polarity mark: a short red rod near the '+' lead, standing off the can's outer wall */
+ var plusPt=(p.plus===1)?wb:wa,dxp=plusPt[0]-cx,dzp=plusPt[1]-cz,dl=Math.hypot(dxp,dzp)||1;
+ var mx=cx+dxp/dl*r*0.9,mz=cz+dzp/dl*r*0.9;
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,mx,H*0.32,mz,mx,H*0.8,mz,0.55,0.4,hex2rgb01('#ff5d5d'),6,true,true);
+}
+function gl3dMeshDisc(p,PF,pV,pN,pC,pTP,pTN,idx){
+ var a=p.leads[0],b=p.leads[1],wa=[gl3dWX(a[0]),gl3dWZ(a[1])],wb=[gl3dWX(b[0]),gl3dWZ(b[1])];
+ var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
+ var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2,dia=PF.bodyLen||5,r=dia/2;
+ /* 縦立ちコイン化(要件C・3専門家統合案): 実物のセラミック円板コンデンサはリード方向の
+    厚みが薄く、それに垂直な面内では満径まで広がる「縦に立ったコイン」形状。従来は
+    Y軸を潰した扁平球(横倒しのM&M型)で描いており、基板に接地する文脈が失われ
+    「宙に浮いた丸」に見えていた(ユーザー指摘)。厚み(rAlong)には、これまで3D側で
+    未参照だった実測値PF.bodyWid(config.example.json/DEFCFGのdisc.body_wid_mm)を
+    流用する(値を新設せず、既存の未使用データを活かす=専門家統合案の指摘)。
+    standoff=基板からの浮き量(実装時の一般的なクリアランス)。 */
+ var thick=(PF.bodyWid||2.5)/2,standoff=1.0,cy=standoff+r;
+ gl3dPushEllipsoidOriented(pV,pN,pC,pTP,pTN,idx,-1,cx,cy,cz,ux,uz,thick,r,r,hex2rgb01('#b5651d'),12,7);
+ var lw=0.3,lcol=hex2rgb01('#cfd8df');
+ [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
+  /* リードの出射点(socket)は本体の下端付近、厚み方向にわずかにオフセットした位置
+     (実物のリードが円板の縁から出て穴へ曲がって伸びる様子に対応)。 */
+  var sx=cx+ux*thick*0.85*sign,sz=cz+uz*thick*0.85*sign,sy=standoff+r*0.15;
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,sy,sz,wq[0],wq[1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+}
+function gl3dMeshFilm(p,PF,pV,pN,pC,pTP,pTN,idx){
+ var a=p.leads[0],b=p.leads[1],wa=[gl3dWX(a[0]),gl3dWZ(a[1])],wb=[gl3dWX(b[0]),gl3dWZ(b[1])];
+ var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
+ var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2,bl=PF.bodyLen||10,bw=PF.bodyWid||4.5,H=bw*1.8,z0=0.8;
+ /* 本体が浮くので底面も描く(旧{bottom:false}は底が板に接していた頃の名残)。 */
+ gl3dPushOrientedBox(pV,pN,pC,pTP,pTN,idx,-1,cx,cz,ux,uz,bl/2,bw/2,z0,z0+H,hex2rgb01('#f2d22e'),{});
+ var lw=0.3,lcol=hex2rgb01('#cfd8df'),dHole=L/2,dSock=Math.min(dHole,bl/2*0.9);
+ [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
+  var sx=cx+ux*dSock*sign,sz=cz+uz*dSock*sign;
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,z0,sz,wq[0],wq[1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+}
+function gl3dMeshR(p,PF,pV,pN,pC,pTP,pTN,idx){
+ var a=p.leads[0],b=p.leads[1],wa=[gl3dWX(a[0]),gl3dWZ(a[1])],wb=[gl3dWX(b[0]),gl3dWZ(b[1])];
+ var standing=!!p.standing||dist(a,b)<2.05,lw=0.3,lcol=hex2rgb01('#cfd8df');
+ if(standing){var rw=(PF.bodyWid||2.5)/2,H=PF.bodyLen||6.5;
+  gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,wa[0],1,wa[1],wa[0],1+H,wa[1],rw,rw,hex2rgb01('#d9b38c'),12,false,true);
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,wa[0],1,wa[1],wa[0],wa[1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wa[0],wa[1],lw);
+  /* return-loop lead: 本体天面から折り返して隣の穴へ降りる(2D版の弧脚と同じ意匠)。
+     socketを本体天面に置くとgl3dFormLeadsの中間折れ点が自然にヘアピン状になる。 */
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,wa[0],1+H,wa[1],wb[0],wb[1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wb[0],wb[1],lw);
+  return;}
+ var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
+ var bl=PF.bodyLen||6.5,bw=PF.bodyWid||2.5,zA=bw/2+0.6,cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2;
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,cx-ux*bl/2,zA,cz-uz*bl/2,cx+ux*bl/2,zA,cz+uz*bl/2,bw/2,bw/2,hex2rgb01('#d9b38c'),12,true,true);
+ [[0.28,'#5a3a18'],[0.45,'#bb0000'],[0.60,'#d49a00']].forEach(function(bd){var t=bd[0],
+  bx0=cx-ux*bl/2+ux*bl*t,bz0=cz-uz*bl/2+uz*bl*t;
+  gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,bx0-ux*0.4,zA,bz0-uz*0.4,bx0+ux*0.4,zA,bz0+uz*0.4,bw/2*1.02,bw/2*1.02,hex2rgb01(bd[1]),10,false,false);});
+ [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
+  var sx=cx+ux*bl/2*sign,sz=cz+uz*bl/2*sign;
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,zA,sz,wq[0],wq[1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+}
+function gl3dMeshIC(p,PF,pV,pN,pC,pTP,pTN,idx){
+ var ks=Object.keys(p.pins);if(!ks.length)return;
+ var xs=ks.map(function(k){return p.pins[k][0];}),ys=ks.map(function(k){return p.pins[k][1];});
+ var x0=Math.min.apply(null,xs)-0.3,x1=Math.max.apply(null,xs)+0.3,y0=Math.min.apply(null,ys)-0.3,y1=Math.max.apply(null,ys)+0.3;
+ var wx0=gl3dWX(x0),wx1=gl3dWX(x1),wz0=gl3dWZ(y0),wz1=gl3dWZ(y1),zB=1.3,zT=4.5;
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,wx0,wx1,zB,zT,wz0,wz1,hex2rgb01('#1c1e22'),{});
+ /* pin-1 notch marker: a small red rivet on the top face near the pin-1 corner */
+ var p1=p.pins[ks[0]],p1x=gl3dWX(p1[0]),p1z=gl3dWZ(p1[1]);
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,p1x,zT,p1z,p1x,zT+0.35,p1z,0.5,0.5,hex2rgb01('#ff5d5d'),8,false,true);
+ /* pin legs: 本体直下から各ピン穴へ、gl3dFormLeads(この場合は水平オフセット0=垂直に
+    退化)+gl3dSolderFilletで「差し込まれてはんだ付けされている」見た目にする
+    (要件展開)。ピッチが密でもフィレット底半径(lw*3.2)が半ピッチ未満のため隣接ピン
+    同士は干渉しない。 */
+ var lw=0.25,lcol=hex2rgb01('#9aa4ae');
+ ks.forEach(function(k){var q=p.pins[k],wq=[gl3dWX(q[0]),gl3dWZ(q[1])];
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,wq[0],zB,wq[1],wq[0],wq[1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+}
+/* GL3D_MESHに無いkind(将来ユーザーが追加する未知の部品種別)向けの汎用フォールバック
+   (要件2)。「最低限、基板にはんだ付けされた箱」として描く: gl3dFormLeads/
+   gl3dSolderFilletを適用するので、原型が箱のままでも「実装された箱」になり、
+   五種の専用メッシュと同じ視覚文法(浮かない・接地する・リードが繋がる)を満たす。
+   leadsが厳密に2本ならfilm同様の向き付き箱、それ以外(1本/多ピン/pins)は
+   gl3dPartBox由来のAABB箱＋パッドごとのリード。 */
+function gl3dMeshGeneric(p,PF,pV,pN,pC,pTP,pTN,idx){
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var h=Math.max(2.5,isoPartHeight(p,PF)),y0=1.0,lw=0.3,lcol=hex2rgb01('#cfd8df');
+ var col=hex2rgb01(GL3D_PART_COL[p.kind]||'#8a8f98');
+ if(p.leads&&p.leads.length===2){
+  var wa=[gl3dWX(p.leads[0][0]),gl3dWZ(p.leads[0][1])],wb=[gl3dWX(p.leads[1][0]),gl3dWZ(p.leads[1][1])];
+  var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
+  var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2,bl=PF.bodyLen||Math.max(4,L-2),bw=PF.bodyWid||3;
+  gl3dPushOrientedBox(pV,pN,pC,pTP,pTN,idx,-1,cx,cz,ux,uz,bl/2,bw/2,y0,y0+h,col,{});
+  var dSock=Math.min(L/2,bl/2*0.9);
+  [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
+   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,cx+ux*dSock*sign,y0,cz+uz*dSock*sign,wq[0],wq[1],lw,lcol);
+   gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+  return;}
+ var box=gl3dPartBox(p,PF);
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-box.hw,box.cx+box.hw,y0,y0+h,box.cz-box.hd,box.cz+box.hd,col,{});
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  /* socketを本体footprintの85%内へクランプ: 本体の外にあるパッドは自然に折れた
+     リードになり、本体直下のパッドはgl3dFormLeadsが垂直に退化する。 */
+  var sx=Math.max(box.cx-box.hw*0.85,Math.min(box.cx+box.hw*0.85,hx));
+  var sz=Math.max(box.cz-box.hd*0.85,Math.min(box.cz+box.hd*0.85,hz));
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,y0,sz,hx,hz,lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});
+}
+var GL3D_MESH={elec:gl3dMeshElec,disc:gl3dMeshDisc,film:gl3dMeshFilm,r:gl3dMeshR,ic:gl3dMeshIC};
+/* ============================================================
+   package中間層(要望1: BOM/仕様取得フローの改善、4専門家パネル+敵対的レビュー確定案)。
+   物理チャネル(CFG.physical→physFor→配置/ERC、既存のまま一切変更しない)とは別に、
+   外観チャネル(part.pkg=パッケージ規格トークンの文字列、part.phys3d=個体上書き)を新設。
+   ercAudit・solver.pyはこれらのフィールドを一切読まない(round-tripでは丸ごと
+   温存されるだけ)ので、parity/監査には構造的に無風。GL3D_PKGはDEFCFG/config.example.json
+   ではなくindex.html内定数に置く(敵対的レビュー裁定: solverが読まないデータを
+   parity_check対象に含めない)。
+   仕様の出所はAIエージェント(Claude Code)が設計時にdatasheet等を調べてpkg/phys3dへ
+   書き込む、という運用(SKILL.md参照)。perfwire自体は実行時に一切外部通信しない。 */
+var GL3D_PKG={
+ to92:{shape:'dcyl',dia_mm:5.2,h_mm:4.5,color:'#2b2f36',source:'JEDEC TO-92 standard envelope'},
+ to220:{shape:'tab_box',len_mm:10.0,wid_mm:4.5,h_mm:8.6,tabH_mm:5.5,color:'#2b2f36',source:'JEDEC TO-220AB standard envelope'},
+ led3:{shape:'dome',dia_mm:3.0,h_mm:5.0,color:'#e0453f',source:'generic 3mm THT LED envelope'},
+ led5:{shape:'dome',dia_mm:5.0,h_mm:8.6,color:'#e0453f',source:'generic 5mm THT LED envelope'},
+ do41:{shape:'axial',dia_mm:2.7,len_mm:5.2,color:'#2b2f36',bandColor:'#d8d8d8',source:'JEDEC DO-41 standard envelope'},
+ tact6:{shape:'plunger_box',len_mm:6.0,wid_mm:6.0,h_mm:3.5,plungerH_mm:1.2,color:'#2b2f36',source:'generic 6x6mm tactile switch envelope'},
+ header254:{shape:'header',pitch_mm:2.54,pinW_mm:0.64,bodyH_mm:2.5,color:'#1a1a1a',source:'0.1in (2.54mm) pin header standard envelope'},
+ trimpot3386:{shape:'box',len_mm:9.5,wid_mm:4.8,h_mm:5.0,color:'#1f6feb',source:'Bourns 3386 trimpot datasheet envelope'},
+ buzzer12:{shape:'cyl',dia_mm:12.0,h_mm:7.5,color:'#1f2733',source:'generic 12mm active buzzer envelope'},
+ custom:{shape:'box',len_mm:10,wid_mm:8,h_mm:6,color:'#8a8f98',source:'no package match — generic box, confidence should be estimate/todo'}};
+/* pkgトークン+個体上書き(phys3d)を解決した寸法オブジェクトを返す。phys3dは任意の
+   全フィールドを部分的に上書きできる(要件1: エージェントが標準から外れる寸法だけ
+   個別に書ける設計)。confidenceが無指定ならestimate扱い(検証済みと誤解させない)。 */
+function gl3dResolvePkg(p){
+ var d={shape:'box',len_mm:10,wid_mm:8,h_mm:6,dia_mm:6,color:'#8a8f98',standoff_mm:1.0,confidence:'estimate'};
+ var pk=p.pkg&&GL3D_PKG[p.pkg];if(pk)Object.assign(d,pk);
+ if(p.phys3d)Object.assign(d,p.phys3d);
+ return d;}
+/* 8種の形状ジェネレータ(2専門家案の統合案を1本化)。既存語彙(gl3dPushCyl/Box/
+   OrientedBox/EllipsoidOriented+gl3dFormLeads+gl3dSolderFillet)の合成のみで書く
+   (新規プリミティブは追加しない)。パッケージの追加は今後このテーブルへのデータ
+   追記のみで足り、コード変更を伴わない。 */
+function gl3dShapeDome(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ var pts=gl3dPadPts(p);if(pts.length<2)return;
+ var r=pk.dia_mm/2,standoff=pk.standoff_mm,bodyH=Math.max(1.5,pk.h_mm*0.55),lw=0.3,lcol=hex2rgb01('#cfd8df');
+ var wa=[gl3dWX(pts[0][0]),gl3dWZ(pts[0][1])],wb=[gl3dWX(pts[1][0]),gl3dWZ(pts[1][1])];
+ var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2,col=hex2rgb01(pk.color);
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,cx,standoff,cz,cx,standoff+bodyH,cz,r,r,col,12,true,false);
+ gl3dPushEllipsoid(pV,pN,pC,pTP,pTN,idx,-1,cx,standoff+bodyH+r*0.15,cz,r,r*0.95,r,col,10,6);
+ var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L,dSock=Math.min(L/2,r*0.85);
+ [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,cx+ux*dSock*sign,standoff,cz+uz*dSock*sign,wq[0],wq[1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});}
+function gl3dShapeDcyl(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ /* TO-92のDフラット断面は簡略化して円柱で近似する(単純な三角ソープ合成では
+    断面欠き取りに追加プリミティブが要るため、今回の投資対効果からは見送り。
+    「3本足・丸みを帯びた縦立ち本体」という支配的な視覚的手がかりは円柱で十分捉わる)。 */
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var r=pk.dia_mm/2,h=pk.h_mm,col=hex2rgb01(pk.color),lw=0.28,lcol=hex2rgb01('#cfd8df');
+ var box=gl3dPartBox(p,PF),cx=box.cx,cz=box.cz;
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,cx,0,cz,cx,h,cz,r,r,col,10,false,true);
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,cx,0,cz,hx,hz,lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+function gl3dShapeTabBox(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var box=gl3dPartBox(p,PF),col=hex2rgb01(pk.color),lw=0.3,lcol=hex2rgb01('#cfd8df');
+ var hl=pk.len_mm/2,hw=pk.wid_mm/2,h=pk.h_mm,tabH=pk.tabH_mm||h*0.6;
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-hl,box.cx+hl,0,h,box.cz-hw,box.cz+hw,col,{});
+ /* 放熱タブ板: 本体背面から上へ突き出す薄い板 */
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-hl*0.7,box.cx+hl*0.7,h,tabH,box.cz-hw*0.15,box.cz+hw*0.15,hex2rgb01('#c7cdd4'),{});
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  var sx=Math.max(box.cx-hl*0.8,Math.min(box.cx+hl*0.8,hx));
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,0,box.cz+hw*0.9,hx,hz,lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+function gl3dShapeAxial(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ /* 寝かせ抵抗(gl3dMeshRの寝かせケース)と同じ「両端からリード、本体は円柱」構成に
+    極性帯(カソードマーク)を1本足す。ダイオードの表現として再利用する設計
+    (専門家案: 既存rの寝かせロジックを流用)。 */
+ var pts=gl3dPadPts(p);if(pts.length<2)return;
+ var wa=[gl3dWX(pts[0][0]),gl3dWZ(pts[0][1])],wb=[gl3dWX(pts[1][0]),gl3dWZ(pts[1][1])];
+ var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
+ var r=pk.dia_mm/2,bl=Math.min(L-1,pk.len_mm),y=r+0.6,col=hex2rgb01(pk.color);
+ var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2;
+ var a=[cx-ux*bl/2,y,cz-uz*bl/2],b=[cx+ux*bl/2,y,cz+uz*bl/2];
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,a[0],a[1],a[2],b[0],b[1],b[2],r,r,col,10,true,true);
+ /* カソード側(pins.cが指す側、無指定ならb側)に色帯を1本 */
+ var kSide=(p.plus===1)?a:b,bandLen=bl*0.12,kDir=(p.plus===1)?-1:1;
+ var bandOuter=[kSide[0]-ux*bandLen*kDir,y,kSide[2]-uz*bandLen*kDir];
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,kSide[0],kSide[1],kSide[2],bandOuter[0],bandOuter[1],bandOuter[2],r*1.02,r*1.02,hex2rgb01(pk.bandColor||'#d8d8d8'),10,false,false);
+ var lw=0.3,lcol=hex2rgb01('#cfd8df');
+ [[wa,a],[wb,b]].forEach(function(pr){gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,pr[1][0],pr[1][1],pr[1][2],pr[0][0],pr[0][1],lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,pr[0][0],pr[0][1],lw);});}
+function gl3dShapePlungerBox(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var box=gl3dPartBox(p,PF),col=hex2rgb01(pk.color),lw=0.28,lcol=hex2rgb01('#cfd8df');
+ var hl=pk.len_mm/2,hw=pk.wid_mm/2,h=pk.h_mm,plungerH=pk.plungerH_mm||h*0.35;
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-hl,box.cx+hl,0,h,box.cz-hw,box.cz+hw,col,{});
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,box.cx,h,box.cz,box.cx,h+plungerH,box.cz,Math.min(hl,hw)*0.45,Math.min(hl,hw)*0.4,hex2rgb01('#e8e8e8'),8,false,true);
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  var sx=Math.max(box.cx-hl*0.85,Math.min(box.cx+hl*0.85,hx)),sz=Math.max(box.cz-hw*0.85,Math.min(box.cz+hw*0.85,hz));
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,0,sz,hx,hz,lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+function gl3dShapeHeader(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var box=gl3dPartBox(p,PF),bodyH=pk.bodyH_mm,pinW=pk.pinW_mm,col=hex2rgb01(pk.color);
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-box.hw,box.cx+box.hw,0,bodyH,box.cz-box.hd,box.cz+box.hd,col,{});
+ var pinCol=hex2rgb01('#c7a34d');
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,hx-pinW/2,hx+pinW/2,-0.8,bodyH+pinW*3,hz-pinW/2,hz+pinW/2,pinCol,{});});}
+function gl3dShapeBoxPkg(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ /* gl3dMeshGenericと同じ構成(向き付き箱 or AABB箱+リード成形)だがpkgの色/寸法を使う。
+    リレー/モジュール/半固定VR/ターミナル等、規格化された標準形状が無い部品の
+    「箱で妥協はするが、少なくとも部品固有の色は正しく出す」受け皿(要件1)。 */
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var col=hex2rgb01(pk.color),lw=0.3,lcol=hex2rgb01('#cfd8df'),y0=1.0,h=pk.h_mm;
+ if(p.leads&&p.leads.length===2){
+  var wa=[gl3dWX(p.leads[0][0]),gl3dWZ(p.leads[0][1])],wb=[gl3dWX(p.leads[1][0]),gl3dWZ(p.leads[1][1])];
+  var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
+  var cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2,bl=pk.len_mm||Math.max(4,L-2),bw=pk.wid_mm||3;
+  gl3dPushOrientedBox(pV,pN,pC,pTP,pTN,idx,-1,cx,cz,ux,uz,bl/2,bw/2,y0,y0+h,col,{});
+  var dSock=Math.min(L/2,bl/2*0.9);
+  [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
+   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,cx+ux*dSock*sign,y0,cz+uz*dSock*sign,wq[0],wq[1],lw,lcol);
+   gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+  return;}
+ var box=gl3dPartBox(p,PF),hl=(pk.len_mm||box.hw*2)/2,hw=(pk.wid_mm||box.hd*2)/2;
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-hl,box.cx+hl,y0,y0+h,box.cz-hw,box.cz+hw,col,{});
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  var sx=Math.max(box.cx-hl*0.85,Math.min(box.cx+hl*0.85,hx)),sz=Math.max(box.cz-hw*0.85,Math.min(box.cz+hw*0.85,hz));
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,y0,sz,hx,hz,lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+function gl3dShapeCyl(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
+ var pts=gl3dPadPts(p);if(!pts.length)return;
+ var box=gl3dPartBox(p,PF),r=pk.dia_mm/2,h=pk.h_mm,standoff=pk.standoff_mm,col=hex2rgb01(pk.color),lw=0.3,lcol=hex2rgb01('#cfd8df');
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,box.cx,standoff,box.cz,box.cx,standoff+h,box.cz,r,r,col,14,true,true);
+ pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,box.cx,standoff,box.cz,hx,hz,lw,lcol);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+var GL3D_SHAPE={dome:gl3dShapeDome,dcyl:gl3dShapeDcyl,tab_box:gl3dShapeTabBox,axial:gl3dShapeAxial,
+ plunger_box:gl3dShapePlungerBox,header:gl3dShapeHeader,box:gl3dShapeBoxPkg,cyl:gl3dShapeCyl};
+/* ソリッドパス全体(スラブ側面/底面＋部品(kind別実形状)＋配線帯)を1本のtriangle soupへ
+   構築する。D.parts/D.wires/D.grid/CFGは読み取り専用(ee/ERCには一切触れない)。
+   LY.parts/LY.wiresレイヤートグルは2D(render/renderIso)と同じ意味論で3Dのジオメトリ
+   生成もゲートする(そうしないとトグルを押しても3Dビューでは何も起きない)。
+   同時にGL3D.tagPart/tagNet/netListを更新する(頂点ごとの所属。gl3dUpdateHL専用、
+   ジオメトリ再構築時にしか変わらない値なのでここでまとめて確定させる)。 */
+function gl3dBuildSolidGeom(){
+ var pV=[],pN=[],pC=[],pTP=[],pTN=[],ext=gl3dSlabExtent(),bt=D.grid.type||'perf';
+ var slabHex=bt==='strip'?'#3a2a1c':((bt==='mesh'||bt==='breadboard'||bt==='cluster'||bt==='custom')?'#402b1a':'#2c6e46');
+ gl3dPushBox(pV,pN,pC,pTP,pTN,-1,-1,-ext.hw,ext.hw,-1.6,0,-ext.hd,ext.hd,hex2rgb01(slabHex),{top:false,bottom:false});
+/* 3段ディスパッチ(要望1): p.phys3d.shape(個体上書き) → GL3D_PKG[p.pkg].shape
+   (規格既定) → GL3D_MESH[p.kind](既存5種の専用メッシュ) → gl3dMeshGeneric(裸箱でも
+   最低限リード成形+フィレット付き)。pkg/phys3d未指定の既存盤面は完全後方互換で
+   旧経路(kind別 or generic)のまま描かれる。未知kind(GL3D_MESHに無い種別)で
+   pkgも無ければ、リード成形+はんだフィレット付きの「実装された箱」として描く。 */
+ if(LY.parts)D.parts.forEach(function(p,idx){var PF=physFor(p);
+  var shapeName=(p.phys3d&&p.phys3d.shape)||(p.pkg&&GL3D_PKG[p.pkg]&&GL3D_PKG[p.pkg].shape);
+  var shapeFn=shapeName&&GL3D_SHAPE[shapeName];
+  if(shapeFn)shapeFn(p,PF,gl3dResolvePkg(p),pV,pN,pC,pTP,pTN,idx);
+  else(GL3D_MESH[p.kind]||gl3dMeshGeneric)(p,PF,pV,pN,pC,pTP,pTN,idx);});
+ var netList=[],netIdx={};
+ function netIdOf(nm){if(!Object.prototype.hasOwnProperty.call(netIdx,nm)){netIdx[nm]=netList.length;netList.push(nm);}return netIdx[nm];}
+ if(LY.wires){
+  /* 配線の障害物クリアランス用データ(gl3dPushWire参照): 各部品のAABB(+水平マージン
+     1.5mm)と視覚天面高さ(既存gl3dPickTopHを流用=未知kindのフォールバックを
+     含めて常に正しい天面が出る)を1回だけ集計する。再構築時のみのコストで、
+     毎フレームの描画には影響しない。 */
+  var obst=D.parts.map(function(p){var PF=physFor(p),b=gl3dPartBox(p,PF);
+   return {id:p.id,cx:b.cx,cz:b.cz,hw:b.hw+1.5,hd:b.hd+1.5,top:gl3dPickTopH(p,PF)};});
+  GL3D.wireHoverCache=[];
+  (D.wires||[]).forEach(function(w){gl3dPushWire(pV,pN,pC,pTP,pTN,netIdOf(w.net),w,obst,GL3D.wireHoverCache);});}
+ else GL3D.wireHoverCache=[];
+ /* はんだブリッジ帯・宙ぶらりん警告(敵対的レビュー指摘1)。既存Canvas 2D等角の
+    buildIsoList(L2338-2350: padBridges/配線端のbridgeTo自動追従/直付NG警告)と同じ
+    読み取り専用の情報源(D.padBridges/D.wires)を、平置きの円柱としてWebGL側にも
+    描く(ee/ERC計算には一切触れない)。y=GL3D_SHADOW_Yへ揃えて基板天面テクスチャの
+    上に確実に浮かせる(z-fighting回避、根拠は同定数のコメント参照＝16bit深度
+    バッファの量子化ステップを安全マージンで超える値としてこの定数が既に選定済み)。 */
+ if(LY.bridges){var brY=GL3D_SHADOW_Y,brCol=hex2rgb01('#0a3a1e'),ngCol=hex2rgb01('#ff5d5d');
+  (D.padBridges||[]).forEach(function(b){var wa=[gl3dWX(b[0][0]),gl3dWZ(b[0][1])],wb=[gl3dWX(b[1][0]),gl3dWZ(b[1][1])];
+   gl3dPushCyl(pV,pN,pC,pTP,pTN,-1,-1,wa[0],brY,wa[1],wb[0],brY,wb[1],0.6,0.6,brCol,8,true,true);});
+  (D.wires||[]).forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)return;
+   if(e.bridgeTo&&adj(e.hole,e.bridgeTo)){
+    var h1=[gl3dWX(e.hole[0]),gl3dWZ(e.hole[1])],h2=[gl3dWX(e.bridgeTo[0]),gl3dWZ(e.bridgeTo[1])];
+    gl3dPushCyl(pV,pN,pC,pTP,pTN,-1,-1,h1[0],brY,h1[1],h2[0],brY,h2[1],0.55,0.55,brCol,8,true,true);}
+   else{var hp=[gl3dWX(e.hole[0]),gl3dWZ(e.hole[1])],pp=[gl3dWX(e.pad[0]),gl3dWZ(e.pad[1])];
+    gl3dPushCyl(pV,pN,pC,pTP,pTN,-1,-1,hp[0],brY,hp[1],pp[0],brY,pp[1],0.3,0.3,ngCol,8,true,true);}});});}
+ /* 配線端の小マーク(端子、敵対的レビュー指摘1)。ネット色の平たい円柱を各配線端(直付なら
+    pad、そうでなければhole)に置く。tagNetを付けてhoverNetのハイライトにも既存
+    gl3dUpdateHLの仕組みでそのまま乗る(ワイヤ本体と同じ挙動)。 */
+ if(LY.ends)(D.wires||[]).forEach(function(w){var ni=netIdOf(w.net),ecol=hex2rgb01(D.netColors[w.net]||'#999999');
+  [w.a,w.b].forEach(function(e){var pos=e.direct?e.pad:e.hole,wp=[gl3dWX(pos[0]),gl3dWZ(pos[1])];
+   gl3dPushCyl(pV,pN,pC,pTP,pTN,-1,ni,wp[0],GL3D_SHADOW_Y*0.5,wp[1],wp[0],GL3D_SHADOW_Y*1.5,wp[1],1.05,1.05,ecol,10,true,true);});});
+ GL3D.tagPart=pTP;GL3D.tagNet=pTN;GL3D.netList=netList;
+ return {pos:new Float32Array(pV),nrm:new Float32Array(pN),col:new Float32Array(pC),count:pV.length/3};}
+/* 基板天面テクスチャ(オフスクリーンCanvas 2D)。既存Canvas 2D等角ビューの
+   isoEnsureBake()と同じ要素(穴パターン・strip/meshの銅箔・trackCuts・blocked×・
+   行/列ラベル)を焼き込むが、iproj()の等角投影ではなく、天面を真上から見た単純な
+   正射影(グリッド→キャンバスpxの線形写像)で描く(天面は平面なので正射影下でも
+   普通の画像として貼れる、という前提に基づく)。盤面構造が変わった時だけ再構築
+   すればよい(gl3dRebuildIfNeededがキャッシュキーで判定)。 */
+function gl3dBakeTexCanvas(){
+ var bt=D.grid.type||'perf',ext=gl3dSlabExtent();
+ var pxPerHole=Math.max(4,Math.min(48,Math.round(1400/Math.max(cols,rows,1))));
+ var texW=Math.max(64,Math.min(2048,Math.round(2*ext.hw*pxPerHole/CFG.pitch)));
+ var texH=Math.max(64,Math.min(2048,Math.round(2*ext.hd*pxPerHole/CFG.pitch)));
+ var cnv=document.createElement('canvas');cnv.width=texW;cnv.height=texH;var g=cnv.getContext('2d');
+ function px(x,z){return [(x+ext.hw)/(2*ext.hw)*texW,(z+ext.hd)/(2*ext.hd)*texH];}
+ function pxg(c,r){return px(gl3dWX(c),gl3dWZ(r));}
+ var slabHex=bt==='strip'?'#3a2a1c':((bt==='mesh'||bt==='breadboard'||bt==='cluster'||bt==='custom')?'#402b1a':'#2c6e46');
+ g.fillStyle=slabHex;g.fillRect(0,0,texW,texH);
+ if(bt==='strip'){var ax=D.grid.stripAxis||'row';g.strokeStyle='rgba(206,140,80,.5)';g.lineWidth=Math.max(1,pxPerHole*0.16);
+  if(ax==='row'){for(var sr=1;sr<=rows;sr++){var a1=pxg(1,sr),b1=pxg(cols,sr);g.beginPath();g.moveTo(a1[0],a1[1]);g.lineTo(b1[0],b1[1]);g.stroke();}}
+  else{for(var sc=1;sc<=cols;sc++){var a2=pxg(sc,1),b2=pxg(sc,rows);g.beginPath();g.moveTo(a2[0],a2[1]);g.lineTo(b2[0],b2[1]);g.stroke();}}}
+ if(bt==='mesh'||bt==='breadboard'||bt==='cluster'||bt==='custom'){
+  var cutsV={};(D.trackCuts||[]).forEach(function(cc){if(cc&&cc[0]&&cc[1]){cutsV[key(cc[0])+'|'+key(cc[1])]=1;cutsV[key(cc[1])+'|'+key(cc[0])]=1;}});
+  g.strokeStyle='rgba(206,140,80,.5)';g.lineWidth=Math.max(1,pxPerHole*0.1);
+  boardLinks(cols,rows,D.grid,cutsV).forEach(function(seg){for(var i=1;i<seg.length;i++){
+   var pa=pxg(seg[i-1][0],seg[i-1][1]),pb=pxg(seg[i][0],seg[i][1]);g.beginPath();g.moveTo(pa[0],pa[1]);g.lineTo(pb[0],pb[1]);g.stroke();}});}
+ var holeR=Math.max(1,pxPerHole*0.26);
+ for(var c2=1;c2<=cols;c2++)for(var r2=1;r2<=rows;r2++){var hp=pxg(c2,r2);
+  g.beginPath();g.arc(hp[0],hp[1],holeR,0,6.2832);g.fillStyle='#c8d2c8';g.fill();
+  g.strokeStyle='#6e826e';g.lineWidth=Math.max(1,pxPerHole*0.05);g.stroke();
+  g.beginPath();g.arc(hp[0],hp[1],holeR*0.45,0,6.2832);g.fillStyle='#3c463c';g.fill();}
+ (D.trackCuts||[]).forEach(function(cc){if(!(cc&&cc[0]&&cc[1]))return;var a3=pxg(cc[0][0],cc[0][1]),b3=pxg(cc[1][0],cc[1][1]);
+  var mx=(a3[0]+b3[0])/2,my=(a3[1]+b3[1])/2,horiz=cc[0][1]===cc[1][1];g.strokeStyle='#ff5d5d';g.lineWidth=Math.max(1.5,pxPerHole*0.1);
+  g.beginPath();if(horiz){g.moveTo(mx,my-pxPerHole*0.34);g.lineTo(mx,my+pxPerHole*0.34);}else{g.moveTo(mx-pxPerHole*0.34,my);g.lineTo(mx+pxPerHole*0.34,my);}g.stroke();});
+ if(LY.blocked)(D.blockedHoles||[]).forEach(function(bh){var v=pxg(bh[0],bh[1]);g.fillStyle='rgba(30,30,34,.92)';g.strokeStyle='#555';g.lineWidth=1;
+  var s=Math.max(6,pxPerHole*0.28);g.beginPath();g.rect(v[0]-s/2,v[1]-s/2,s,s);g.fill();g.stroke();
+  g.font='700 '+Math.max(8,s*0.8)+'px sans-serif';g.fillStyle='#ff8080';g.textAlign='center';g.fillText('×',v[0],v[1]+s*0.35);});
+ if(pxPerHole>=6){var lblStep=pxPerHole>=14?1:5;
+  g.font='700 '+Math.max(8,Math.round(pxPerHole*0.34))+'px Consolas,monospace';g.fillStyle='#8b97a3';g.textAlign='center';
+  for(var c3=1;c3<=cols;c3++){if(c3!==1&&c3%lblStep!==0)continue;var lp=px(gl3dWX(c3),-ext.hd*0.94);g.fillText(String(c3),lp[0],lp[1]);}
+  for(var r3=1;r3<=rows;r3++){if(r3!==1&&r3%lblStep!==0)continue;var lq=px(-ext.hw*0.94,gl3dWZ(r3));g.fillText(String.fromCharCode(64+r3),lq[0],lq[1]+3);}}
+ return cnv;}
+/* 基板天面の単一クアッド(位置・法線・UV)。テクスチャと同じくスラブ外形が変わった
+   時だけ再構築すればよい。UVは頂点のワールドXZから直接導出しているのでテクスチャ
+   焼き込み側(px()/pxg())と1:1で対応する(canvasのy=0行がv=0に写る＝flip不要)。 */
+function gl3dBuildTopQuad(){
+ var ext=gl3dSlabExtent();
+ var cns=[{x:-ext.hw,z:-ext.hd,u:0,v:0},{x:ext.hw,z:-ext.hd,u:1,v:0},
+  {x:ext.hw,z:ext.hd,u:1,v:1},{x:-ext.hw,z:ext.hd,u:0,v:1}];
+ var V=[],N=[],U=[];
+ [[0,1,2],[0,2,3]].forEach(function(tri){tri.forEach(function(i){var q=cns[i];
+  V.push(q.x,0,q.z);N.push(0,1,0);U.push(q.u,q.v);});});
+ return {pos:new Float32Array(V),nrm:new Float32Array(N),uv:new Float32Array(U)};}
+function gl3dUploadTexture(gl){var cnv=gl3dBakeTexCanvas();
+ gl.bindTexture(gl.TEXTURE_2D,GL3D.tex);
+ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,cnv);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);}
+/* --- 接地影(要件3)。各部品のAABB足跡(gl3dPartBox)にマージンを掛け、ic は矩形、
+   それ以外は楕円(N角形ファン)としてy=GL3D_SHADOW_Y(天面よりごくわずかに上=Z-fighting
+   回避)に敷く。実際の減光は乗算ブレンド(gl3dDraw参照、depth書き込みOFF)で行うので、
+   ここでは色は持たない(位置だけの単純ジオメトリ)。
+   0.2mm(0.05mmから引き上げ): WebGLが最低保証するのは16bit深度バッファ(非力な統合GPU
+   のドライバでは24bitに昇格されない場合が現実にある)。旧gl3dDrawのnear/farは固定
+   (-2000,4000)幅6000mmで16bit量子化ステップ≈0.0916mm＝旧0.05mmオフセットは1LSB未満
+   になり得てちらつき/欠けが起きる。gl3dDraw側でnear/farをシーン実寸ベースに縮小した
+   上で、このオフセットも安全側に引き上げる(二重の対策、どちらか一方が効けば十分)。 */
+var GL3D_SHADOW_Y=0.2;
+function gl3dBuildShadowGeom(){
+ var pV=[];
+ if(LY.parts)D.parts.forEach(function(p){var PF=physFor(p),box=gl3dPartBox(p,PF);
+  if(p.kind==='ic'){var x0=box.cx-box.hw,x1=box.cx+box.hw,z0=box.cz-box.hd,z1=box.cz+box.hd;
+   [[x0,z0],[x1,z0],[x1,z1],[x0,z0],[x1,z1],[x0,z1]].forEach(function(q){pV.push(q[0],GL3D_SHADOW_Y,q[1]);});
+   return;}
+  var rx=box.hw*1.12,rz=box.hd*1.12,segs=12,prev=null;
+  for(var i=0;i<=segs;i++){var a=i/segs*6.2831853,q=[box.cx+Math.cos(a)*rx,box.cz+Math.sin(a)*rz];
+   if(prev){pV.push(box.cx,GL3D_SHADOW_Y,box.cz,prev[0],GL3D_SHADOW_Y,prev[1],q[0],GL3D_SHADOW_Y,q[1]);}
+   prev=q;}});
+ return {pos:new Float32Array(pV),count:pV.length/3};}
+/* --- ラベル/注意マーク(要件6)。ERC警告マーク(隣接異ネット)は既存buildIsoListの
+   caution判定(D.wires/leadMapの読み取りのみ、ee/ERC計算そのものには触れない)を
+   そのまま流用する。 */
+function gl3dCautionMarks(){
+ if(!LY.caut)return [];
+ var lm=leadMap(),hn={};Object.keys(lm).forEach(function(k){hn[k]=lm[k].net;});
+ D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(!e.direct)hn[key(e.hole)]=w.net;});});
+ var out=[],seen={};
+ Object.keys(hn).forEach(function(kk){var p2=kk.split(',').map(Number);
+  [[1,0],[0,1]].forEach(function(dd){var q=key([p2[0]+dd[0],p2[1]+dd[1]]);
+   if(hn[q]&&hn[q]!==hn[kk]){var mk=(p2[0]+dd[0]/2)+'|'+(p2[1]+dd[1]/2);if(seen[mk])return;seen[mk]=1;
+    out.push({c:p2[0]+dd[0]/2,r:p2[1]+dd[1]/2});}});});
+ return out;}
+/* refdes/外部端子名/電解の極性+マーク/注意×マークのビルボード配置(ワールドmm座標＋
+   テキスト＋色)。LY.labelsで部品名/外部端子名をゲートする(2Dの K.labels と同じ意味論)。 */
+function gl3dLabelEntries(){
+ var out=[];
+ if(LY.labels){
+  D.parts.forEach(function(p){if(!p.label)return;var PF=physFor(p);
+   /* アンカー高はisoPartHeight(2D等角ビューと共有の見た目定義)でなくgl3dPickTopH
+      (実ジオメトリの天面、gl3dPickTopHのコメント参照)を使う(推奨事項): disc/寝かせrは
+      isoPartHeightだとメッシュ天面より低く、既定寸法よりやや大きい個体(disc dia≥
+      約5.2mm/寝かせr bodyWid≥3.2mm)でラベルが部品本体に沈み込み得た。他kindは
+      gl3dPickTopHがisoPartHeightにフォールバックするので値は変わらない。 */
+   var h=gl3dPickTopH(p,PF),box=gl3dPartBox(p,PF);
+   out.push({x:box.cx,y:h+1.6,z:box.cz,text:(p.family?p.family+' ':'')+p.label,col:'#dce3ea'});
+   if(p.kind==='elec'){var a=p.leads[0],b=p.leads[1],pl=(p.plus===1)?b:a,wx=gl3dWX(pl[0]),wz=gl3dWZ(pl[1]);
+    /* アンカーは缶頂(h=gl3dPickTopH、elecはisoPartHeightにフォールバックしgl3dMeshElecの
+       H=max(6,dia*1.15)と一致)より上に置く。旧実装のh*0.6は缶高の6割位置=缶本体の
+       裏側になり、pitch 20/45/85度の全視点で可視ピクセル0になっていた(refdesラベルと
+       同じh+1.6オフセットに揃えて解消)。 */
+    out.push({x:wx,y:h+1.6,z:wz,text:'+',col:'#ff7b7b'});}});
+  Object.keys(D.leads).forEach(function(nm){if(nm.slice(0,2)!=='W.')return;var Lx=D.leads[nm];if(!Lx||!Lx.at)return;
+   out.push({x:gl3dWX(Lx.at[0]),y:3.2,z:gl3dWZ(Lx.at[1]),text:nm.slice(2),col:'#dce3ea'});});
+ }
+ gl3dCautionMarks().forEach(function(m){out.push({x:gl3dWX(m.c),y:1.6,z:gl3dWZ(m.r),text:'×',col:'#ff5d5d'});});
+ return out;}
+/* Canvas 2Dで1行=1エントリのテキストアトラスを焼く(既存gl3dBakeTexCanvasと同じ発想: 盤面
+   構造+選択言語+DPRが変わった時だけ再構築、gl3dGeomKey参照)。行の高さはGL3D.dpr込みで
+   決める(DPR変更時にアトラスがボケないよう要件6の注意どおり再構築対象に含める)。
+   texH/texWは実際のgl.MAX_TEXTURE_SIZE(引数gl、未取得時は2048扱い)でもクランプする:
+   固定4096/2048決め打ちだとMAX_TEXTURE_SIZE=2048の旧世代GPUでtexImage2Dが失敗し
+   ラベルが全滅し得た。加えて、行数がクランプ後のtexHに収まる最大行数を超える分は
+   entries自体を切り詰める(v>1になったUVがCLAMP_TO_EDGEで最終行を使い回し、
+   ラベルが崩れて見えるのを避ける=見えないラベルが出る方が誤表示より安全)。 */
+function gl3dBakeLabelAtlas(gl){
+ var entries=gl3dLabelEntries(),dpr=GL3D.dpr||1,rowH=Math.max(14,Math.round(22*dpr)),pad=4;
+ var maxTex=(gl&&gl.getParameter)?(gl.getParameter(gl.MAX_TEXTURE_SIZE)||2048):2048;
+ var scratch=document.createElement('canvas').getContext('2d');
+ scratch.font='700 '+Math.round(rowH*0.7)+'px "Segoe UI",system-ui,sans-serif';
+ var widths=entries.map(function(e){return Math.max(6,Math.ceil(scratch.measureText(e.text||'').width)+pad*2);});
+ var texW=Math.max(2,Math.min(2048,maxTex,widths.length?Math.max.apply(null,widths):2));
+ var maxRows=Math.max(1,Math.floor(Math.min(4096,maxTex)/rowH));
+ if(entries.length>maxRows){entries=entries.slice(0,maxRows);widths=widths.slice(0,maxRows);}
+ var texH=Math.max(2,Math.min(4096,maxTex,rowH*Math.max(1,entries.length)));
+ var cnv=document.createElement('canvas');cnv.width=texW;cnv.height=texH;var g=cnv.getContext('2d');
+ g.font='700 '+Math.round(rowH*0.7)+'px "Segoe UI",system-ui,sans-serif';g.textAlign='left';g.textBaseline='middle';
+ var rects=[];
+ entries.forEach(function(e,i){var y=i*rowH+rowH/2,w=widths[i];
+  g.lineWidth=3;g.strokeStyle='rgba(0,0,0,.7)';g.strokeText(e.text||'',pad,y);
+  g.fillStyle=e.col||'#fff';g.fillText(e.text||'',pad,y);
+  rects.push({u0:0,v0:i*rowH/texH,u1:w/texW,v1:(i*rowH+rowH)/texH,wpx:w,hpx:rowH});});
+ return {canvas:cnv,entries:entries,rects:rects};}
+/* アトラスの座標(rects)からビルボードの6頂点(2三角形)を組む。aCenterは4隅で共通の
+   ワールド位置(アンカー)、aCornerはmm単位のローカルオフセット(アンカーの真上に立つ板)。
+   UVは「ローカルy=textH(上=カメラのuUp方向)がアトラス行の上端(v0)」になるよう対応させる
+   (canvasのy=0行がv=0に写る規約はgl3dBuildTopQuadと同じ。上下反転すると文字が
+   逆さまに見えるため、ここを取り違えないことが重要)。 */
+function gl3dBuildLabelGeom(gl){
+ var baked=gl3dBakeLabelAtlas(gl),TXT_H=2.6,cCtr=[],cCorner=[],cUV=[];
+ baked.rects.forEach(function(r,i){var e=baked.entries[i],hmm=TXT_H,wmm=hmm*(r.wpx/Math.max(1,r.hpx));
+  var bl=[-wmm/2,0],br=[wmm/2,0],tr=[wmm/2,hmm],tl=[-wmm/2,hmm];
+  var uv=[[r.u0,r.v1],[r.u1,r.v1],[r.u1,r.v0],[r.u0,r.v0]];
+  [[bl,uv[0]],[br,uv[1]],[tr,uv[2]],[bl,uv[0]],[tr,uv[2]],[tl,uv[3]]].forEach(function(cv){
+   cCtr.push(e.x,e.y,e.z);cCorner.push(cv[0][0],cv[0][1]);cUV.push(cv[1][0],cv[1][1]);});});
+ return {canvas:baked.canvas,center:new Float32Array(cCtr),corner:new Float32Array(cCorner),uv:new Float32Array(cUV),count:cCtr.length/3};}
+/* 選択/ホバーに応じた頂点ごとのハイライト量(0..1)を毎フレーム再計算してアップロードする
+   (要件4)。位置/法線/色バッファ(GL3D.vbuf/nbuf/cbuf)には一切触れない＝ジオメトリの
+   再構築なしに色だけ変える設計。直近発見した「選択ハイライトがリスト構築時に評価され
+   1操作遅れる」バグ(buildIsoListのinSel評価コメント参照)と同種の不具合を避けるため、
+   選択/ホバー状態はここ=描画時に都度読む(ジオメトリ再構築時にしか変わらないtagPart/
+   tagNetとは更新頻度が違う、という設計上の理由でこの2つを意図的に分けている)。 */
+var GL3D_HLKEY={v:null};
+function gl3dUpdateHL(gl){
+ /* 毎フレーム無条件にO(頂点数)の再計算+全量bufferDataをしていたのを、選択/ホバー/
+    ジオメトリ世代(GL3D.geomKey、gl3dDraw内でgl3dRebuildIfNeededの直後に呼ばれるので
+    ここで見る値は必ず今フレームのもの)が前回と同じならskipするよう変更。selSetは
+    通常ごく少数なのでキー生成自体はO(選択数)で軽い。pinnedNetを必ずキーに含める
+    (含め忘れると「1操作遅れ」の既知バグ類型の再演になる、と敵対的レビューが指摘)。 */
+ var focusNet=GL3D.pinnedNet||hoverNet;
+ var hk=GL3D.geomKey+'|'+selSet.map(function(p){return p.id;}).join(',')+'|'+(hoverNet||'')+'|'+(GL3D.pinnedNet||'');
+ if(GL3D_HLKEY.v===hk)return;
+ GL3D_HLKEY.v=hk;
+ var tp=GL3D.tagPart,tn=GL3D.tagNet,n=tp.length,hl=new Float32Array(n);
+ /* focusNet(注目ネット)がある間のゴースティング用: 部品ごとに「この部品のリード/
+    ピンがfocusNetに繋がっているか」を頂点ループの外で1回だけ判定する(partLeadsで
+    名前を取りD.leadsのnetを引く。既存のtagPart/tagNetだけでは部品→ネット所属が
+    分からないため、要望2の統合案が指摘した追加実装)。 */
+ var partOnFocus=null;
+ if(focusNet){partOnFocus={};D.parts.forEach(function(p,pi){
+  var names=partLeads(p);
+  for(var i2=0;i2<names.length;i2++){var Ld=D.leads[names[i2].name];if(Ld&&Ld.net===focusNet){partOnFocus[pi]=1;break;}}});}
+ for(var i=0;i<n;i++){var v=0,pi=tp[i],ni=tn[i];
+  if(pi>=0){var pp=D.parts[pi];
+   if(pp&&inSel(pp))v=1;
+   else if(focusNet)v=partOnFocus[pi]?0:-0.45;}
+  else if(ni>=0&&focusNet){
+   v=(GL3D.netList[ni]===focusNet)?0.65:-0.85;}
+  hl[i]=v;}
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.hlbuf);gl.bufferData(gl.ARRAY_BUFFER,hl,gl.DYNAMIC_DRAW);}
+/* 盤面構造が変わった時だけジオメトリ/テクスチャを再構築する(既存isoEnsureBakeの
+   ckキー方式を踏襲)。ISOREVはsnap/undo/importObj/loadPropでbumpされる「Dの中身が
+   変わった」の代理カウンタ＝部品移動・配線変更・案切替すべてこの1本のキーで
+   捕捉できるので、3Dビューを閉じて2Dに戻る/別の案を選ぶ/盤面編集後に開き直す、
+   といった操作のたびにジオメトリが正しく再構築される。LY.labels/LY.cautはラベル
+   アトラスの内容に、GL3D.dprはアトラスの解像度に効くのでキーに含める(要件6)。 */
+function gl3dGeomKey(){var bt=D.grid.type||'perf';
+ /* CFG.pitchをキーに含める(推奨修正): configの再取込み等でピッチ(穴間隔mm)が変わっても、
+    curI/ISOREV等の他要素が不変だと3Dメッシュが旧ピッチのスケールのまま残ってしまう
+    3D固有のキャッシュ漏れがあった(2Dのisoは自身のCFG.pitch依存箇所を都度再計算するため
+    この種の漏れが無い)。 */
+ return [curI,ISOREV,cols,rows,bt,D.grid.stripAxis,LY.blocked?1:0,LY.parts?1:0,LY.wires?1:0,
+  LY.labels?1:0,LY.caut?1:0,LY.bridges?1:0,LY.ends?1:0,GL3D.dpr||1,CFG.pitch,
+  (D.blockedHoles||[]).map(key).join(';'),
+  (D.trackCuts||[]).map(function(cc,ci){return (cc&&cc[0]&&cc[1])?(key(cc[0])+'-'+key(cc[1])):('x'+ci);}).join(';'),LANG].join('|');}
+function gl3dRebuildIfNeeded(gl){var ck=gl3dGeomKey();if(GL3D.geomKey===ck)return;GL3D.geomKey=ck;
+ var solid=gl3dBuildSolidGeom();GL3D.vcount=solid.count;
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.vbuf);gl.bufferData(gl.ARRAY_BUFFER,solid.pos,gl.STATIC_DRAW);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.nbuf);gl.bufferData(gl.ARRAY_BUFFER,solid.nrm,gl.STATIC_DRAW);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.cbuf);gl.bufferData(gl.ARRAY_BUFFER,solid.col,gl.STATIC_DRAW);
+ var shadow=gl3dBuildShadowGeom();GL3D.shcount=shadow.count;
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.shbuf);gl.bufferData(gl.ARRAY_BUFFER,shadow.pos,gl.STATIC_DRAW);
+ var lbl=gl3dBuildLabelGeom(gl);GL3D.lblVcount=lbl.count;
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblCBuf);gl.bufferData(gl.ARRAY_BUFFER,lbl.center,gl.STATIC_DRAW);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblOBuf);gl.bufferData(gl.ARRAY_BUFFER,lbl.corner,gl.STATIC_DRAW);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblUBuf);gl.bufferData(gl.ARRAY_BUFFER,lbl.uv,gl.STATIC_DRAW);
+ gl.bindTexture(gl.TEXTURE_2D,GL3D.lblTex);
+ gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,lbl.canvas);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+ var quad=gl3dBuildTopQuad();
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.topVBuf);gl.bufferData(gl.ARRAY_BUFFER,quad.pos,gl.STATIC_DRAW);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.topNBuf);gl.bufferData(gl.ARRAY_BUFFER,quad.nrm,gl.STATIC_DRAW);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.topUVBuf);gl.bufferData(gl.ARRAY_BUFFER,quad.uv,gl.STATIC_DRAW);
+ gl3dUploadTexture(gl);}
+/* 自動フィット: 盤面(スラブ外形＋部品高さ)のワールドbounding boxから、直交投影の
+   half-height相当のカメラ距離(dist)を算出する(既存isoFit()相当の考え方)。正射影
+   では距離自体は見た目の大きさに影響しない(gl3dDraw内でh=dist*0.6としてズームに
+   変換している)ため、bounding球の半径にマージンを掛けた値からdistを逆算する。
+   球包含なのでオービット角(yaw/pitch)にも依存せずどの角度でも収まる。
+   aspect(キャンバスw/h)を引数で受け取り、半幅(h*aspect)と半高(h)の小さい方が
+   Rを満たすようdistを決める(引数省略時はaspect=1として扱う=旧来どおり安全側)。
+   これが無いと縦長キャンバスで左右がクリップされ得る。 */
+function gl3dFitCamera(aspect){aspect=aspect||1;var ext=gl3dSlabExtent(),maxH=gl3dMaxPartH();
+ var diag=Math.hypot(ext.hw,ext.hd),R=Math.max(diag,maxH*1.6)*1.15+8;
+ GL3D.dist=Math.max(50,Math.min(2000,R/(0.6*Math.min(1,aspect))));GL3D.tx=0;GL3D.ty=0;}
+function ensureGl3dCanvas(){if(!GL3D.canvas)GL3D.canvas=document.getElementById('pw-iso3d');
+ var cv=GL3D.canvas,cw=Math.max(1,cv.clientWidth),ch=Math.max(1,cv.clientHeight);
+ GL3D.dpr=window.devicePixelRatio||1;var w=Math.max(1,Math.round(cw*GL3D.dpr)),h=Math.max(1,Math.round(ch*GL3D.dpr));
+ if(cv.width!==w||cv.height!==h){cv.width=w;cv.height=h;}
+ return {cw:cw,ch:ch,w:w,h:h};}
+/* Phase3要件1: シェーダprogram・attrib/uniform位置・バッファ/テクスチャの生成をgl3dInitの
+   本体から切り出したもの。webglcontextrestored後の再生成でも同じ処理が要る(コンテキストが
+   一度失われると、そのコンテキストに紐づく全WebGLObjectはスペック上恒久的に無効になり、
+   単に中身を書き直すのではなく作り直す必要があるため)。GL3D.gl=glの代入もここで行う。
+   例外はここでは握りつぶさない(呼び出し側=gl3dInit/webglcontextrestoredハンドラが
+   それぞれの文脈に応じてcatchする)。 */
+function gl3dCreateResources(gl){
+ GL3D.gl=gl;
+ GL3D.prog=gl3dProgram(gl,GL3D_VS,GL3D_FS);
+ GL3D.aPos=gl.getAttribLocation(GL3D.prog,'aPos');GL3D.aNrm=gl.getAttribLocation(GL3D.prog,'aNormal');
+ GL3D.aCol=gl.getAttribLocation(GL3D.prog,'aColor');GL3D.aHL=gl.getAttribLocation(GL3D.prog,'aHL');
+ GL3D.uProj=gl.getUniformLocation(GL3D.prog,'uProj');GL3D.uView=gl.getUniformLocation(GL3D.prog,'uView');
+ GL3D.uModel=gl.getUniformLocation(GL3D.prog,'uModel');GL3D.uLight=gl.getUniformLocation(GL3D.prog,'uLight');
+ GL3D.uAmb=gl.getUniformLocation(GL3D.prog,'uAmb');
+ GL3D.progTex=gl3dProgram(gl,GL3D_VS_TEX,GL3D_FS_TEX);
+ GL3D.aPosT=gl.getAttribLocation(GL3D.progTex,'aPos');GL3D.aNrmT=gl.getAttribLocation(GL3D.progTex,'aNormal');
+ GL3D.aUV=gl.getAttribLocation(GL3D.progTex,'aUV');
+ GL3D.uProjT=gl.getUniformLocation(GL3D.progTex,'uProj');GL3D.uViewT=gl.getUniformLocation(GL3D.progTex,'uView');
+ GL3D.uModelT=gl.getUniformLocation(GL3D.progTex,'uModel');GL3D.uLightT=gl.getUniformLocation(GL3D.progTex,'uLight');
+ GL3D.uAmbT=gl.getUniformLocation(GL3D.progTex,'uAmb');GL3D.uTex=gl.getUniformLocation(GL3D.progTex,'uTex');
+ GL3D.progOut=gl3dProgram(gl,GL3D_VS_OUT,GL3D_FS_OUT);
+ GL3D.aPosO=gl.getAttribLocation(GL3D.progOut,'aPos');GL3D.aNrmO=gl.getAttribLocation(GL3D.progOut,'aNormal');
+ GL3D.uProjO=gl.getUniformLocation(GL3D.progOut,'uProj');GL3D.uViewO=gl.getUniformLocation(GL3D.progOut,'uView');
+ GL3D.uViewDirO=gl.getUniformLocation(GL3D.progOut,'uViewDir');GL3D.uOutWO=gl.getUniformLocation(GL3D.progOut,'uOutW');
+ GL3D.uOutColO=gl.getUniformLocation(GL3D.progOut,'uOutCol');
+ GL3D.progSh=gl3dProgram(gl,GL3D_VS_SH,GL3D_FS_SH);
+ GL3D.aPosSh=gl.getAttribLocation(GL3D.progSh,'aPos');
+ GL3D.uProjSh=gl.getUniformLocation(GL3D.progSh,'uProj');GL3D.uViewSh=gl.getUniformLocation(GL3D.progSh,'uView');
+ GL3D.uColSh=gl.getUniformLocation(GL3D.progSh,'uCol');
+ GL3D.progLbl=gl3dProgram(gl,GL3D_VS_LBL,GL3D_FS_LBL);
+ GL3D.aCenterL=gl.getAttribLocation(GL3D.progLbl,'aCenter');GL3D.aCornerL=gl.getAttribLocation(GL3D.progLbl,'aCorner');
+ GL3D.aUVL=gl.getAttribLocation(GL3D.progLbl,'aUV');
+ GL3D.uProjL=gl.getUniformLocation(GL3D.progLbl,'uProj');GL3D.uViewL=gl.getUniformLocation(GL3D.progLbl,'uView');
+ GL3D.uRightL=gl.getUniformLocation(GL3D.progLbl,'uRight');GL3D.uUpL=gl.getUniformLocation(GL3D.progLbl,'uUp');
+ GL3D.uTexL=gl.getUniformLocation(GL3D.progLbl,'uTex');
+ GL3D.vbuf=gl.createBuffer();GL3D.nbuf=gl.createBuffer();GL3D.cbuf=gl.createBuffer();GL3D.hlbuf=gl.createBuffer();
+ GL3D.topVBuf=gl.createBuffer();GL3D.topNBuf=gl.createBuffer();GL3D.topUVBuf=gl.createBuffer();
+ GL3D.shbuf=gl.createBuffer();
+ GL3D.lblCBuf=gl.createBuffer();GL3D.lblOBuf=gl.createBuffer();GL3D.lblUBuf=gl.createBuffer();
+ GL3D.tex=gl.createTexture();GL3D.lblTex=gl.createTexture();
+ gl.enable(gl.DEPTH_TEST);gl.clearColor(0.051,0.059,0.071,1);}
+/* Phase3要件1: webglcontextlost/webglcontextrestored対応。非力な統合GPUノートPCでは
+   GPUドライバのリセット・OS側のGPUプロセスクラッシュ・タブの長時間バックグラウンド化
+   等でWebGLコンテキストが失われることが他環境より起こりやすい。何もしないと「3Dビュー
+   がある時から真っ黒になる」という再現困難な不具合になる。
+   lostハンドラでevent.preventDefault()を呼ばないとブラウザは二度とコンテキストを
+   復旧させない(スペック)。GL3D.gl=nullにするだけで安全: gl3dDraw/gl3dSnapRotateの
+   ステップ関数は全て「var gl=GL3D.gl;if(!gl)return;」で始まるため、ロスト中は静かに
+   何も描かない(例外にならない)。カメラ角度(yaw/pitch/dist/tx/ty)や選択状態はGLと
+   無関係なオブジェクトなので触れない＝復旧後もユーザーの見ていた角度がそのまま残る。
+   restoredハンドラでは、失われた旧WebGLObjectを全てgl3dCreateResourcesで作り直し、
+   ジオメトリ世代(geomKey)とハイライトキャッシュキーをリセットして次回描画で
+   ジオメトリ・テクスチャアトラスを丸ごと再アップロードさせる(gl3dRebuildIfNeeded/
+   gl3dUpdateHLがキー比較で「変化なし」と誤判定し、作り直したばかりの空バッファを
+   そのまま使ってしまうのを防ぐため)。 */
+function gl3dBindContextEvents(){var cv=GL3D.canvas;
+ cv.addEventListener('webglcontextlost',function(ev){ev.preventDefault();
+  GL3D.gl=null;
+  if(GL3D.raf){cancelAnimationFrame(GL3D.raf);GL3D.raf=null;}
+  if(GL3D.rotRaf){cancelAnimationFrame(GL3D.rotRaf);GL3D.rotRaf=null;}
+  if(GL3D.on)showHelp(tr('3Dビューの表示が一時的に中断しました（自動的に復旧します）。'));
+ },false);
+ cv.addEventListener('webglcontextrestored',function(){
+  try{var gl=cv.getContext('webgl')||cv.getContext('experimental-webgl');
+   if(!gl)return;
+   gl3dCreateResources(gl);
+   GL3D.geomKey='';GL3D_HLKEY.v=null;
+   if(GL3D.on){showHelp(tr('3Dビューの表示が復旧しました。'));gl3dInvalidate();}
+  }catch(e){GL3D.gl=null;}
+ },false);}
+/* WebGL初期化: 失敗したら例外を投げず null を返す(呼び出し側がCanvas 2Dフォールバックへ切替える)。
+   ここが3Dビューを開いた瞬間にだけ呼ばれる遅延初期化＝ページ読み込み時のheadless実行
+   (parity_headless.mjs等)には一切影響しない。ジオメトリ本体(gl3dRebuildIfNeeded)は
+   ここでは作らない(盤面依存のため描画時に必要になってから作る＝gl3dDraw参照)。 */
+function gl3dInit(){if(GL3D.ok!==null)return GL3D.ok;
+ /* preserveDrawingBuffer:falseにする(推奨事項F1): 誰もcanvas.toDataURL/toBlobで
+    このWebGLキャンバスを読み出していない(唯一のtoBlobはSVGエクスポート専用の別
+    Canvas 2D、上のgrep参照)ので、毎フレームのバッファ保持コストは無駄。
+    alpha:falseとpowerPreference:'low-power'も併せて指定(対象ユーザーは非力な
+    統合GPUノートPCのホビースト、帯域/電力節約を優先)。 */
+ var glAttrs={antialias:true,preserveDrawingBuffer:false,alpha:false,powerPreference:'low-power'};
+ try{ensureGl3dCanvas();var gl=GL3D.canvas.getContext('webgl',glAttrs)||
+  GL3D.canvas.getContext('experimental-webgl',glAttrs);
+ if(!gl)throw new Error('no webgl context');
+ gl3dCreateResources(gl);
+ gl3dBindContextEvents();
+ GL3D.ok=true;}catch(e){GL3D.ok=false;GL3D.gl=null;}
+ return GL3D.ok;}
+/* オービットカメラの正規直交基底(right/up/fwd)。ラベルのビルボード軸・ピッキングの
+   レイ生成・アウトラインパスの視点位置を1箇所から共有する(gl3dEye/m4lookAtが内部で
+   行っている計算と同じものをJS側でも参照できる形で持つ)。 */
+function gl3dCamBasis(){
+ var eye=gl3dEye(),ctr=[GL3D.tx,0,GL3D.ty];
+ var zx=eye[0]-ctr[0],zy=eye[1]-ctr[1],zz=eye[2]-ctr[2],zl=Math.hypot(zx,zy,zz)||1;zx/=zl;zy/=zl;zz/=zl;
+ var upw=[0,1,0];
+ var xx=upw[1]*zz-upw[2]*zy,xy=upw[2]*zx-upw[0]*zz,xz=upw[0]*zy-upw[1]*zx,xl=Math.hypot(xx,xy,xz)||1;xx/=xl;xy/=xl;xz/=xl;
+ var yx=zy*xz-zz*xy,yy=zz*xx-zx*xz,yz=zx*xy-zy*xx;
+ return {eye:eye,ctr:ctr,right:[xx,xy,xz],up:[yx,yy,yz],fwd:[-zx,-zy,-zz]};}
+function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;
+ /* ensureGl3dCanvas()を先に呼び、GL3D.dprを今フレームの値に更新してからgl3dRebuildIfNeeded()
+    (gl3dGeomKeyがGL3D.dprを見る、要件6)を呼ぶ＝DPR変更検出が1フレーム遅れるのを防ぐ。 */
+ var ext=ensureGl3dCanvas();
+ gl3dRebuildIfNeeded(gl);
+ gl3dUpdateHL(gl);
+ if(GL3D.needFit){gl3dFitCamera(ext.w/ext.h);GL3D.needFit=false;}
+ gl.disable(gl.BLEND);gl.depthMask(true);
+ gl.viewport(0,0,ext.w,ext.h);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+ /* near/farはシーン実寸ベースで動的に決める(旧: 固定-2000..4000幅6000mm)。固定幅は
+    WebGL最低保証の16bit深度バッファ(非力な統合GPUで現実に起こりうる)では量子化
+    ステップ≈0.0916mmとなり、影デカールの浮かせオフセット(GL3D_SHADOW_Y)を上回って
+    しまいZ-fightingの原因になっていた。sceneRad(盤面外形+最大部品高さ+余裕)を
+    中心にnear=dist-sceneRad,far=dist+sceneRadへ絞ることで実効深度レンジが桁で縮み
+    量子化ステップが十分細かくなる。near は意図的に負になり得る(正射影では合法):
+    ズームイン時(GL3D.distが小さくsceneRadを下回る)にカメラ近傍の幾何が手前クリップ
+    されるのを防ぐため。安全側の下限/上限として元の-2000..4000は超えない。 */
+ var sExt=gl3dSlabExtent(),sceneRad=Math.hypot(sExt.hw,sExt.hd)+gl3dMaxPartH()+20;
+ var nearD=Math.max(-2000,GL3D.dist-sceneRad),farD=Math.min(4000,GL3D.dist+sceneRad);
+ var aspect=ext.w/ext.h,h=GL3D.dist*0.6,proj=m4ortho(-h*aspect,h*aspect,-h,h,nearD,farD);
+ var basis=gl3dCamBasis(),eye=basis.eye,view=m4lookAt(eye,[GL3D.tx,0,GL3D.ty],[0,1,0]),ident=m4ident();
+ /* アウトラインパス(要件2)。ソリッドパスと同じ位置/法線バッファ(GL3D.vbuf/nbuf)を
+    再利用する(頂点を複製しない、GL3D_VS_OUT参照)。ソリッドパスより先に描く: 膨らませた
+    ジオメトリが書き込む深度は本体の深度よりわずかに遠いので、後で描くソリッドパスが
+    通常の深度テスト(LESS)で内部を正しく上書きする。 */
+ if(GL3D.vcount){gl.useProgram(GL3D.progOut);
+  gl.uniformMatrix4fv(GL3D.uProjO,false,proj);gl.uniformMatrix4fv(GL3D.uViewO,false,view);
+  gl.uniform3f(GL3D.uViewDirO,basis.fwd[0],basis.fwd[1],basis.fwd[2]);gl.uniform1f(GL3D.uOutWO,0.16);
+  gl.uniform3f(GL3D.uOutColO,0.04,0.047,0.063);
+  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.vbuf);gl.enableVertexAttribArray(GL3D.aPosO);gl.vertexAttribPointer(GL3D.aPosO,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.nbuf);gl.enableVertexAttribArray(GL3D.aNrmO);gl.vertexAttribPointer(GL3D.aNrmO,3,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLES,0,GL3D.vcount);}
+ /* ソリッドパス(スラブ側面/底面・部品・配線)。光源はワールド固定: c軸(u)→X, r軸(v)
+    →Z, 高さ(z)→Y(Y-up)に既存2D版LIGHTのdu/dv/dzをそのまま対応させる。aHLは
+    gl3dUpdateHLが毎フレーム再計算する選択/ホバーの色変調量(要件4)。 */
+ gl.useProgram(GL3D.prog);
+ gl.uniformMatrix4fv(GL3D.uProj,false,proj);gl.uniformMatrix4fv(GL3D.uView,false,view);gl.uniformMatrix4fv(GL3D.uModel,false,ident);
+ gl.uniform3f(GL3D.uLight,LIGHT.du,LIGHT.dz,LIGHT.dv);gl.uniform1f(GL3D.uAmb,LIGHT.amb);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.vbuf);gl.enableVertexAttribArray(GL3D.aPos);gl.vertexAttribPointer(GL3D.aPos,3,gl.FLOAT,false,0,0);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.nbuf);gl.enableVertexAttribArray(GL3D.aNrm);gl.vertexAttribPointer(GL3D.aNrm,3,gl.FLOAT,false,0,0);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.cbuf);gl.enableVertexAttribArray(GL3D.aCol);gl.vertexAttribPointer(GL3D.aCol,3,gl.FLOAT,false,0,0);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.hlbuf);gl.enableVertexAttribArray(GL3D.aHL);gl.vertexAttribPointer(GL3D.aHL,1,gl.FLOAT,false,0,0);
+ if(GL3D.vcount)gl.drawArrays(gl.TRIANGLES,0,GL3D.vcount);
+ /* テクスチャパス(基板天面) */
+ gl.useProgram(GL3D.progTex);
+ gl.uniformMatrix4fv(GL3D.uProjT,false,proj);gl.uniformMatrix4fv(GL3D.uViewT,false,view);gl.uniformMatrix4fv(GL3D.uModelT,false,ident);
+ gl.uniform3f(GL3D.uLightT,LIGHT.du,LIGHT.dz,LIGHT.dv);gl.uniform1f(GL3D.uAmbT,LIGHT.amb);
+ gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,GL3D.tex);gl.uniform1i(GL3D.uTex,0);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.topVBuf);gl.enableVertexAttribArray(GL3D.aPosT);gl.vertexAttribPointer(GL3D.aPosT,3,gl.FLOAT,false,0,0);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.topNBuf);gl.enableVertexAttribArray(GL3D.aNrmT);gl.vertexAttribPointer(GL3D.aNrmT,3,gl.FLOAT,false,0,0);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.topUVBuf);gl.enableVertexAttribArray(GL3D.aUV);gl.vertexAttribPointer(GL3D.aUV,2,gl.FLOAT,false,0,0);
+ gl.drawArrays(gl.TRIANGLES,0,6);
+ /* 接地影パス(要件3)。乗算ブレンド(DST_COLOR,ZERO)＝src*dst。深度書き込みはOFFにする
+    (影同士が重なっても深度バッファを汚さない)が深度テストはONのまま＝既に描画済みの
+    部品/スラブに自然に隠れる(gl3dDraw冒頭のコメント参照)。 */
+ if(GL3D.shcount){gl.enable(gl.BLEND);gl.blendFunc(gl.DST_COLOR,gl.ZERO);gl.depthMask(false);
+  gl.useProgram(GL3D.progSh);
+  gl.uniformMatrix4fv(GL3D.uProjSh,false,proj);gl.uniformMatrix4fv(GL3D.uViewSh,false,view);
+  gl.uniform3f(GL3D.uColSh,0.55,0.55,0.55);
+  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.shbuf);gl.enableVertexAttribArray(GL3D.aPosSh);gl.vertexAttribPointer(GL3D.aPosSh,3,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLES,0,GL3D.shcount);
+  gl.depthMask(true);gl.disable(gl.BLEND);}
+ /* ラベル(ビルボード)パス(要件6)。通常のアルファブレンドで、テクスチャの透明部分は
+    フラグメントシェーダ側でdiscard済み(GL3D_FS_LBL)なのでここではブレンドのみでよい。
+    深度書き込みはOFF(ラベル同士が重なっても互いのアルファ縁を正しく合成するため)。 */
+ if(GL3D.lblVcount){gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
+  gl.useProgram(GL3D.progLbl);
+  gl.uniformMatrix4fv(GL3D.uProjL,false,proj);gl.uniformMatrix4fv(GL3D.uViewL,false,view);
+  gl.uniform3f(GL3D.uRightL,basis.right[0],basis.right[1],basis.right[2]);
+  gl.uniform3f(GL3D.uUpL,basis.up[0],basis.up[1],basis.up[2]);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,GL3D.lblTex);gl.uniform1i(GL3D.uTexL,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblCBuf);gl.enableVertexAttribArray(GL3D.aCenterL);gl.vertexAttribPointer(GL3D.aCenterL,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblOBuf);gl.enableVertexAttribArray(GL3D.aCornerL);gl.vertexAttribPointer(GL3D.aCornerL,2,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblUBuf);gl.enableVertexAttribArray(GL3D.aUVL);gl.vertexAttribPointer(GL3D.aUVL,2,gl.FLOAT,false,0,0);
+  gl.drawArrays(gl.TRIANGLES,0,GL3D.lblVcount);
+  gl.depthMask(true);gl.disable(gl.BLEND);}
+}
+function gl3dInvalidate(){if(GL3D.raf)return;GL3D.raf=requestAnimationFrame(function(){GL3D.raf=null;gl3dDraw();if(GL3D.on)gl3dStatus();});}
+/* Phase3要件2: リサイズ/DPR変更対応。ensureGl3dCanvas()はgl3dDraw()が呼ばれるたびに
+   現在のcanvas.clientWidth/clientHeightとwindow.devicePixelRatioからバッキングストア/
+   ビューポート/射影行列を再計算する(既存、gl3dDraw冒頭を参照)ので、必要なのは
+   「リサイズが起きたら再描画をトリガーする」ことだけ。3Dビューが閉じている間
+   (GL3D.on===false)はWebGLがまだ未初期化(GL3D.gl===null)の場合すらあるため無駄な
+   再描画を起こさない。
+   window resizeはブラウザズーム変更でも大半のブラウザで発火するため、要件2の
+   「リサイズ・ズーム変更」の両方をこれ一本でカバーする。加えて、リサイズを伴わない
+   DPR変化(ウィンドウを別スケールのモニタへドラッグする等)はmatchMediaで別途検知する
+   (これが無いとその場合だけ描画がボケたまま/ズレたままになる)。 */
+function gl3dHandleResize(){if(GL3D.on)gl3dInvalidate();}
+window.addEventListener('resize',gl3dHandleResize);
+function gl3dWatchDPR(){if(!window.matchMedia)return;
+ var mq=matchMedia('(resolution: '+(window.devicePixelRatio||1)+'dppx)');
+ if(!mq.addEventListener)return;/* 未対応の古いブラウザではDPR変化検知を諦める(resizeイベントの方は効く) */
+ mq.addEventListener('change',function(){gl3dHandleResize();gl3dWatchDPR();},{once:true});}
+gl3dWatchDPR();
+/* --- ピッキング(要件5)。正射影下ではレイ方向が画面全体で一定(カメラの前方向)なので、
+   画面座標→ワールド座標は「注視点を通る垂直面(right/up基底)上の点」を求めるだけでよい
+   (m4orthoに渡すh*aspect/hがそのままワールド半幅/半高になる、gl3dDraw参照)。地面
+   (y=0)との交点はグリッド座標へ丸めてホバー表示に、部品はAABBとの交差判定(スラブ法)
+   で選択に使う。 */
+function gl3dPt(ev){var r=GL3D.canvas.getBoundingClientRect();return [ev.clientX-r.left,ev.clientY-r.top];}
+function gl3dRayFromScreen(px,py,cw,ch){
+ var basis=gl3dCamBasis(),ndcX=(px/cw)*2-1,ndcY=1-(py/ch)*2;
+ var h=GL3D.dist*0.6,aspect=cw/ch;
+ var cx=basis.ctr[0]+basis.right[0]*(ndcX*h*aspect)+basis.up[0]*(ndcY*h);
+ var cy=basis.ctr[1]+basis.right[1]*(ndcX*h*aspect)+basis.up[1]*(ndcY*h);
+ var cz=basis.ctr[2]+basis.right[2]*(ndcX*h*aspect)+basis.up[2]*(ndcY*h);
+ var far=4000;
+ return {origin:[cx-basis.fwd[0]*far,cy-basis.fwd[1]*far,cz-basis.fwd[2]*far],dir:basis.fwd};}
+function gl3dRayPlaneY0(ray){
+ if(Math.abs(ray.dir[1])<1e-6)return null;
+ var t=(0-ray.origin[1])/ray.dir[1];
+ return [ray.origin[0]+ray.dir[0]*t,ray.origin[2]+ray.dir[2]*t];}
+function gl3dRayAABB(ray,cx,cz,hw,hd,y0,y1){
+ var lo=-Infinity,hi=Infinity,mins=[cx-hw,y0,cz-hd],maxs=[cx+hw,y1,cz+hd];
+ for(var k=0;k<3;k++){var o=ray.origin[k],d=ray.dir[k];
+  if(Math.abs(d)<1e-9){if(o<mins[k]||o>maxs[k])return null;continue;}
+  var t1=(mins[k]-o)/d,t2=(maxs[k]-o)/d;if(t1>t2){var tmp=t1;t1=t2;t2=tmp;}
+  if(t1>lo)lo=t1;if(t2<hi)hi=t2;if(lo>hi)return null;}
+ return lo;}
+/* 点からレイ(無限直線)までの距離。正射影ではray.dirが画面全体で一定なので、
+   dirに直交する平面内での距離=通常の点と直線の距離公式で求まる(要件2: ワイヤ本体の
+   ホバー判定用)。 */
+function gl3dRayPointDist(ray,px,py,pz){
+ var dx=px-ray.origin[0],dy=py-ray.origin[1],dz=pz-ray.origin[2],d=ray.dir;
+ var dot=dx*d[0]+dy*d[1]+dz*d[2];
+ var cx=dx-d[0]*dot,cy=dy-d[1]*dot,cz=dz-d[2]*dot;
+ return Math.hypot(cx,cy,cz);}
+/* ワイヤ本体のホバー判定(敵対的レビュー指摘R2対応): gl3dPushWireが構築時に記録した
+   「最終apex」(障害物クリアランス込み)をそのまま使って弧をサンプルするので、描画と
+   ピックが常に一致する(基本式を再計算しない)。thresholdWorldは画面px閾値を
+   ワールドmmへ換算した値(呼び出し側でGL3D.dist*1.2/canvasHeightPxから求める)。 */
+function gl3dWireHoverNet(ray,thresholdWorld){
+ var cache=GL3D.wireHoverCache||[],bestNet=null,bestD=Infinity;
+ for(var wi=0;wi<cache.length;wi++){var c=cache[wi],dx=c.wb[0]-c.wa[0],dz=c.wb[1]-c.wa[1];
+  for(var i=0;i<=10;i++){var t=i/10;
+   var x=c.wa[0]+dx*t,z=c.wa[1]+dz*t,y=4*c.apex*t*(1-t);
+   var d=gl3dRayPointDist(ray,x,y,z);if(d<bestD){bestD=d;bestNet=c.net;}}}
+ return (bestD<=thresholdWorld)?bestNet:null;}
+/* pick専用の視覚天面高さ。isoPartHeight()はisoBakeExtent/buildIsoList等の2D等角ビューと
+   共有しているためそちらの見た目定義は変えず、ここでだけkind別の実ジオメトリ天面
+   (gl3dMeshDisc/gl3dMeshRと同期)を返す。disc=楕円体の中心+半軸(0.62倍)、寝かせr=
+   円柱中心(bw/2+0.6)+半径(bw/2)。他kindはisoPartHeightがそのままメッシュ天面と一致
+   済み(gl3dMeshElec/Film/IC/立てr参照)なのでそのまま流用する。 */
+function gl3dPickTopH(p,PF){
+ if(p.kind==='disc'){var dia=PF.bodyLen||5,r=dia/2;return 1.0+2*r;}/* =standoff+2r。gl3dMeshDiscのstandoff/cy(=standoff+r)と同期させること */
+ if(p.kind==='r'&&!(p.standing||dist(p.leads[0],p.leads[1])<2.05)){var bw=PF.bodyWid||2.5;return bw+0.6;}
+ return isoPartHeight(p,PF);}
+/* 地面(y=0)交点→グリッド穴座標。gl3dPick(部品AABBも判定するフルピック)と
+   gl3dHoverMove(穴だけで足りるホバー専用の軽量パス)の両方が共有する。 */
+function gl3dGroundHole(ray){var ground=gl3dRayPlaneY0(ray);if(!ground)return null;
+ var gc=Math.round(ground[0]/CFG.pitch+(cols+1)/2),gr=Math.round(ground[1]/CFG.pitch+(rows+1)/2);
+ return inb(gc,gr)?[gc,gr]:null;}
+function gl3dPick(px,py,cw,ch){
+ var ray=gl3dRayFromScreen(px,py,cw,ch),best=null,bestT=Infinity;
+ if(LY.parts)D.parts.forEach(function(p){var PF=physFor(p),box=gl3dPartBox(p,PF),ph=gl3dPickTopH(p,PF);
+  var t=gl3dRayAABB(ray,box.cx,box.cz,box.hw,box.hd,0,ph);
+  if(t!==null&&t<bestT){bestT=t;best=p;}});
+ return {part:best,hole:gl3dGroundHole(ray)};}
+/* クリック(ドラッグでない=移動量が閾値未満のpointerup)で部品を選択する。既存の
+   isoPick()(2D等角ビュー)と同じShift+クリック複数選択の意味論をそのまま踏襲し、
+   selSet/selPart/syncSelBarという同じ選択状態を共有する(要件4)。 */
+function gl3dClick(ev){var pt=gl3dPt(ev),cw=GL3D.canvas.clientWidth,ch=GL3D.canvas.clientHeight;
+ var hit=gl3dPick(pt[0],pt[1],cw,ch);
+ if(hit.part){
+  if(ev.shiftKey){var ix=selSet.indexOf(hit.part);if(ix<0)selSet.push(hit.part);else selSet.splice(ix,1);}
+  else selSet=[hit.part];
+  selPart=selSet.length?selSet[selSet.length-1]:null;}
+ else{
+  selSet=[];selPart=null;
+  /* 部品に当たらなかった場合、ワイヤ本体に当たっていれば要望2の「ネット固定
+     (pinnedNet)」をトグルする(同じネットを再クリックで解除)。ワイヤにも当たらない
+     完全な空クリックはpinnedNetも解除する(ホバーのように離すと消えず、
+     クリックで明示的に固定/解除する3Dビュー専用の状態)。 */
+  var thresholdWorld=6*1.2*GL3D.dist/ch;
+  var wireNet=gl3dWireHoverNet(gl3dRayFromScreen(pt[0],pt[1],cw,ch),thresholdWorld);
+  GL3D.pinnedNet=(wireNet&&wireNet!==GL3D.pinnedNet)?wireNet:null;}
+ /* 2D等角(renderIso)/平面図(render)と同じpalLast追従(敵対的レビュー指摘3＝CG理論
+    レビューでも独立指摘。2つの独立レビューが揃って検出した同一バグ)。これが無いと
+    3Dで部品を選び直しても左パネルの部品エディタが直前の別部品のまま残り、
+    誤対象を編集してしまう実害があった。 */
+ if(selPart!==palLast){palLast=selPart;buildPalEdit();}
+ syncSelBar();gl3dInvalidate();gl3dStatus();}
+/* ホバー(ドラッグ中でないpointermove)で穴座標を#st-posへ、当たった穴がワイヤ端子なら
+   そのnetをhoverNetへ反映する(既存2D版isoHover()と同じ状態変数を共有、要件4/5)。
+   ホバーはhit.part(部品AABBループ)を使わないため、フルpick(gl3dPick)ではなく地面
+   交点だけの軽量パス(gl3dGroundHole)を使う。さらに前回と同じ穴なら(D.wiresは
+   マウス静止中に変わらないためnewNetの結果も同じになる)innerHTML書換とワイヤ走査を
+   丸ごとskipする(毎pointermoveでの無条件フルpick+innerHTML書換を解消)。 */
+var GL3D_HOVER_LAST={key:undefined};
+function gl3dHoverMove(ev){var pt=gl3dPt(ev),cw=GL3D.canvas.clientWidth,ch=GL3D.canvas.clientHeight;
+ var ray=gl3dRayFromScreen(pt[0],pt[1],cw,ch),hole=gl3dGroundHole(ray);
+ /* キャッシュキーに量子化した画面座標(4px格子)を含める(敵対的レビュー指摘R3対応):
+    旧実装は「同じ穴なら丸ごとskip」だったが、ワイヤ本体は穴と穴の間の空中を通るため、
+    同じ穴の上のまま(またはどの穴にも当たらないまま)ワイヤの上をなぞってもホバーが
+    一切更新されない不具合があった。4px量子化はskip最適化の効果をほぼ保ちつつ
+    ワイヤ本体の検出粒度を確保する。 */
+ var qx=Math.floor(pt[0]/4),qy=Math.floor(pt[1]/4);
+ var hk=(hole?(hole[0]+','+hole[1]):'x')+'|'+qx+','+qy;
+ if(hk===GL3D_HOVER_LAST.key)return;
+ GL3D_HOVER_LAST.key=hk;
+ var sp=document.getElementById('st-pos');
+ if(sp)sp.innerHTML=hole?trf('列 <b>{0}</b> 行 <b>{1}</b>',hole[0],String.fromCharCode(64+hole[1])):'—';
+ var newNet=null;
+ if(hole)D.wires.some(function(w){var pa=w.a.direct?w.a.pad:w.a.hole,pb=w.b.direct?w.b.pad:w.b.hole;
+  if((pa[0]===hole[0]&&pa[1]===hole[1])||(pb[0]===hole[0]&&pb[1]===hole[1])){newNet=w.net;return true;}return false;});
+ /* 穴に当たらなければワイヤ本体への距離判定にフォールバック(要件2: 配線が密集した
+    盤面で「どのネットを見ているか」をアーチの途中でも把握できるようにする)。
+    gl3dPushWireが記録した実際の最終apex(障害物クリアランス込み)でサンプルするため、
+    描画されているアーチと必ず一致する(基本式の再計算によるドリフトが無い)。 */
+ if(!newNet){var thresholdWorld=6*1.2*GL3D.dist/ch;newNet=gl3dWireHoverNet(ray,thresholdWorld);}
+ if(newNet!==hoverNet){hoverNet=newNet;gl3dInvalidate();gl3dStatus();}}
+/* #st-stats を2D等角ビューのisoStatus()相当に更新する(要件5)。回転はここでは自由/
+   90°スナップの両方があり得るのでISO.rot表記の代わりに現在のyaw角度を出す。 */
+function gl3dStatus(){var el=document.getElementById('st-stats');if(!el)return;
+ var direct=0;D.wires.forEach(function(w){[w.a,w.b].forEach(function(e){if(e.direct)direct++;});});
+ el.innerHTML=tr('被覆線')+' <b>'+D.wires.length+'</b> ('+tr('直付')+' '+direct+') / 3D '+
+  Math.round(((GL3D.yaw%(2*Math.PI))+2*Math.PI)%(2*Math.PI)*180/Math.PI)+'°'+
+  (selPart?(' / '+tr('選択')+' <b>'+esc(selPart.id)+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'');
+ /* 要望1・敵対的レビュー指摘R5: phys3d/pkgの外観寸法がconfidence='estimate'|'todo'の
+    場合、選択中はここに常時開示する(会話での開示定型文だけに頼らない、UI側の
+    フェイルセーフ)。ERC/配置は物理チャネル(physFor)のみを見るため汚染されないが、
+    「この見た目は検証済みではない」という事実は使う人に常に見えているべき。 */
+ if(selPart&&(selPart.pkg||selPart.phys3d)){var pk=gl3dResolvePkg(selPart);
+  if(pk.confidence==='estimate'||pk.confidence==='todo'){
+   el.innerHTML+=' / <span class="wr">'+tr('外観寸法は推定')+(pk.source?trf('（{0}）',esc(pk.source)):'')+'</span>';}}
+ /* #st-net(2D版と共有するチップ)に注目ネット(ホバー中またはクリック固定中)を表示する
+    (要望2: 密集盤面で「今どのネットを見ているか」を明示する)。2D版と同じ要素・同じ
+    tr()パターンを再利用するので新規UI言語は最小限(ネット名のみの版+固定中の版を追加)。 */
+ var sn=document.getElementById('st-net');
+ if(sn){if(GL3D.pinnedNet){sn.innerHTML=trf('ネット <b>{0}</b>（固定中・Escで解除）',esc(GL3D.pinnedNet));sn.style.display='';}
+  else if(hoverNet){sn.innerHTML=trf('ネット <b>{0}</b>',esc(hoverNet));sn.style.display='';}
+  else sn.style.display='none';}}
+function gl3dEaseOutCubic(t){return 1-Math.pow(1-t,3);}
+/* 90°スナップ回転(要件7)。既存#z-isorotボタンをWebGL表示中はこの動作に再定義する
+   (Canvas 2D等角ビュー専用のisoRotate()には一切触れない、完全に別の関数)。GL3D.yawを
+   最も近い90°の倍数へなめらかにトゥイーンする。ドラッグ開始で即座にキャンセルされる
+   (gl3dBindEventsのpointerdown参照、ユーザーの手動回転操作を優先するため)。 */
+function gl3dSnapRotate(){
+ if(!GL3D.on||!GL3D.gl)return;
+ /* 累積回転(必須修正): 2D等角isoRotate()の(ISO.rot+1)%4と同じ「押すたびに次の90°へ進む」
+    挙動に揃える。旧実装は毎回「現在yawに最も近い90°の倍数」をtargetにしていたため、
+    ドラッグ後の初回押下でその倍数へスナップした直後(GL3D.yawが厳密に倍数になった後)は
+    2回目以降delta<1e-4で早期returnし恒久的に無反応になっていた(headless実機検証で確認)。
+    現在yawが直近の倍数から有意にズレている(=自由回転直後)場合だけ最寄りへスナップし、
+    既に倍数に揃っている(=前回のスナップ/初期値からの継続押下)場合は+90°進める。 */
+ /* トゥイーン中の連打対策(必須修正): トゥイーン継続中(GL3D.rotRaf有効)は、その時点の
+    GL3D.yaw(まだ90°の倍数に達していない中間値)から「最も近い倍数」を再計算すると、
+    トゥイーン前半での連打時に出発点側へ丸められ回転が逆戻りして見える。トゥイーン中は
+    直前に確定させた目標値GL3D.rotTargetを基準に+90°するので、連打しても必ず前進する。
+    ドラッグでの手動回転(pointerdown)はGL3D.rotTargetを破棄するので、その後の押下は
+    ドラッグ後の新しいyawから改めて最寄りの倍数へスナップする。 */
+ var step=Math.PI/2,from=GL3D.yaw,target;
+ if(GL3D.rotRaf&&GL3D.rotTarget!==undefined){target=GL3D.rotTarget+step;}
+ else{var nearest=Math.round(from/step)*step;target=(Math.abs(from-nearest)>1e-4)?nearest:nearest+step;}
+ var delta=target-from;
+ if(Math.abs(delta)<1e-4)return;
+ GL3D.rotTarget=target;
+ if(GL3D.rotRaf){cancelAnimationFrame(GL3D.rotRaf);GL3D.rotRaf=null;}
+ var t0=(window.performance&&performance.now)?performance.now():Date.now(),dur=260;
+ function step2(){
+  /* 3DビューがsetIso(false)等で閉じられた後もrAFが生き残って回り続けないためのガード
+     (3Dを閉じてもキャンセルされないと、閉じている間ずっとGL3D.yaw/gl3dDraw()が走り続ける)。
+     setIso()側でも閉路時にGL3D.rotRafを明示キャンセルする(二重の安全策)。 */
+  if(!GL3D.on){GL3D.rotRaf=null;return;}
+  var now=(window.performance&&performance.now)?performance.now():Date.now();
+  var t=Math.min(1,(now-t0)/dur),e=gl3dEaseOutCubic(t);
+  GL3D.yaw=from+delta*e;gl3dDraw();gl3dStatus();
+  if(t<1)GL3D.rotRaf=requestAnimationFrame(step2);else{GL3D.yaw=target;gl3dDraw();gl3dStatus();GL3D.rotRaf=null;}}
+ GL3D.rotRaf=requestAnimationFrame(step2);}
+function gl3dBindEvents(){var cv=GL3D.canvas;
+ cv.addEventListener('pointerdown',function(ev){
+  if(GL3D.rotRaf){cancelAnimationFrame(GL3D.rotRaf);GL3D.rotRaf=null;}
+  GL3D.rotTarget=undefined;/* 手動ドラッグでスナップトゥイーンの目標値を無効化(次回の90°スナップは新しいyawから再計算) */
+  GL3D.drag=[ev.clientX,ev.clientY,GL3D.yaw,GL3D.pitch,false];try{cv.setPointerCapture(ev.pointerId);}catch(e){}});
+ cv.addEventListener('pointermove',function(ev){
+  if(!GL3D.drag){gl3dHoverMove(ev);return;}
+  var dx=ev.clientX-GL3D.drag[0],dy=ev.clientY-GL3D.drag[1];
+  if(Math.hypot(dx,dy)>4)GL3D.drag[4]=true;
+  GL3D.yaw=GL3D.drag[2]+dx*0.01;
+  GL3D.pitch=Math.max(20*Math.PI/180,Math.min(85*Math.PI/180,GL3D.drag[3]-dy*0.01));
+  gl3dInvalidate();});
+ /* pointerupで「ドラッグしていなければクリックとして扱いピッキングする」(2D等角ビューの
+    isoBindEvents()のpan/pick分岐と同じ考え方。移動量が閾値未満ならクリック)。 */
+ cv.addEventListener('pointerup',function(ev){var wasDrag=GL3D.drag&&GL3D.drag[4];GL3D.drag=null;
+  if(!wasDrag)gl3dClick(ev);});
+ cv.addEventListener('pointercancel',function(){GL3D.drag=null;});
+ /* 2D版(svgのpointerleave/pointermoveのh=null分岐)と同様、canvasを離れたら#st-posも
+    「—」に戻す(hoverNetだけ戻してst-posが直前の穴座標のまま残留していた非対称を解消)。
+    GL3D_HOVER_LAST.keyも無効化する: 再度canvasに入った時、離れる前と同じ穴でも
+    gl3dHoverMoveのキー比較でskipされて表示が「—」のまま固まらないようにするため。 */
+ cv.addEventListener('pointerleave',function(){if(hoverNet){hoverNet=null;gl3dInvalidate();}
+  GL3D_HOVER_LAST.key=undefined;
+  var sp=document.getElementById('st-pos');if(sp)sp.textContent='—';});
+ cv.addEventListener('wheel',function(e){e.preventDefault();
+  GL3D.dist=Math.max(50,Math.min(2000,GL3D.dist*(e.deltaY<0?0.9:1/0.9)));gl3dInvalidate();},{passive:false});
+}
+var _gl3dBound=false;
+/* render()/renderIso()と同じく描画のたびにsaveLS()する(敵対的レビュー指摘2)。
+   これが無いと3Dビュー表示中の編集(ラベル変更等)がlocalStorageへ反映されず、
+   タブを閉じると消える退行になっていた。 */
+function renderGl3d(){if(!_gl3dBound){gl3dBindEvents();_gl3dBound=true;}gl3dInvalidate();saveLS();}
+/* Phase3要件5: window.__dbg3dは開発中の検証用フックとして残す(除去しない)。理由:
+   (a) このワークスペースでは単一IIFEアプリのクロージャ内部状態を検証する手段として
+   window.__dbg*パターンが確立済みの手法である、(b) perfwireはサーバー/秘密情報を
+   持たないクライアント完結ツールで、レンダリング内部状態を晒すこと自体のセキュリティ
+   コストは無い、(c) 自作WebGLレンダラは複雑度が高く、将来「3Dビューの見た目がおかしい」
+   系の再現困難な報告のトリアージにはこの種のフックが要る。
+   loseContext/restoreContextを追加: WEBGL_lose_context拡張を使い、実際にGPU/ドライバの
+   問題を待たずして要件1のwebglcontextlost/restored経路を意図的に発火できるようにする
+   (この場での検証、および将来の回帰確認の両方に使う)。 */
+window.__dbg3d={GL3D:GL3D,gl3dInit:gl3dInit,redraw:gl3dDraw,
+ rebuild:function(){if(GL3D.gl)gl3dRebuildIfNeeded(GL3D.gl);},fit:gl3dFitCamera,
+ pick:gl3dPick,camBasis:gl3dCamBasis,snapRotate:gl3dSnapRotate,
+ glError:function(){return GL3D.gl?GL3D.gl.getError():null;},
+ loseContext:function(){var gl=GL3D.gl;if(!gl)return false;var e=gl.getExtension('WEBGL_lose_context');if(!e)return false;GL3D._loseExt=e;e.loseContext();return true;},
+ restoreContext:function(){var e=GL3D._loseExt;if(!e)return false;e.restoreContext();return true;},
+ /* 「この部品がなぜ3Dに出ない/変な形」の切り分け用(汎用フォールバック導入時に実際に
+    重宝した: pins構造をkind!=='ic'で使っている等、D.parts自体の形が想定外だと
+    3D側は無関係にpartがD.partsから欠落する場合がある。まずここでpad有無を確認する)。 */
+ _debugParts:function(){return D.parts.map(function(p){var PF=physFor(p);var box=gl3dPartBox(p,PF);
+  return {id:p.id,kind:p.kind,hasLeads:!!p.leads,hasPins:!!p.pins,pads:gl3dPadPts(p),box:box,h:isoPartHeight(p,PF)};});},
+ status:gl3dStatus,hoverNet:function(){return hoverNet;}};
 function tgl(box,label,k){label=tr(label);var d=document.createElement('label');d.className='tgl';
 var i=document.createElement('input');i.type='checkbox';i.checked=LY[k];
 i.onchange=function(){LY[k]=i.checked;render();};
