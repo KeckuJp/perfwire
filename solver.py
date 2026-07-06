@@ -62,6 +62,15 @@ def neighbors(p):
 def dist(a, b):
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
+# INC-3(c) craft: 島連結ワイヤの両端着地穴を選ぶとき、軸整列（同じ行 or 同じ列＝直交ランになれる）でない
+# ペアに課すペナルティ。config.example.json / index.html DEFCFG の craft weights とは別の固定ヒューリスティック
+# 定数（両エンジンで同一値を鏡映）。実測（examples/pico_plant_sitter.json・pico_motor_driver.json の
+# Recommended/Before 各 --propose 結果を 3〜100 でスイープ）: 既存 pen 側の "10"（アンカー以外の member
+# ペナルティ）を上回るまでは軸整列を選びきれず 3〜10 は無風、15 で斜め比率が頭打ち値まで落ち切り
+# （plant 66.7%→45.0%、motor 72.2%→38.9%、wires 非増加・eeNg 非増加を実測確認）、それ以上（20〜100）は
+# 完全に同一結果でプラトー。頭打ちに達する最小値として 15 を採用。
+K_DIAG_ENDPOINT = 15.0
+
 def footprint(kind, a, b, cfg, standing=False, pid=None):
     """本体が覆うセル集合（足の穴を除く）と tall フラグ。part_overrides で個体別寸法を上書き可"""
     P = dict(cfg["physical"][kind])
@@ -1246,13 +1255,25 @@ def solve(state, cfg, propose=False):
         net_of_hole[xyv] = net
         find(xyv)
     pad_bridges = []
+    bridge_pairs_seen = set()  # frozenset({holeA,holeB}) の重複防止（(a)/(b) が同じ隣接をどちらも見つけ得る）
+
+    def _add_bridge(a, b):
+        key = frozenset((tuple(a), tuple(b)))
+        if key in bridge_pairs_seen:
+            return
+        bridge_pairs_seen.add(key)
+        pad_bridges.append([list(a), list(b)])
+
     for net in sorted({n for n in bd.net_of_lead.values() if n}):
         nodes = sorted([xyv for xyv, n in net_of_hole.items() if n == net])
         for a in nodes:
             for nb in neighbors(a):
                 if nb in net_of_hole and net_of_hole[nb] == net and find(a) != find(nb):
-                    pad_bridges.append([list(a), list(nb)])
+                    _add_bridge(a, nb)
                     union(a, nb)
+
+    def _adjacent(a, b):
+        return a != b and abs(a[0] - b[0]) + abs(a[1] - b[1]) == 1
 
     wires, warnings = [], []
     for net in sorted({n for n in bd.net_of_lead.values() if n}):
@@ -1268,29 +1289,100 @@ def solve(state, cfg, propose=False):
             main, rest = groups[0], groups[1:]
             tgt = min(rest, key=lambda g: min(dist(a, b) for a in g for b in main))
             pa, pb = min(((a, b) for a in tgt for b in main), key=lambda ab: dist(*ab))
-            ends = []
-            for grp, anchor2, other in ((tgt, pa, pb), (main, pb, pa)):
+
+            def _pick_single(grp, anchor2, other, exclude=None):
                 cand = None
                 for m in sorted(grp, key=lambda m2: dist(m2, anchor2)):
                     for nb in neighbors(m):
+                        if nb == exclude:
+                            continue
                         if bd.usable(nb) and nb not in net_of_hole:
                             pen = (0 if m == anchor2 else 10) + 0.05 * dist(nb, other)
                             if cand is None or pen < cand[0]:
                                 cand = (pen, nb, m)
-                if cand is None:
+                return cand
+
+            def _candidates(grp, anchor2, other):
+                """INC-3(a)/(c): (a)向けに再union対象の候補穴を、(c)向けに両端連動スコアの直積を作るため、
+                1件だけでなく4近傍の空き穴候補を全列挙する（候補空間自体は従来と同じ4近傍空き穴のまま）。
+                同一 nb に複数 member から届く場合は最小 pen のものだけ残す。"""
+                by_hole = {}
+                for m in sorted(grp, key=lambda m2: dist(m2, anchor2)):
+                    for nb in neighbors(m):
+                        if bd.usable(nb) and nb not in net_of_hole:
+                            pen = (0 if m == anchor2 else 10) + 0.05 * dist(nb, other)
+                            if nb not in by_hole or pen < by_hole[nb][0]:
+                                by_hole[nb] = (pen, nb, m)
+                return list(by_hole.values())
+
+            cand_tgt = _candidates(tgt, pa, pb)
+            cand_main = _candidates(main, pb, pa)
+
+            def _axis(h1, h2):
+                return h1[0] == h2[0] or h1[1] == h2[1]
+
+            # INC-3(c) 直交優先: 両側を独立に argmin するのでなく、両端候補の直積から
+            # (0 if 軸整列 else K_DIAG_ENDPOINT) + 既存 pen 合計 + 0.05*ユークリッド長 が最小のペアを選ぶ。
+            opts_t = cand_tgt if cand_tgt else [(0, pa, pa)]
+            opts_m = cand_main if cand_main else [(0, pb, pb)]
+            best = None
+            for ct2 in opts_t:
+                for cm2 in opts_m:
+                    if ct2[1] == cm2[1]:
+                        continue  # 同じ空き穴に両端は着地できない
+                    axis_pen = 0 if _axis(ct2[1], cm2[1]) else K_DIAG_ENDPOINT
+                    score = axis_pen + ct2[0] + cm2[0] + 0.05 * dist(ct2[1], cm2[1])
+                    if best is None or score < best[0]:
+                        best = (score, ct2, cm2)
+            if best is not None:
+                _score, ct, cm = best
+            else:
+                # 退行時の安全弁（両側の候補が単一かつ同一穴を指す等の極端なケース）:
+                # 元の逐次アルゴリズム（tgt を先に確定し、その穴を除外して main を探す）にフォールバック。
+                ct_single = _pick_single(tgt, pa, pb)
+                ct = ct_single if ct_single else (0, pa, pa)
+                cm_single = _pick_single(main, pb, pa, exclude=(ct[1] if ct_single else None))
+                cm = cm_single if cm_single else (0, pb, pb)
+
+            ends = []
+            for grp_cand, anchor2, had_real in ((ct, pa, bool(cand_tgt)), (cm, pb, bool(cand_main))):
+                if not had_real:
                     ends.append({"tap": None, "pad": list(anchor2), "hole": list(anchor2), "direct": True})
                     warnings.append(f"{net}: {anchor2} 直付け")
                 else:
-                    _pen, hole, member = cand
+                    _pen, hole, member = grp_cand
                     ends.append({"tap": None, "pad": list(anchor2), "hole": list(hole), "bridgeTo": list(member), "direct": False})
                     net_of_hole[hole] = net
                     bd.occupied.add(hole)
                     find(hole)
                     union(hole, member)
+                    # INC-3(a) 再union: 着地穴の4近傍にある同ネット既存導体「全て」と union する
+                    # （bridgeTo の1穴だけでなく）。V5 10B/10C 型の丸ごと余分な1本＋直付けを構造的に消す。
+                    for nb in neighbors(hole):
+                        if nb == member:
+                            continue
+                        if nb in net_of_hole and net_of_hole[nb] == net and find(hole) != find(nb):
+                            _add_bridge(hole, nb)
+                            union(hole, nb)
             tapmap = {tuple(v): k for k, v in bd.lead_pos.items()}
             for e in ends:
                 e["tap"] = tapmap.get(tuple(e["pad"]), net)
-            union(tuple(ends[0]["hole"]), tuple(ends[1]["hole"]))
+            h0, h1 = tuple(ends[0]["hole"]), tuple(ends[1]["hole"])
+            union(h0, h1)
+            # INC-3(b) 隣接=ブリッジ: 両端の着地穴が直交隣接なら、1穴スパンの被覆線を出さずに
+            # 半田ブリッジ1本（pad_bridges）へ置換する（bridgeTo 経由で (a) がすでに同じペアを
+            # 追加済みのことが多いが _add_bridge が重複を防ぐので常に安全に呼べる）。
+            # 注意: erc_audit は net_of_hole ではなく leads/padBridges/wires からグラフを再構築する
+            # ため、着地穴→member（元の実導体）の接続は通常「省略しなかった場合の wire オブジェクト自身の
+            # bridgeTo」が担う。ここで wire を出さない選択をする以上、その bridgeTo 分も pad_bridges として
+            # 明示しないと、着地穴どうしが「本体から浮いた孤立ペア」になり openNets を誘発する（要修正済みの
+            # 実バグ: ci_smoke で pico_plant_sitter Recommended に openNets が出て発覚）。
+            if _adjacent(h0, h1):
+                _add_bridge(h0, h1)
+                for e in ends:
+                    if not e["direct"] and e.get("bridgeTo"):
+                        _add_bridge(tuple(e["hole"]), tuple(e["bridgeTo"]))
+                continue
             wlen = dist(ends[0]["hole"], ends[1]["hole"])
             mx = bd.cdef(net).get("max_wire_holes", 99)
             if wlen > mx:

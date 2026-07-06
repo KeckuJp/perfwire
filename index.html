@@ -481,6 +481,10 @@ function mm(v){return v/CFG.pitch*PITCH;}
 function adj(a,b){return Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1])===1;}
 function cheb(a,b){return Math.max(Math.abs(a[0]-b[0]),Math.abs(a[1]-b[1]));}
 function dist(a,b){return Math.hypot(a[0]-b[0],a[1]-b[1]);}
+// INC-3(c) craft: 島連結ワイヤの両端着地穴を選ぶとき、軸整列（同じ列/行＝直交ランになれる）でない
+// ペアに課すペナルティ。solver.py の K_DIAG_ENDPOINT と同一値を鏡映（両エンジンで斜め線比率を同様に抑制）。
+// 実測でのスイープ根拠は solver.py 側コメント参照（3〜10 は無風、15 で頭打ち値に到達しプラトー）。
+var K_DIAG_ENDPOINT=15.0;
 function clsOf(net){for(var c in CFG.classes)if(CFG.classes[c].nets.indexOf(net)>=0)return c;return null;}
 function cdef(net){var c=clsOf(net);return c?CFG.classes[c]:{maxWire:99,adjPen:1,keepAway:[],keepHoles:0};}
 function physFor(p){var P=Object.assign({},CFG.physical[p.kind]);if(CFG.partOv[p.id])Object.assign(P,CFG.partOv[p.id]);return P;}
@@ -519,26 +523,71 @@ function connect(){var g=geom(),parent={};
 function find(x){if(parent[x]===undefined)parent[x]=x;while(parent[x]!==x){parent[x]=parent[parent[x]];x=parent[x];}return x;}
 function uni(a,b){parent[find(a)]=find(b);}
 var netHole={};Object.keys(g.leadPos).forEach(function(k){var pos=g.leadPos[k];netHole[key(pos)]=D.leads[k]?D.leads[k].net:null;find(key(pos));});
-var pads=[],nets={};Object.keys(netHole).forEach(function(k){var n=netHole[k];if(n)(nets[n]=nets[n]||[]).push(k.split(',').map(Number));});
+var pads=[],bridgeSeen={};
+function addBridge(a,b){var ka=key(a),kb=key(b),bk=ka<kb?ka+'|'+kb:kb+'|'+ka;if(bridgeSeen[bk])return;bridgeSeen[bk]=1;pads.push([a.slice(),b.slice()]);}
+var nets={};Object.keys(netHole).forEach(function(k){var n=netHole[k];if(n)(nets[n]=nets[n]||[]).push(k.split(',').map(Number));});
 Object.keys(nets).sort().forEach(function(n){nets[n].sort(function(a,b){return a[0]-b[0]||a[1]-b[1];}).forEach(function(a){
-[[1,0],[0,1],[-1,0],[0,-1]].forEach(function(d){var q=[a[0]+d[0],a[1]+d[1]];if(netHole[key(q)]===n&&find(key(a))!==find(key(q))){pads.push([a.slice(),q]);uni(key(a),key(q));}});});});
+[[1,0],[0,1],[-1,0],[0,-1]].forEach(function(d){var q=[a[0]+d[0],a[1]+d[1]];if(netHole[key(q)]===n&&find(key(a))!==find(key(q))){addBridge(a,q);uni(key(a),key(q));}});});});
+function adjacentH(h0,h1){return!(h0[0]===h1[0]&&h0[1]===h1[1])&&(Math.abs(h0[0]-h1[0])+Math.abs(h0[1]-h1[1]))===1;}
 var wires=[],warn=[];
 Object.keys(nets).sort().forEach(function(n){var guard=0;
 while(guard++<50){var comps={};Object.keys(netHole).forEach(function(k){if(netHole[k]===n)(comps[find(k)]=comps[find(k)]||[]).push(k.split(',').map(Number));});
 var gs=Object.keys(comps).map(function(k){return comps[k];});if(gs.length<=1)break;
 gs.sort(function(a,b){return b.length-a.length;});var main=gs[0],bestPair=null;
 for(var gi=1;gi<gs.length;gi++)gs[gi].forEach(function(a){main.forEach(function(b){var dd=dist(a,b);if(!bestPair||dd<bestPair[0])bestPair=[dd,a,b,gs[gi]];});});
-var pa=bestPair[1],pb=bestPair[2],tgt=bestPair[3],ends=[];
-[[tgt,pa,pb],[main,pb,pa]].forEach(function(t3){var grp=t3[0],anc=t3[1],oth=t3[2],cand=null;
+var pa=bestPair[1],pb=bestPair[2],tgt=bestPair[3];
+// INC-3(a)/(c): 候補は1件だけ argmin するのでなく4近傍の空き穴候補を全列挙する（候補空間自体は従来と同じ）。
+// (a)向け=着地穴の再union、(c)向け=両端連動の直積スコアリングに使う。
+function candidates(grp,anc,oth){var byHole={};
 grp.slice().sort(function(a,b){return dist(a,anc)-dist(b,anc);}).forEach(function(m){
 [[1,0],[-1,0],[0,1],[0,-1]].forEach(function(d){var nb=[m[0]+d[0],m[1]+d[1]];
 if(usableFor(g,nb[0],nb[1])&&!netHole[key(nb)]){var pen=(m[0]===anc[0]&&m[1]===anc[1]?0:10)+0.05*dist(nb,oth);
+var bk=key(nb);if(!byHole[bk]||pen<byHole[bk][0])byHole[bk]=[pen,nb,m];}});});
+return Object.keys(byHole).map(function(k){return byHole[k];});}
+function pickSingle(grp,anc,oth,exclude){var cand=null;
+grp.slice().sort(function(a,b){return dist(a,anc)-dist(b,anc);}).forEach(function(m){
+[[1,0],[-1,0],[0,1],[0,-1]].forEach(function(d){var nb=[m[0]+d[0],m[1]+d[1]];
+if(exclude&&nb[0]===exclude[0]&&nb[1]===exclude[1])return;
+if(usableFor(g,nb[0],nb[1])&&!netHole[key(nb)]){var pen=(m[0]===anc[0]&&m[1]===anc[1]?0:10)+0.05*dist(nb,oth);
 if(!cand||pen<cand[0])cand=[pen,nb,m];}});});
-if(!cand){ends.push({tap:null,pad:anc.slice(),hole:anc.slice(),direct:true});warn.push(n+': '+anc+tr(' 直付け'));}
-else{ends.push({tap:null,pad:anc.slice(),hole:cand[1].slice(),bridgeTo:cand[2].slice(),direct:false});netHole[key(cand[1])]=n;g.occ[key(cand[1])]='wire';find(key(cand[1]));uni(key(cand[1]),key(cand[2]));}});
+return cand;}
+var candTgt=candidates(tgt,pa,pb),candMain=candidates(main,pb,pa);
+function axisAligned(h1,h2){return h1[0]===h2[0]||h1[1]===h2[1];}
+// INC-3(c) 直交優先: 両側を独立に argmin するのでなく、両端候補の直積から
+// (0 if 軸整列 else K_DIAG_ENDPOINT) + 既存 pen 合計 + 0.05*ユークリッド長 が最小のペアを選ぶ。
+var optsT=candTgt.length?candTgt:[[0,pa,pa]],optsM=candMain.length?candMain:[[0,pb,pb]];
+var best=null;
+optsT.forEach(function(ct2){optsM.forEach(function(cm2){
+if(ct2[1][0]===cm2[1][0]&&ct2[1][1]===cm2[1][1])return;
+var axisPen=axisAligned(ct2[1],cm2[1])?0:K_DIAG_ENDPOINT;
+var score=axisPen+ct2[0]+cm2[0]+0.05*dist(ct2[1],cm2[1]);
+if(!best||score<best[0])best=[score,ct2,cm2];});});
+var ct,cm;
+if(best){ct=best[1];cm=best[2];}
+else{var ctSingle=pickSingle(tgt,pa,pb,null);ct=ctSingle||[0,pa,pa];
+var cmSingle=pickSingle(main,pb,pa,ctSingle?ct[1]:null);cm=cmSingle||[0,pb,pb];}
+var ends=[];
+[[ct,pa,candTgt.length>0],[cm,pb,candMain.length>0]].forEach(function(t3){var gc=t3[0],anc=t3[1],hadReal=t3[2];
+if(!hadReal){ends.push({tap:null,pad:anc.slice(),hole:anc.slice(),direct:true});warn.push(n+': '+anc+tr(' 直付け'));}
+else{var hole=gc[1],member=gc[2];
+ends.push({tap:null,pad:anc.slice(),hole:hole.slice(),bridgeTo:member.slice(),direct:false});
+netHole[key(hole)]=n;g.occ[key(hole)]='wire';find(key(hole));uni(key(hole),key(member));
+// INC-3(a) 再union: 着地穴の4近傍にある同ネット既存導体「全て」と union する（bridgeTo の1穴だけでなく）。
+[[1,0],[-1,0],[0,1],[0,-1]].forEach(function(d){var nb=[hole[0]+d[0],hole[1]+d[1]];
+if(nb[0]===member[0]&&nb[1]===member[1])return;
+if(netHole[key(nb)]===n&&find(key(hole))!==find(key(nb))){addBridge(hole,nb);uni(key(hole),key(nb));}});}});
 var tapmap={};Object.keys(g.leadPos).forEach(function(k){tapmap[key(g.leadPos[k])]=k;});
 ends.forEach(function(e){e.tap=tapmap[key(e.pad)]||n;});
-uni(key(ends[0].hole),key(ends[1].hole));
+var h0=ends[0].hole,h1=ends[1].hole;
+uni(key(h0),key(h1));
+// INC-3(b) 隣接=ブリッジ: 両端の着地穴が直交隣接なら被覆線を出さず半田ブリッジ1本に置換する
+// （addBridge が重複を防ぐので (a) がすでに同じペアを追加済みでも安全に呼べる）。
+// 注意: ercAudit は netHole でなく leads/padBridges/wires からグラフを再構築するため、着地穴→member
+// （元の実導体）の接続は本来「省略しなかった場合の wire オブジェクト自身の bridgeTo」が担う。wire を
+// 出さない以上その bridgeTo 分も addBridge しないと、着地穴どうしが本体から浮いた孤立ペアになる。
+if(adjacentH(h0,h1)){addBridge(h0,h1);
+ends.forEach(function(e){if(!e.direct&&e.bridgeTo)addBridge(e.hole,e.bridgeTo);});
+continue;}
 wires.push({net:n,a:ends[0],b:ends[1]});}});
 D.padBridges=pads;D.wires=wires;return warn;}
 function preparePropose(){var g0=geom();
