@@ -10,7 +10,16 @@
 ![single file](https://img.shields.io/badge/app-single%20HTML%20file-success)
 ![zero deps](https://img.shields.io/badge/dependencies-0-success)
 
-![perfwire](docs/hero.png)
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/media/demo-filmstrip.png">
+  <img src="docs/media/demo.gif" width="960" alt="Animated demo: dragging a wire endpoint off its hole leaves that net open; the audit panel immediately flags it; pressing Ctrl+Z restores the fab-ready state.">
+</picture>
+
+*(Animated GIF, ~2 s of motion, plays once — [static filmstrip](docs/media/demo-filmstrip.png) if it didn't load)*
+
+1. Drag a wire endpoint off the hole it's connected to
+2. The audit panel immediately flags the open net
+3. Ctrl+Z restores the board to fab-ready
 
 **Try it now:** clone the repo and open `index.html` in any browser — no install, no server, no
 account. It opens with a real embedded example (a Raspberry Pi Pico plant-watering board) whose
@@ -182,6 +191,11 @@ independent human inspection before you apply power for the first time. See `SAF
 
 **For the human: the editor**
 - **WebGL 3D view** — drag to orbit freely, scroll to zoom. Parts render as their real package shapes (an LED's dome, a TO-220's heatsink tab, a pin header's individual pins — not a floating box), with bent leads and solder fillets so the board reads as *assembled*, not schematic. Hover or click a net on a dense board to ghost everything else. Falls back automatically to a fixed-angle view if WebGL isn't available.
+  <details><summary>▶ Watch the 3D view (animated GIF, ~2 s of motion, loops)</summary>
+
+  ![Animated demo: orbiting the 3D view around a populated board, then zooming in on the parts](docs/media/demo-3d.gif)
+
+  </details>
 - **Photo underlay** — drop a photo of the real board under the grid (opacity / scale / rotation / mirror for backside shots) and trace reality by dragging parts onto it. AI guessing hole positions from photos fails; a human tracing over a photo doesn't.
 - **Guided soldering mode** — walk the build one joint at a time on a dimmed board with the current step highlighted and named. Arrow keys to navigate, Enter to check off (progress persists), mirror view for soldering from the back side.
 - **Virtual continuity tester** — click two holes, see whether the plan connects them. Exports a markdown beep-out checklist per net — including adjacent different-net pairs that must NOT beep.

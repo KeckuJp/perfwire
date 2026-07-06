@@ -1,7 +1,7 @@
 <div align="right"><a href="README.md">English</a> | 日本語</div>
 
 <!--
-  SYNC: README.md @ v0.6.12
+  SYNC: README.md @ v0.6.13
   英語版 README.md が正本です。翻訳に遅れがある場合は英語版を優先してください。
   The English README is canonical; this translation may lag behind.
 -->
@@ -16,7 +16,16 @@
 ![single file](https://img.shields.io/badge/app-single%20HTML%20file-success)
 ![zero deps](https://img.shields.io/badge/dependencies-0-success)
 
-![perfwire](docs/hero.png)
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/media/demo-filmstrip.png">
+  <img src="docs/media/demo.gif" width="960" alt="アニメーションデモ: ワイヤ端点を穴から引き離すとそのネットが未結線になり、監査パネルが即座に指摘する。Ctrl+Zでfab-ready状態に復帰する。">
+</picture>
+
+*(アニメーションGIF、動きは約2秒、1回再生で停止 — 読み込めない場合は[静止画版](docs/media/demo-filmstrip.png))*
+
+1. ワイヤ端点を接続先の穴から引き離す
+2. 監査パネルが即座に未結線ネットを指摘する
+3. Ctrl+Zで盤面がfab-readyに復帰する
 
 **今すぐ試す:** このリポジトリをclone して `index.html` を好きなブラウザで開くだけ（インストール不要・サーバー不要・アカウント不要）。実例（Raspberry Pi Picoの自動水やり監視基板）が最初から埋め込まれており、その「Before」案には監査がすでに検出済みの意図的なミスが3つ含まれている。ドラッグで直して監査パネルが緑になるところまで見てほしい。
 
@@ -147,6 +156,11 @@ UB-WRD01のような、全穴が上下左右の隣接穴と繋がった状態で
 
 - **物理現実のモデリング** — 穴単位で正確なモデル、実寸フットプリント、`kind`=幾何プリミティブという開いた部品モデル（Raspberry Pi Pico・リレー・コネクタも`ic`一つで表現）
 - **人間向けエディタ** — **WebGL 3Dビュー**（ドラッグでオービット回転、部品は実形状で描画、密集盤面でのネットハイライト）、写真下絵トレース、ガイド付きはんだ付けモード、仮想導通テスター、共有URL、部品パレット、KiCADネットリスト取り込み、1:1印刷、diffビュー
+  <details><summary>▶ 3Dビューを見る（アニメーションGIF、動き約2秒、ループ再生）</summary>
+
+  ![アニメーションデモ: 部品が並んだ基板を3Dビューでオービット回転させ、ズームインする](docs/media/demo-3d.gif)
+
+  </details>
 - **エージェント向けCLI＆往復** — 配置の目的プリセット（`--profile easy|analog|compact`）、ガードリング合成、config叩き台生成、ビルドパケット出力、値考慮EE検査、入力lint
 
 ## 状態スキーマ（v1）

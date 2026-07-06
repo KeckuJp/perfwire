@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.6.13] — 2026-07-07
+
+### Added
+- **Animated demo GIFs in the README** (both languages). A hero GIF (`docs/media/demo.gif`, ~185KB,
+  plays once) shows the core value loop: dragging a wire endpoint off its hole immediately gets
+  flagged by the audit panel as an open net, and Ctrl+Z restores the fab-ready state — replacing
+  a logo-only placeholder image with the first real screenshot of the product in the README. A
+  second GIF (`docs/media/demo-3d.gif`, ~0.85MB, loops) shows the WebGL 3D view orbiting a
+  populated board, tucked inside a collapsed `<details>` in the Features section so it only plays
+  once a reader opts in by expanding it. Both were captured via scripted Chrome DevTools Protocol
+  mouse/keyboard events against the real app (not staged or hand-edited) and assembled into GIF
+  form with Pillow (no ffmpeg dependency). A static filmstrip (`docs/media/demo-filmstrip.png`)
+  serves as the `prefers-reduced-motion` fallback and as a plain-image alternative if the GIF
+  fails to load; both READMEs carry descriptive alt text plus a numbered-steps caption so the
+  demo's content and outcome don't depend on the animation actually playing.
+- Designed by a 4-expert panel (GIF-production practice, HN/Reddit/X virality patterns,
+  accessibility for motion content, repository asset hosting) reviewed adversarially before
+  implementation — the review caught that the originally planned storyboard (drag a wire onto a
+  neighboring net's hole) doesn't actually trigger a fault in the real editor (the drop snaps
+  back), redirecting the capture to the interaction that genuinely demonstrates the audit engine
+  (drag to an empty hole → `openNets`).
+
 ## [0.6.12] — 2026-07-06
 
 ### Added
