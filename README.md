@@ -10,6 +10,8 @@
 ![single file](https://img.shields.io/badge/app-single%20HTML%20file-success)
 ![zero deps](https://img.shields.io/badge/dependencies-0-success)
 
+![perfwire](docs/hero.png)
+
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="docs/media/demo-filmstrip.png">
   <img src="docs/media/demo.gif" width="960" alt="Animated demo: dragging a wire endpoint off its hole leaves that net open; the audit panel immediately flags it; pressing Ctrl+Z restores the fab-ready state.">
