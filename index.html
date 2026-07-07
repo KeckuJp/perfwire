@@ -344,7 +344,7 @@ var JE={
 'レイヤー: 部品 切替':'Layer: toggle parts','レイヤー: ラベル 切替':'Layer: toggle labels','レイヤー: ブリッジ 切替':'Layer: toggle bridges',
 'レイヤー: 端子 切替':'Layer: toggle ends','レイヤー: 注意× 切替':'Layer: toggle caution ×','レイヤー: ブロック穴 切替':'Layer: toggle blocked holes',
 '3Dビュー ツールバー':'perfboard 3D view toolbar','レイヤー表示切替: {0}':'Toggle layer: {0}',
-'3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替・分離表示など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。':'3D view controls: the "3D" button reveals a toolbar (e.g. layer visibility toggles, isolate mode) at the top of the 3D view. Click a "Nets" row in the legend to pin it in the 3D view.',
+'3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替・分離表示・X線表示など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。':'3D view controls: the "3D" button reveals a toolbar (e.g. layer visibility toggles, isolate mode, X-ray mode) at the top of the 3D view. Click a "Nets" row in the legend to pin it in the 3D view.',
 'ネット一覧':'Nets','配線 {0}本':'{0} wires',
 'クリックでこのネットを3Dビューに固定表示（もう一度クリックで解除）':'Click to pin this net in the 3D view (click again to unpin)',
 'ホバーで基板上のこのネットを強調。3Dビューではクリックで固定表示できます。':'Hover to highlight this net on the board. In the 3D view, click to pin it.',
@@ -355,6 +355,11 @@ var JE={
 '選択中の部品/固定中のネット以外を非表示にする（もう一度クリックで解除）':'Hide everything except the selected part(s) / pinned net (click again to release)',
 '分離表示: 選択部品/固定ネット以外を非表示にしました（Escまたはもう一度クリックで解除）':'Isolate: hid everything except the selected part(s) / pinned net (Esc or click again to release)',
 '分離表示を解除しました。':'Isolate mode released.',
+'X線表示':'X-ray','（X線）':'(X-ray)',
+'3Dビュー: X線表示 切替':'3D view: toggle X-ray',
+'部品ボディを半透明にして、貫通点や下の配線を透かして見せます（もう一度クリックで解除）':'Make part bodies semi-transparent to reveal lead entry points and wires underneath (click again to turn off)',
+'X線表示: 部品ボディを半透明にしました（もう一度クリックで解除）':'X-ray: part bodies are now semi-transparent (click again to turn off)',
+'X線表示を解除しました。':'X-ray mode turned off.',
 '写真を読み込み（下絵）':'Load photo (underlay)','写真を消去':'Clear photo','裏面ビュー 切替':'Toggle mirror view','作業ガイドを開始':'Start work guide','作業ガイドの進捗をリセット':'Reset guide progress','導通チェックリスト生成':'Generate continuity checklist',
 '比較':'Diff','比較を終了':'Close diff','編集前':'unedited original','比較: 編集前と比較':'Diff vs unedited original','比較を終了する':'Close the diff overlay',
 'デカップリング':'Decoupling','配線長':'Wire length','全クラス上限内':'all within class limits','本体重なり':'Body overlap','警告':'warn','パッド接合数':'Pad joints','以下':' max','ERC':'ERC','クリーン':'clean','トポロジ':'Topology','総合':'Overall','件':'','PASS ✓ 製作可':'PASS ✓ fab-ready',
@@ -1626,7 +1631,7 @@ row.onclick=function(){if(!GL3D.on)return;GL3D.pinnedNet=(GL3D.pinnedNet===net)?
 box.appendChild(row);});any=true;}
 if(!any)box.innerHTML='<div class="hint">'+tr('部品がありません')+'</div>';
 var g3h=document.createElement('div');g3h.className='hint';g3h.style.marginTop='8px';
-g3h.textContent=tr('3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替・分離表示など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。');
+g3h.textContent=tr('3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替・分離表示・X線表示など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。');
 box.appendChild(g3h);}
 /* NETPALはネット割当順(netColor参照)に並ぶ12色。先頭8色は正常/protan/deutan(P型/D型)の
    3視覚モード全てでペアワイズΔE76(CIELAB, Viénot 1999法でCVDをシミュレート)>=25を満たすよう
@@ -1980,6 +1985,7 @@ render();auditSoon();}},
 {n:'レイヤー: 注意× 切替',k:'layer caution',f:function(){setLayer('caut',!LY.caut);}},
 {n:'レイヤー: ブロック穴 切替',k:'layer blocked',f:function(){setLayer('blocked',!LY.blocked);}},
 {n:'3Dビュー: 分離表示 切替',k:'iso 3d isolate focus solo hide unrelated ghost',f:function(){var btn=document.getElementById('g3-isolate-btn');if(btn)btn.click();}},
+{n:'3Dビュー: X線表示 切替',k:'iso 3d xray x-ray transparent see through body',f:function(){var btn=document.getElementById('g3-xray-btn');if(btn)btn.click();}},
 {n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}},
 {n:'写真を読み込み（下絵）',k:'photo image load',f:function(){document.getElementById('ph-load').click();}},
 {n:'写真を消去',k:'photo clear',f:function(){document.getElementById('ph-clear').click();}},
@@ -2789,6 +2795,7 @@ function setIso(v){if(v===ISO.on)return;ISO.on=v;
  GL3D.on=false;/* 3Dを閉じる/gl3dInit失敗でCanvas 2D等角にフォールバックする経路は全てWebGL非アクティブ */
  GL3D.isolate=false;/* isolate(増分3/8)は3Dビュー専用の一時状態なので、閉じるたびにリセット
    (次に開いた時、前回のisolateがGL3D.on再突入前から効いているように見える混乱を防ぐ)。 */
+ GL3D.xray=false;/* X線(増分4/8)も同様に3Dビュー専用の一時状態なので閉じるたびにリセット */
  updateGl3dPinChip();/* GL3D専用チップなのでGL3D.onがfalseになったら必ず隠す */
  buildLegend();/* 同上: 2Dへ戻った直後にも凡例のネット行案内文を最新化する */
  if(GL3D.rotRaf){cancelAnimationFrame(GL3D.rotRaf);GL3D.rotRaf=null;}/* 90°スナップ回転トゥイーンが3Dクローズ後も回り続けないよう即キャンセル(gl3dSnapRotateのstep2ガードと二重の安全策) */
@@ -2825,7 +2832,7 @@ document.getElementById('z-isorot').onclick=function(){if(GL3D.on)gl3dSnapRotate
    薄いので両面から見える必要がある。低ポリなシーン(ホビーボード規模)なので
    culling省略のコストは無視できる(非力な統合GPUでも問題にならない)。 */
 var GL3D={on:false,ok:null,gl:null,canvas:null,
- prog:null,aPos:-1,aNrm:-1,aCol:-1,aHL:-1,aMat:-1,uProj:null,uView:null,uModel:null,uLight:null,uAmb:null,
+ prog:null,aPos:-1,aNrm:-1,aCol:-1,aHL:-1,aMat:-1,aXr:-1,uProj:null,uView:null,uModel:null,uLight:null,uAmb:null,uXray:null,
  progTex:null,aPosT:-1,aNrmT:-1,aUV:-1,uProjT:null,uViewT:null,uModelT:null,uLightT:null,uAmbT:null,uTex:null,
  /* アウトライン(反転ハル)パス: 頂点シェーダでカメラ方向との内積を計算しvaryingで渡し、
     フラグメント側でdiscardする(gl.cullFaceに頼らない設計。理由はgl3dPushBox等が任意の
@@ -2844,7 +2851,7 @@ var GL3D={on:false,ok:null,gl:null,canvas:null,
     極性+マークを焼き込む。 */
  progLbl:null,aCenterL:-1,aCornerL:-1,aUVL:-1,uProjL:null,uViewL:null,uRightL:null,uUpL:null,uTexL:null,uLblFadeL:null,
  lblCBuf:null,lblOBuf:null,lblUBuf:null,lblTex:null,lblVcount:0,
- vbuf:null,nbuf:null,cbuf:null,hlbuf:null,mbuf:null,vcount:0,topVBuf:null,topNBuf:null,topUVBuf:null,tex:null,
+ vbuf:null,nbuf:null,cbuf:null,hlbuf:null,mbuf:null,xrbuf:null,vcount:0,topVBuf:null,topNBuf:null,topUVBuf:null,tex:null,
  /* tagPart/tagNet: 頂点ごとの所属(部品indexまたはnet index、どちらも無ければ-1)。ジオメトリ
     再構築時のみ更新するCPU側の配列(GPUへは送らない)。選択/ホバー状態が変わるたびに毎フレーム
     ここから小さなaHL(0..1)バッファだけを再計算してアップロードする＝ジオメトリ本体(位置/法線/色)
@@ -2870,6 +2877,12 @@ var GL3D={on:false,ok:null,gl:null,canvas:null,
     hkキー(gl3dUpdateHL)に必ず含めること(「1操作遅れ」既知バグ類型の再演防止、
     pinnedNetの教訓と同じ)。 */
  isolate:false,
+ /* xray(増分4/8): 部品ボディを市松模様discardで半透明化し、下の貫通点/配線を透かして
+    見せる3Dビュー専用トグル。isolateと違いフォーカス集合(pinnedNet/selSet)に依存しない
+    ので常時押せる(disabled化しない)。ジオメトリ(aXr)はgeomKey再構築時のみ静的に
+    決まる頂点フラグで、ON/OFF自体はuXrayという毎フレームのuniformだけで切り替わる
+    (isolateのように再構築やaHL再計算は不要=gl3dInvalidate()での再描画のみで足りる)。 */
+ xray:false,
  yaw:45*Math.PI/180,pitch:30*Math.PI/180,dist:400,tx:0,ty:0,drag:null,raf:null,dpr:1};
 function m4ident(){return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);}
 function m4mul(a,b){var o=new Float32Array(16);for(var c=0;c<4;c++)for(var r=0;r<4;r++){var s=0;for(var k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s;}return o;}
@@ -2901,18 +2914,20 @@ function hex2rgb01(hex){var hh=hex.charAt(0)==='#'?hex.slice(1):hex;if(hh.length
 /* ソリッドパス(スラブ側面/底面・部品ボックス・配線帯)。単一のtriangle soupにまとめて
    1 draw callで描く(弱いGPUでもdraw call数を増やさないための設計)。色は頂点属性
    (aColor)で持つ＝オブジェクトごとにuColorを切り替える必要が無い。 */
-var GL3D_VS='attribute vec3 aPos;attribute vec3 aNormal;attribute vec3 aColor;attribute float aHL;attribute float aMat;'+
- 'uniform mat4 uProj,uView,uModel;varying vec3 vNormal;varying vec3 vColor;varying float vHL;varying float vDepth;varying float vMat;'+
+var GL3D_VS='attribute vec3 aPos;attribute vec3 aNormal;attribute vec3 aColor;attribute float aHL;attribute float aMat;attribute float aXr;'+
+ 'uniform mat4 uProj,uView,uModel;varying vec3 vNormal;varying vec3 vColor;varying float vHL;varying float vDepth;varying float vMat;varying float vXr;'+
  /* vDepth(C10デプスキュー用): カメラ空間でのZ距離(手前が小さい正の値になるよう符号反転)。
     view*model後のzは正射影下ではカメラ前方が負なので-1倍する。射影前のview空間量なので
     ジオメトリの生成方法(gl3dPushBox等)には一切影響しない=render-onlyの追加varying。
     vMat(INC4/C06): 頂点ごとの光沢度(0..1、pM配列由来)をそのままvaryingへ渡すだけ
-    (補間は三角形内の材質混在=通常ない想定だが、あっても線形補間で自然に馴染む)。 */
+    (補間は三角形内の材質混在=通常ない想定だが、あっても線形補間で自然に馴染む)。
+    vXr(INC-04/X線): 頂点ごとの「ボディ扱い(=X線モードで透過対象)か」フラグ(0/1、
+    pTP/pM由来、gl3dBuildSolidGeom末尾で導出=aXr)をそのままvaryingへ渡す。 */
  'void main(){vec4 wp=uModel*vec4(aPos,1.0);vec4 vp=uView*wp;gl_Position=uProj*vp;'+
- 'vNormal=mat3(uModel)*aNormal;vColor=aColor;vHL=aHL;vDepth=-vp.z;vMat=aMat;}';
-var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;varying float vHL;varying float vDepth;varying float vMat;'+
+ 'vNormal=mat3(uModel)*aNormal;vColor=aColor;vHL=aHL;vDepth=-vp.z;vMat=aMat;vXr=aXr;}';
+var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;varying float vHL;varying float vDepth;varying float vMat;varying float vXr;'+
  'uniform vec3 uLight;uniform float uAmbUp,uAmbDn;uniform vec3 uHalf,uViewDir;'+
- 'uniform float uFogNear,uFogScale,uFogMax;uniform vec3 uFogCol,uGhostTint;'+
+ 'uniform float uFogNear,uFogScale,uFogMax;uniform vec3 uFogCol,uGhostTint;uniform float uXray;'+
  /* uLight is intentionally NOT normalized here: its magnitude is calibrated to match
     the 2D isometric normalShade() model (dot(n,LIGHT)/|n|, LIGHT itself unnormalized)
     so the two views render the same brightness for the same face. This diffuse term
@@ -2945,7 +2960,13 @@ var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;va
     discardされず、文脈として残る)。閾値を-0.99にして通常ゴースティングの-0.85/-0.45
     は素通りさせる(isolate OFF時の既存の減光表示に一切影響しない)。透明合成は使わず
     discardのみ(triangle-soup+深度テスト設計を壊さない、既決事項)。 */
+ /* X線(INC-04): uXray>0.5(トグルON)かつvXr>0.5(=このフラグメントが部品ボディ、
+    リード/はんだ/配線ではない)の時だけ、gl_FragCoordのxy整数部の市松模様で半分の
+    フラグメントをdiscard(スクリーンドア透過)。アルファ合成でなくdiscardなので
+    triangle-soup+深度テスト設計は壊れない(isolateのdiscard手法を踏襲)。深度書込みは
+    残った側だけ発生する=追加パス無しで低コスト。 */
  'void main(){if(vHL<-0.99)discard;'+
+ 'if(uXray>0.5&&vXr>0.5){if(mod(floor(gl_FragCoord.x)+floor(gl_FragCoord.y),2.0)<0.5)discard;}'+
  'vec3 n=normalize(vNormal);float d=max(0.0,dot(n,uLight));'+
  'float amb=mix(uAmbDn,uAmbUp,n.y*0.5+0.5);float fr=amb+d;'+
  'float excess=max(0.0,fr-0.85);float f=min(fr,0.85)+0.30*(1.0-exp(-excess/0.30));'+
@@ -2956,6 +2977,10 @@ var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;va
  'base+=vec3(spec+rim)*hlAtt;'+
  'vec3 tinted;if(vHL>=0.0){tinted=mix(base,vec3(0.37,0.86,1.0),vHL*0.55);}'+
  'else{float lum=dot(base,vec3(0.299,0.587,0.114));tinted=mix(base,mix(vec3(lum),uGhostTint,0.5)*0.55,-vHL);}'+
+ /* X線: 市松模様をすり抜けて残った「殻」フラグメントもuGhostTint方向へ~35%
+    減衰させ、単なる荒い網目でなく「透けた殻」に読ませる(指示(2)、既存ゴースト色を
+    再利用=基板色由来で新規uniformを増やさない)。 */
+ 'if(uXray>0.5&&vXr>0.5){tinted=mix(tinted,uGhostTint,0.35);}'+
  'float fog=clamp((vDepth-uFogNear)*uFogScale,0.0,uFogMax);'+
  'tinted=mix(tinted,uFogCol,fog);'+
  'gl_FragColor=vec4(tinted,1.0);}';
@@ -3042,7 +3067,7 @@ function gl3dProgram(gl,vsSrc,fsSrc){var vs=gl3dShader(gl,gl.VERTEX_SHADER,vsSrc
     そのシェーダに存在しない呼び出しはno-op(仕様上エラーにならない)なので両方呼んで安全。 */
  gl.bindAttribLocation(p,0,'aPos');gl.bindAttribLocation(p,1,'aNormal');
  gl.bindAttribLocation(p,2,'aColor');gl.bindAttribLocation(p,2,'aUV');gl.bindAttribLocation(p,3,'aHL');
- gl.bindAttribLocation(p,4,'aMat');
+ gl.bindAttribLocation(p,4,'aMat');gl.bindAttribLocation(p,5,'aXr');
  /* progLbl(ビルボード)はaPos/aNormalの代わりにaCenter/aCornerを使うので同じ0/1へ固定する
     (名前がそのシェーダに無い呼び出しはno-opなので他プログラムへの影響は無い)。 */
  gl.bindAttribLocation(p,0,'aCenter');gl.bindAttribLocation(p,1,'aCorner');
@@ -3686,7 +3711,15 @@ function gl3dBuildSolidGeom(){
  if(LY.labels)gl3dLabelEntries().forEach(function(e){if(!e.raised)return;
   gl3dPushCyl(pV,pN,pC,pM,pTP,pTN,-1,-1,e.x,e.y0,e.z,e.x,e.y,e.z,0.07,0.07,hex2rgb01('#8a9099'),6,false,false,GL3D_MAT_MARK);});
  GL3D.tagPart=pTP;GL3D.tagNet=pTN;GL3D.netList=netList;
- return {pos:new Float32Array(pV),nrm:new Float32Array(pN),col:new Float32Array(pC),mat:new Float32Array(pM),count:pV.length/3};}
+ /* X線(INC-04): 頂点ごとの透過対象フラグ(aXr)をpTP/pM(既に積み終えた並行配列)から
+    静的に導出する(追加の頂点走査1回のみ、push系API群のシグネチャは変えない)。
+    「部品由来(pTP>=0)かつ材質がリード/はんだでない」頂点だけ1.0(=ボディ)。リード
+    (GL3D_MAT_LEAD)・はんだフィレット(GL3D_MAT_SOLDER)は常に0.0(不透明のまま)にする
+    ことで、X線ONでも「どこで基板に刺さるか」が消えない(指示どおり)。配線/ブリッジ/
+    ラベル線/スラブは全てpTP=-1(上のpush呼び出し参照)なので自動的に対象外(0.0)。 */
+ var pXr=new Array(pTP.length);
+ for(var xi=0;xi<pTP.length;xi++)pXr[xi]=(pTP[xi]>=0&&pM[xi]!==GL3D_MAT_LEAD&&pM[xi]!==GL3D_MAT_SOLDER)?1.0:0.0;
+ return {pos:new Float32Array(pV),nrm:new Float32Array(pN),col:new Float32Array(pC),mat:new Float32Array(pM),xr:new Float32Array(pXr),count:pV.length/3};}
 /* 基板天面テクスチャ(オフスクリーンCanvas 2D)。既存Canvas 2D等角ビューの
    isoEnsureBake()と同じ要素(穴パターン・strip/meshの銅箔・trackCuts・blocked×・
    行/列ラベル)を焼き込むが、iproj()の等角投影ではなく、天面を真上から見た単純な
@@ -4066,6 +4099,7 @@ function gl3dRebuildIfNeeded(gl){var ck=gl3dGeomKey();if(GL3D.geomKey===ck)retur
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.nbuf);gl.bufferData(gl.ARRAY_BUFFER,solid.nrm,gl.STATIC_DRAW);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.cbuf);gl.bufferData(gl.ARRAY_BUFFER,solid.col,gl.STATIC_DRAW);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.mbuf);gl.bufferData(gl.ARRAY_BUFFER,solid.mat,gl.STATIC_DRAW);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.xrbuf);gl.bufferData(gl.ARRAY_BUFFER,solid.xr,gl.STATIC_DRAW);
  var shadow=gl3dBuildShadowGeom();GL3D.shcount=shadow.count;
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.shbuf);gl.bufferData(gl.ARRAY_BUFFER,shadow.pos,gl.STATIC_DRAW);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.shShBuf);gl.bufferData(gl.ARRAY_BUFFER,shadow.shade,gl.STATIC_DRAW);
@@ -4111,7 +4145,7 @@ function gl3dCreateResources(gl){
  GL3D.prog=gl3dProgram(gl,GL3D_VS,GL3D_FS);
  GL3D.aPos=gl.getAttribLocation(GL3D.prog,'aPos');GL3D.aNrm=gl.getAttribLocation(GL3D.prog,'aNormal');
  GL3D.aCol=gl.getAttribLocation(GL3D.prog,'aColor');GL3D.aHL=gl.getAttribLocation(GL3D.prog,'aHL');
- GL3D.aMat=gl.getAttribLocation(GL3D.prog,'aMat');
+ GL3D.aMat=gl.getAttribLocation(GL3D.prog,'aMat');GL3D.aXr=gl.getAttribLocation(GL3D.prog,'aXr');
  GL3D.uProj=gl.getUniformLocation(GL3D.prog,'uProj');GL3D.uView=gl.getUniformLocation(GL3D.prog,'uView');
  GL3D.uModel=gl.getUniformLocation(GL3D.prog,'uModel');GL3D.uLight=gl.getUniformLocation(GL3D.prog,'uLight');
  /* INC1: uAmb(単一環境光)をuAmbUp/uAmbDn(半球アンビエント)へ置換。加えてBlinn-Phong
@@ -4124,6 +4158,7 @@ function gl3dCreateResources(gl){
  /* C11: ゴースト色(基板色由来、slabHexから導出=uFogColと同じ発想)。テクスチャパス
     (基板天面)にはゴースティング対象の頂点が無いのでprogTex側には持たない。 */
  GL3D.uGhostTint=gl.getUniformLocation(GL3D.prog,'uGhostTint');
+ GL3D.uXray=gl.getUniformLocation(GL3D.prog,'uXray');
  GL3D.progTex=gl3dProgram(gl,GL3D_VS_TEX,GL3D_FS_TEX);
  GL3D.aPosT=gl.getAttribLocation(GL3D.progTex,'aPos');GL3D.aNrmT=gl.getAttribLocation(GL3D.progTex,'aNormal');
  GL3D.aUV=gl.getAttribLocation(GL3D.progTex,'aUV');
@@ -4151,7 +4186,7 @@ function gl3dCreateResources(gl){
  GL3D.uTexL=gl.getUniformLocation(GL3D.progLbl,'uTex');
  GL3D.uLblFadeL=gl.getUniformLocation(GL3D.progLbl,'uLblFade');
  GL3D.vbuf=gl.createBuffer();GL3D.nbuf=gl.createBuffer();GL3D.cbuf=gl.createBuffer();GL3D.hlbuf=gl.createBuffer();
- GL3D.mbuf=gl.createBuffer();
+ GL3D.mbuf=gl.createBuffer();GL3D.xrbuf=gl.createBuffer();
  GL3D.topVBuf=gl.createBuffer();GL3D.topNBuf=gl.createBuffer();GL3D.topUVBuf=gl.createBuffer();
  GL3D.shbuf=gl.createBuffer();GL3D.shShBuf=gl.createBuffer();
  GL3D.lblCBuf=gl.createBuffer();GL3D.lblOBuf=gl.createBuffer();GL3D.lblUBuf=gl.createBuffer();
@@ -4281,11 +4316,15 @@ function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;
     渡す=ゴースト頂点は「基板の上で影に沈んだ」ように読める(uFogCol/ghostTintの
     導出元がslabHexで共通なので基板タイプが変わっても追従する)。 */
  gl.uniform3f(GL3D.uGhostTint,fogRgb[0],fogRgb[1],fogRgb[2]);
+ /* X線(INC-04): ジオメトリ(aXr)は静的なので、ON/OFF自体はこのuniform一つで切り替わる
+    (トグル時に再構築もaHL再計算も不要、gl3dInvalidate()の1回の再描画だけで反映)。 */
+ gl.uniform1f(GL3D.uXray,GL3D.xray?1.0:0.0);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.vbuf);gl.enableVertexAttribArray(GL3D.aPos);gl.vertexAttribPointer(GL3D.aPos,3,gl.FLOAT,false,0,0);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.nbuf);gl.enableVertexAttribArray(GL3D.aNrm);gl.vertexAttribPointer(GL3D.aNrm,3,gl.FLOAT,false,0,0);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.cbuf);gl.enableVertexAttribArray(GL3D.aCol);gl.vertexAttribPointer(GL3D.aCol,3,gl.FLOAT,false,0,0);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.hlbuf);gl.enableVertexAttribArray(GL3D.aHL);gl.vertexAttribPointer(GL3D.aHL,1,gl.FLOAT,false,0,0);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.mbuf);gl.enableVertexAttribArray(GL3D.aMat);gl.vertexAttribPointer(GL3D.aMat,1,gl.FLOAT,false,0,0);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.xrbuf);gl.enableVertexAttribArray(GL3D.aXr);gl.vertexAttribPointer(GL3D.aXr,1,gl.FLOAT,false,0,0);
  if(GL3D.vcount)gl.drawArrays(gl.TRIANGLES,0,GL3D.vcount);
  /* テクスチャパス(基板天面) */
  gl.useProgram(GL3D.progTex);
@@ -4483,6 +4522,9 @@ function gl3dStatus(){var el=document.getElementById('st-stats');if(!el)return;
  el.innerHTML=tr('被覆線')+' <b>'+D.wires.length+'</b> ('+tr('直付')+' '+direct+') / 3D '+
   Math.round(((GL3D.yaw%(2*Math.PI))+2*Math.PI)%(2*Math.PI)*180/Math.PI)+'°'+
   (selPart?(' / '+tr('選択')+' <b>'+esc(selPart.id)+'</b>'+(selPart.locked?'('+tr('ロック')+')':'')):'');
+ /* X線(INC-04・指示(4)): トグルONの間は主stats行に常時「（X線）」を出す(フォーカス
+    集合に依存しないisolateと違い常時意味を持つ表示なので、isolateのような分岐は不要)。 */
+ if(GL3D.xray)el.innerHTML+=' / <b>'+esc(tr('（X線）'))+'</b>';
  /* 要望1・敵対的レビュー指摘R5: phys3d/pkgの外観寸法がconfidence='estimate'|'todo'の
     場合、選択中はここに常時開示する(会話での開示定型文だけに頼らない、UI側の
     フェイルセーフ)。ERC/配置は物理チャネル(physFor)のみを見るため汚染されないが、
@@ -4501,7 +4543,7 @@ function gl3dStatus(){var el=document.getElementById('st-stats');if(!el)return;
   else if(hoverNet){sn.innerHTML=trf('ネット <b>{0}</b>',esc(hoverNet))+(GL3D.isolate?' '+isoSuffix:'');sn.style.display='';}
   else sn.style.display='none';}
  if(GL3D.isolate&&!GL3D.pinnedNet&&!hoverNet&&selPart)el.innerHTML+=' / <b>'+esc(isoSuffix)+'</b>';
- updateGl3dIsolateBtn();}
+ updateGl3dIsolateBtn();updateGl3dXrayBtn();}
 /* isolate(増分3/8)トグルの有効/無効(disabled)とon/off表示を、選択(selSet)/固定ネット
    (pinnedNet)の変化に合わせて同期する。gl3dStatusの末尾から毎回呼ぶ(gl3dStatus自体は
    クリック選択/ネット固定/ホバー/回転/Escapeなど3Dビューの主要な状態変化のたびに
@@ -4512,6 +4554,12 @@ function updateGl3dIsolateBtn(){var btn=document.getElementById('g3-isolate-btn'
  if(!hasFocus&&GL3D.isolate)GL3D.isolate=false;
  btn.disabled=!hasFocus;btn.className=GL3D.isolate?'on':'';
  btn.title=hasFocus?tr('選択中の部品/固定中のネット以外を非表示にする（もう一度クリックで解除）'):tr('部品を選択するかネットを固定すると使えます（分離表示: それ以外を隠す）');}
+/* X線(増分4/8)トグルのon/off表示をGL3D.xrayに同期する。isolateと違いdisabled化は
+   しない(常時押せる)。setIso()が3Dビューを閉じる時にGL3D.xray=falseへリセットするため、
+   再度開いた時にgl3dStatus→ここが呼ばれてボタン表示も正しく追従する(isolate同様の
+   「ボタンのon/off表示は状態変化のたびにgl3dStatus経由で再同期する」設計を踏襲)。 */
+function updateGl3dXrayBtn(){var btn=document.getElementById('g3-xray-btn');if(!btn)return;
+ btn.className=GL3D.xray?'on':'';}
 function gl3dEaseOutCubic(t){return 1-Math.pow(1-t,3);}
 /* 90°スナップ回転(要件7)。既存#z-isorotボタンをWebGL表示中はこの動作に再定義する
    (Canvas 2D等角ビュー専用のisoRotate()には一切触れない、完全に別の関数)。GL3D.yawを
@@ -4643,7 +4691,19 @@ var ibtn=document.createElement('button');ibtn.type='button';ibtn.id='g3-isolate
 ibtn.disabled=true;ibtn.title=tr('部品を選択するかネットを固定すると使えます（分離表示: それ以外を隠す）');
 ibtn.onclick=function(){if(ibtn.disabled)return;GL3D.isolate=!GL3D.isolate;gl3dInvalidate();gl3dStatus();
  showHelp(GL3D.isolate?tr('分離表示: 選択部品/固定ネット以外を非表示にしました（Escまたはもう一度クリックで解除）'):tr('分離表示を解除しました。'));};
-igrp.appendChild(ibtn);bar.appendChild(igrp);}
+igrp.appendChild(ibtn);bar.appendChild(igrp);
+/* X線(増分4/8)トグル。isolateと違いフォーカス集合(選択/固定ネット)に依存しないので
+   常時押せる(disabled化しない)。部品ボディを市松模様で半透明化し、貫通点/下の配線を
+   透かして見せる。on/off表示はgl3dStatus内のupdateGl3dXrayBtnが再同期する(3Dビュー
+   を閉じて開き直した時にsetIso側のリセットへ追従させるため、isolate同様に個別関数を
+   持たせる)。Escチェーンには入れない(フォーカスでなくビューモードのため、ボタン/
+   パレットで解除する設計)。 */
+var xgrp=document.createElement('div');xgrp.id='g3-group-xray';xgrp.style.cssText='display:flex;gap:5px';
+var xbtn=document.createElement('button');xbtn.type='button';xbtn.id='g3-xray-btn';xbtn.textContent=tr('X線表示');
+xbtn.title=tr('部品ボディを半透明にして、貫通点や下の配線を透かして見せます（もう一度クリックで解除）');
+xbtn.onclick=function(){GL3D.xray=!GL3D.xray;gl3dInvalidate();gl3dStatus();
+ showHelp(GL3D.xray?tr('X線表示: 部品ボディを半透明にしました（もう一度クリックで解除）'):tr('X線表示を解除しました。'));};
+xgrp.appendChild(xbtn);bar.appendChild(xgrp);}
 buildGl3dBar();
 /* 「固定中ネット」チップ(増分INC-02、GL3D専用チップの挿入スロット規約に従う)。凡例まで視線を
    戻さなくても固定を解除できるよう、#gl3d-barの末尾にGL3D.pinnedNetがある間だけ出す。
