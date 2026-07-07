@@ -2762,8 +2762,11 @@ var GL3D={on:false,ok:null,gl:null,canvas:null,
     ハードウェアcull_faceに頼ると三角形ごとに輪郭が出たり出なかったりする不具合が起こり得る。
     法線ベースの判定なら頂点法線さえ外向きに正しければ巻き順に依存しない)。 */
  progOut:null,aPosO:-1,aNrmO:-1,uProjO:null,uViewO:null,uViewDirO:null,uOutWO:null,uOutColO:null,
- /* 接地影(乗算ブレンドの平面デカール)。深度書き込みOFF・DST_COLOR*ZEROの乗算合成。 */
- progSh:null,aPosSh:-1,uProjSh:null,uViewSh:null,uColSh:null,shbuf:null,shcount:0,
+ /* 接地影(乗算ブレンドの平面デカール)。深度書き込みOFF・DST_COLOR*ZEROの乗算合成。
+    INC6: aShadeSh/shShBufは頂点ごとの減光量(0..1、gl3dBuildShadowGeomのshade配列)。
+    コア(部品直下)=1.0で従来どおりの濃さ、スカート外周=0で乗算しても素通し(白)になり
+    縁が自然にフェードする(GL3D_FS_SH参照)。 */
+ progSh:null,aPosSh:-1,aShadeSh:-1,uProjSh:null,uViewSh:null,uColSh:null,shbuf:null,shShBuf:null,shcount:0,
  /* ラベル(ビルボード)。中心位置(aCenter)＋ローカルコーナーオフセット(aCorner)をカメラの
     right/up軸(uRight/uUp、フレームごとに再計算)で押し出す＝常にカメラを向く板。
     テクスチャは1枚のCanvas 2Dアトラス(gl3dBakeLabelAtlas)にrefdes/外部端子名/注意マーク/
@@ -2914,9 +2917,14 @@ var GL3D_FS_OUT='precision mediump float;varying float vFacing;uniform vec3 uOut
  'void main(){if(vFacing>0.0)discard;gl_FragColor=vec4(uOutCol,1.0);}';
 /* 接地影(平面デカール)。乗算ブレンド(blendFunc(DST_COLOR,ZERO)=src*dst)で描き、深度書き込み
    はOFF(depthMask(false))にする＝影同士が重なっても深度バッファを汚さない。深度テストは
-   有効のまま(既に描画済みの部品/スラブに正しく隠れる、下記gl3dDraw参照)。 */
-var GL3D_VS_SH='attribute vec3 aPos;uniform mat4 uProj,uView;void main(){gl_Position=uProj*uView*vec4(aPos,1.0);}';
-var GL3D_FS_SH='precision mediump float;uniform vec3 uCol;void main(){gl_FragColor=vec4(uCol,1.0);}';
+   有効のまま(既に描画済みの部品/スラブに正しく隠れる、下記gl3dDraw参照)。
+   INC6: aShade(0..1、頂点ごと)を追加。vShade=1で従来通りuCol(乗算で暗化)、vShade=0で
+   mix結果が(1,1,1)になり乗算しても素通し(効果なし)になる=縁が自然にフェードする
+   (gl3dBuildShadowGeomのコア/スカート/配線経路帯の減光量を運ぶ)。 */
+var GL3D_VS_SH='attribute vec3 aPos;attribute float aShade;uniform mat4 uProj,uView;varying float vShade;'+
+ 'void main(){gl_Position=uProj*uView*vec4(aPos,1.0);vShade=aShade;}';
+var GL3D_FS_SH='precision mediump float;varying float vShade;uniform vec3 uCol;'+
+ 'void main(){gl_FragColor=vec4(mix(vec3(1.0),uCol,vShade),1.0);}';
 /* ラベル(ビルボード)パス。aCenter(ワールド位置、四隅で共通)+aCorner(ローカルオフセット、
    mm単位)をカメラのright/up軸(uRight/uUp、フレームごとにgl3dCamBasisから再計算)で押し出す
    ことで常にカメラを向く板になる。テクスチャアルファ<0.04はdiscard(文字の外側の透明部分)。 */
@@ -3695,19 +3703,86 @@ function gl3dUploadTexture(gl){var cnv=gl3dBakeTexCanvas();
    のドライバでは24bitに昇格されない場合が現実にある)。旧gl3dDrawのnear/farは固定
    (-2000,4000)幅6000mmで16bit量子化ステップ≈0.0916mm＝旧0.05mmオフセットは1LSB未満
    になり得てちらつき/欠けが起きる。gl3dDraw側でnear/farをシーン実寸ベースに縮小した
-   上で、このオフセットも安全側に引き上げる(二重の対策、どちらか一方が効けば十分)。 */
+   上で、このオフセットも安全側に引き上げる(二重の対策、どちらか一方が効けば十分)。
+   INC6: 対称なだけのデカールから「指向性の偽キャストシャドウ」へ格上げする。各部品に
+   つきコア(footprintそのまま・shade=1.0・オフセット無し=以前と同じ形と位置)+スカート
+   (外側リング・外周shade=0でフェード)の2層を作り、スカートの中心だけワールド光源の
+   水平方向へオフセットする。コア自体は動かさないので「根元は必ずfootprintと重なりを
+   残す」を構造上自動的に満たす。 */
 var GL3D_SHADOW_Y=0.2;
+var GL3D_SHADOW_SKIRT_MM=2.0;/* スカート(外側リング)の基準幅(要求レンジ1.5〜2.5mmの中央値) */
+var GL3D_SHADOW_OFFH_MAX=6;/* 影オフセットに寄与させる高さの上限(mm)。全高に比例させると
+   背の高い部品で影がfootprintから完全に離れて浮いて見える(接地感の喪失)ため、コンタクト
+   シャドウとして成立する範囲でクランプする(タスク指示の`min(top,6)`と同じ)。 */
+var GL3D_SHADOW_OFFK=0.35;
+/* 部品天面高さから、スカート中心のワールド水平オフセット[offX,offZ]を返す。
+   normalShade()のdot(n,LIGHT)はLIGHTを「面が向くと明るくなる方向=面から光源へ向かう
+   方向」として使っている(このファイル冒頭のワールド座標系コメント参照)。よって光線
+   自体の進行方向はその逆(-LIGHT)であり、高さhの点から地面までの投影は相似三角形で
+   -h*(水平成分/垂直成分)だけずれる=影は光源のある水平方向と反対側に伸びる(現実の
+   影と同じ)。このタスクの実装指示にある式`off=...*(LIGHT.du/LIGHT.dz, LIGHT.dv/LIGHT.dz)`
+   には符号の明記が無かったが、+符号のままだと影が光源側に伸びてしまう(物理的に逆)ため、
+   上記の導出に基づき-符号へ訂正して実装している(このコメントで意図的な逸脱として明記)。 */
+function gl3dShadowOffset(top){
+ var h=Math.min(top,GL3D_SHADOW_OFFH_MAX)*GL3D_SHADOW_OFFK;
+ return [-h*(LIGHT.du/LIGHT.dz),-h*(LIGHT.dv/LIGHT.dz)];}
 function gl3dBuildShadowGeom(){
- var pV=[];
- if(LY.parts)D.parts.forEach(function(p){var PF=physFor(p),box=gl3dPartBox(p,PF);
-  if(p.kind==='ic'){var x0=box.cx-box.hw,x1=box.cx+box.hw,z0=box.cz-box.hd,z1=box.cz+box.hd;
-   [[x0,z0],[x1,z0],[x1,z1],[x0,z0],[x1,z1],[x0,z1]].forEach(function(q){pV.push(q[0],GL3D_SHADOW_Y,q[1]);});
+ var pV=[],pS=[];
+ /* 1三角形=頂点3個分のposition+shadeを同時に積む共有ヘルパ。コア/スカート/配線経路帯
+    すべてをこれ経由で積むことで、コアとスカートが完全に分割されたジオメトリになり
+    (乗算ブレンドで同じ場所を2回暗くする二重暗化を避ける)、GL3D_FS_SHのvShade補間
+    (1.0=従来の濃さ、0=乗算しても素通し)で縁が自然にフェードする。 */
+ function tri(ax,az,bx,bz,cx,cz,sa,sb,sc){
+  pV.push(ax,GL3D_SHADOW_Y,az,bx,GL3D_SHADOW_Y,bz,cx,GL3D_SHADOW_Y,cz);pS.push(sa,sb,sc);}
+ if(LY.parts)D.parts.forEach(function(p){var PF=physFor(p),box=gl3dPartBox(p,PF),top=gl3dPickTopH(p,PF);
+  var off=gl3dShadowOffset(top),offX=off[0],offZ=off[1];
+  if(p.kind==='ic'){
+   var x0=box.cx-box.hw,x1=box.cx+box.hw,z0=box.cz-box.hd,z1=box.cz+box.hd;
+   /* コア(shade=1.0、旧来と同じ矩形=footprintそのまま、オフセット無し)。 */
+   tri(x0,z0,x1,z0,x1,z1,1,1,1);tri(x0,z0,x1,z1,x0,z1,1,1,1);
+   /* スカート: 中心をoffX/offZだけずらしhw/hdをGL3D_SHADOW_SKIRT_MM広げた外側矩形との
+      間を4辺のトラペゾイド(帯)で埋める(コア角A[s..s+1]→スカート角B[s..s+1])。ずらした
+      分だけ光源と反対側の辺が広く光源側の辺が狭くなる=指向性のある非対称リングになる。
+      GL3D_SHADOW_SKIRT_MM(2.0mm)は想定される最大オフセット
+      (GL3D_SHADOW_OFFH_MAX*GL3D_SHADOW_OFFK*|LIGHT.du or dv|/LIGHT.dz≈1.4mm)より
+      確実に大きいので辺が反転(自己交差)することはない。 */
+   var cxo=box.cx+offX,czo=box.cz+offZ,hwo=box.hw+GL3D_SHADOW_SKIRT_MM,hdo=box.hd+GL3D_SHADOW_SKIRT_MM;
+   var A=[[x0,z0],[x1,z0],[x1,z1],[x0,z1]],B=[[cxo-hwo,czo-hdo],[cxo+hwo,czo-hdo],[cxo+hwo,czo+hdo],[cxo-hwo,czo+hdo]];
+   for(var s=0;s<4;s++){var s2=(s+1)%4,Ai=A[s],Aj=A[s2],Bi=B[s],Bj=B[s2];
+    tri(Ai[0],Ai[1],Aj[0],Aj[1],Bj[0],Bj[1],1,1,0);tri(Ai[0],Ai[1],Bj[0],Bj[1],Bi[0],Bi[1],1,0,0);}
    return;}
-  var rx=box.hw*1.12,rz=box.hd*1.12,segs=12,prev=null;
-  for(var i=0;i<=segs;i++){var a=i/segs*6.2831853,q=[box.cx+Math.cos(a)*rx,box.cz+Math.sin(a)*rz];
-   if(prev){pV.push(box.cx,GL3D_SHADOW_Y,box.cz,prev[0],GL3D_SHADOW_Y,prev[1],q[0],GL3D_SHADOW_Y,q[1]);}
-   prev=q;}});
- return {pos:new Float32Array(pV),count:pV.length/3};}
+  /* 楕円系(elec/disc/film/r等): コアは旧来と同じ12角ファン(shade=1.0、オフセット無し)。
+     スカートは中心をoffX/offZだけずらし半径をGL3D_SHADOW_SKIRT_MM広げた外側楕円との
+     間の帯付きリング(矩形と同じ考え方=ずれの分だけ非対称になる)。 */
+  var rx=box.hw*1.12,rz=box.hd*1.12,segs=12,coreV=[],skirtV=[];
+  var rxo=rx+GL3D_SHADOW_SKIRT_MM,rzo=rz+GL3D_SHADOW_SKIRT_MM,cxo2=box.cx+offX,czo2=box.cz+offZ;
+  for(var i=0;i<=segs;i++){var a=i/segs*6.2831853;
+   coreV.push([box.cx+Math.cos(a)*rx,box.cz+Math.sin(a)*rz]);
+   skirtV.push([cxo2+Math.cos(a)*rxo,czo2+Math.sin(a)*rzo]);}
+  for(i=1;i<=segs;i++){
+   tri(box.cx,box.cz,coreV[i-1][0],coreV[i-1][1],coreV[i][0],coreV[i][1],1,1,1);
+   tri(coreV[i-1][0],coreV[i-1][1],coreV[i][0],coreV[i][1],skirtV[i][0],skirtV[i][1],1,1,0);
+   tri(coreV[i-1][0],coreV[i-1][1],skirtV[i][0],skirtV[i][1],skirtV[i-1][0],skirtV[i-1][1],1,0,0);}});
+ /* C08: 配線経路投影帯。2D等角ビューと完全同一の水平経路(pa→pb直線、gl3dPushWireと
+    同じ`pa=w.a.direct?w.a.pad:w.a.hole`)を細い帯として盤面へ焼き込み、apexで持ち上がった
+    アーチが盤面から遊離して見えないよう発着点を係留する(parityDecision: この水平経路
+    自体は2Dと完全一致=既存の「2D/3D整合」方針に準拠、変更しない)。帯の断面(幅方向)は
+    中心shade=BAND_SHADE、両縁shade=0のグラデーション(接地影のスカートと同じ技法)。
+    帯同士の重なり・部品影との交差二重暗化は共有コリドーの密度表示として意図的に許容
+    する(指示(6)参照。実視でインクが過多なら先にBAND_SHADEを下げ、なお過剰なら本節
+    ごと撤回する=go/no-goはコミットメッセージに記録)。 */
+ var BAND_HW=0.25,BAND_SHADE=0.25;
+ (D.wires||[]).forEach(function(w){
+  var pa=w.a.direct?w.a.pad:w.a.hole,pb=w.b.direct?w.b.pad:w.b.hole;
+  var wa=[gl3dWX(pa[0]),gl3dWZ(pa[1])],wb=[gl3dWX(pb[0]),gl3dWZ(pb[1])];
+  var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,px=-dz/L,pz=dx/L;
+  var l0=[wa[0]-px*BAND_HW,wa[1]-pz*BAND_HW],l1=[wb[0]-px*BAND_HW,wb[1]-pz*BAND_HW];
+  var r0=[wa[0]+px*BAND_HW,wa[1]+pz*BAND_HW],r1=[wb[0]+px*BAND_HW,wb[1]+pz*BAND_HW];
+  tri(l0[0],l0[1],wa[0],wa[1],wb[0],wb[1],0,BAND_SHADE,BAND_SHADE);
+  tri(l0[0],l0[1],wb[0],wb[1],l1[0],l1[1],0,BAND_SHADE,0);
+  tri(wa[0],wa[1],r0[0],r0[1],r1[0],r1[1],BAND_SHADE,0,0);
+  tri(wa[0],wa[1],r1[0],r1[1],wb[0],wb[1],BAND_SHADE,0,BAND_SHADE);});
+ return {pos:new Float32Array(pV),shade:new Float32Array(pS),count:pV.length/3};}
 /* --- ラベル/注意マーク(要件6)。ERC警告マーク(隣接異ネット)は既存buildIsoListの
    caution判定(D.wires/leadMapの読み取りのみ、ee/ERC計算そのものには触れない)を
    そのまま流用する。 */
@@ -3841,6 +3916,7 @@ function gl3dRebuildIfNeeded(gl){var ck=gl3dGeomKey();if(GL3D.geomKey===ck)retur
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.mbuf);gl.bufferData(gl.ARRAY_BUFFER,solid.mat,gl.STATIC_DRAW);
  var shadow=gl3dBuildShadowGeom();GL3D.shcount=shadow.count;
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.shbuf);gl.bufferData(gl.ARRAY_BUFFER,shadow.pos,gl.STATIC_DRAW);
+ gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.shShBuf);gl.bufferData(gl.ARRAY_BUFFER,shadow.shade,gl.STATIC_DRAW);
  var lbl=gl3dBuildLabelGeom(gl);GL3D.lblVcount=lbl.count;
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblCBuf);gl.bufferData(gl.ARRAY_BUFFER,lbl.center,gl.STATIC_DRAW);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblOBuf);gl.bufferData(gl.ARRAY_BUFFER,lbl.corner,gl.STATIC_DRAW);
@@ -3909,7 +3985,7 @@ function gl3dCreateResources(gl){
  GL3D.uViewDirO=gl.getUniformLocation(GL3D.progOut,'uViewDir');GL3D.uOutWO=gl.getUniformLocation(GL3D.progOut,'uOutW');
  GL3D.uOutColO=gl.getUniformLocation(GL3D.progOut,'uOutCol');
  GL3D.progSh=gl3dProgram(gl,GL3D_VS_SH,GL3D_FS_SH);
- GL3D.aPosSh=gl.getAttribLocation(GL3D.progSh,'aPos');
+ GL3D.aPosSh=gl.getAttribLocation(GL3D.progSh,'aPos');GL3D.aShadeSh=gl.getAttribLocation(GL3D.progSh,'aShade');
  GL3D.uProjSh=gl.getUniformLocation(GL3D.progSh,'uProj');GL3D.uViewSh=gl.getUniformLocation(GL3D.progSh,'uView');
  GL3D.uColSh=gl.getUniformLocation(GL3D.progSh,'uCol');
  GL3D.progLbl=gl3dProgram(gl,GL3D_VS_LBL,GL3D_FS_LBL);
@@ -3921,7 +3997,7 @@ function gl3dCreateResources(gl){
  GL3D.vbuf=gl.createBuffer();GL3D.nbuf=gl.createBuffer();GL3D.cbuf=gl.createBuffer();GL3D.hlbuf=gl.createBuffer();
  GL3D.mbuf=gl.createBuffer();
  GL3D.topVBuf=gl.createBuffer();GL3D.topNBuf=gl.createBuffer();GL3D.topUVBuf=gl.createBuffer();
- GL3D.shbuf=gl.createBuffer();
+ GL3D.shbuf=gl.createBuffer();GL3D.shShBuf=gl.createBuffer();
  GL3D.lblCBuf=gl.createBuffer();GL3D.lblOBuf=gl.createBuffer();GL3D.lblUBuf=gl.createBuffer();
  GL3D.tex=gl.createTexture();GL3D.lblTex=gl.createTexture();
  gl.enable(gl.DEPTH_TEST);gl.clearColor(0.051,0.059,0.071,1);}
@@ -4071,6 +4147,7 @@ function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;
   gl.uniformMatrix4fv(GL3D.uProjSh,false,proj);gl.uniformMatrix4fv(GL3D.uViewSh,false,view);
   gl.uniform3f(GL3D.uColSh,0.55,0.55,0.55);
   gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.shbuf);gl.enableVertexAttribArray(GL3D.aPosSh);gl.vertexAttribPointer(GL3D.aPosSh,3,gl.FLOAT,false,0,0);
+  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.shShBuf);gl.enableVertexAttribArray(GL3D.aShadeSh);gl.vertexAttribPointer(GL3D.aShadeSh,1,gl.FLOAT,false,0,0);
   gl.drawArrays(gl.TRIANGLES,0,GL3D.shcount);
   gl.depthMask(true);gl.disable(gl.BLEND);}
  /* ラベル(ビルボード)パス(要件6)。通常のアルファブレンドで、テクスチャの透明部分は
