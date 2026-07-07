@@ -62,6 +62,15 @@ def neighbors(p):
 def dist(a, b):
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
+# INC-3(c) craft: 島連結ワイヤの両端着地穴を選ぶとき、軸整列（同じ行 or 同じ列＝直交ランになれる）でない
+# ペアに課すペナルティ。config.example.json / index.html DEFCFG の craft weights とは別の固定ヒューリスティック
+# 定数（両エンジンで同一値を鏡映）。実測（examples/pico_plant_sitter.json・pico_motor_driver.json の
+# Recommended/Before 各 --propose 結果を 3〜100 でスイープ）: 既存 pen 側の "10"（アンカー以外の member
+# ペナルティ）を上回るまでは軸整列を選びきれず 3〜10 は無風、15 で斜め比率が頭打ち値まで落ち切り
+# （plant 66.7%→45.0%、motor 72.2%→38.9%、wires 非増加・eeNg 非増加を実測確認）、それ以上（20〜100）は
+# 完全に同一結果でプラトー。頭打ちに達する最小値として 15 を採用。
+K_DIAG_ENDPOINT = 15.0
+
 def footprint(kind, a, b, cfg, standing=False, pid=None):
     """本体が覆うセル集合（足の穴を除く）と tall フラグ。part_overrides で個体別寸法を上書き可"""
     P = dict(cfg["physical"][kind])
@@ -1130,24 +1139,25 @@ def solve(state, cfg, propose=False):
         for lead, xyv in bd.lead_pos.items():
             pid = lead.split(".")[0]
             if pid in fixed_ids or pid.startswith("W"):
-                placed.setdefault(bd.net_of_lead.get(lead), set()).add(xyv)
+                net = bd.net_of_lead.get(lead)
+                if net is not None:  # 未接続ピンをplaced[None]へ混入させない（index.htmlのif(n)と揃える）
+                    placed.setdefault(net, set()).add(xyv)
         order = cfg.get("propose_order") or []
         movable.sort(key=lambda p: order.index(p["id"]) if p["id"] in order else 99)
-        for p in movable:
-            names = p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
-            for nm in names:
-                bd.occupied.discard(bd.lead_pos[nm])
-            bd.body[p["id"]] = (set(), False)
-            bd.rebuild_body_cells = None
-        bd.body_cells = set()
-        for pid, (cells, _t) in bd.body.items():
-            bd.body_cells |= cells
         hiz_leads = []
         for p in movable:
             names = p.get("leadNames") or [p["id"] + ".a", p["id"] + ".b"]
             n1, n2 = bd.net_of_lead.get(names[0]), bd.net_of_lead.get(names[1])
-            if n1 is None or n2 is None:  # 未接続の足を持つ部品は再配置対象外（ERC で報告）
+            if n1 is None or n2 is None:  # 未接続の足を持つ部品は再配置対象外（ERC で報告）。占有はそのまま。
                 continue
+            # この部品の現占有（旧フットプリント）を退避してから、自分の探索のためだけに一時クリアする。
+            # 一括クリア（bugfix 前）だと、探索に失敗した部品の実セルが「空き」のまま残り、後続の
+            # 部品がそこへ重なって配置される（bodyOverlaps/pad 衝突の再提案直後 NG）事故が起きていた。
+            old_leads = [bd.lead_pos[nm] for nm in names]
+            old_cells, old_tall = bd.body.get(p["id"], (set(), False))
+            bd.occupied -= set(old_leads)
+            bd.body[p["id"]] = (set(), False)
+            bd.body_cells -= old_cells
             dec = decoup.get(p["id"])
             anchor = None
             if dec and dec.get("pin") in bd.lead_pos:
@@ -1176,10 +1186,16 @@ def solve(state, cfg, propose=False):
                         for q, nn in ((p1, n1), (p2, n2)):
                             nodes = placed.get(nn)
                             if nodes:
+                                # PWR クラスのネット（電源/GND レール）は基板上に大量の既設タップを
+                                # 持ちがちで、素の引力項だとどれか最寄りのタップへの「重力井戸」に
+                                # 部品を捕獲し、機能的に関連する信号ネット側の引力（凝集）を圧殺する。
+                                # pwr_attract で PWR ネットへの引力（ボーナス/距離罰則とも）だけを
+                                # 減衰させ、keep_away 等の安全罰則には触れない（EMC 段は不変）。
+                                pwr_scale = W.get("pwr_attract", 1.0) if bd.cls(nn) == "PWR" else 1.0
                                 if any(nb in nodes for nb in neighbors(q)):
-                                    s -= W["bridge_bonus"]
+                                    s -= W["bridge_bonus"] * pwr_scale
                                 else:
-                                    s += W["wire_len"] * min(dist(q, m) for m in nodes)
+                                    s += W["wire_len"] * pwr_scale * min(dist(q, m) for m in nodes)
                             cd = bd.cdef(nn)
                             ka, kh = cd.get("keep_away_from", []), cd.get("keep_away_holes", 0)
                             for on, ons in placed.items():
@@ -1209,6 +1225,13 @@ def solve(state, cfg, propose=False):
                         if best is None or s < best[0]:
                             best = (s, p1, p2, standing)
             if best is None:
+                # 探索失敗：旧位置へ完全復元（占有・footprint・placed 引力ターゲットの3点とも）。
+                # 復元しないと、この部品の実セルが後続部品から「空き」に見えてしまう。
+                bd.occupied |= set(old_leads)
+                bd.body[p["id"]] = (old_cells, old_tall)
+                bd.body_cells |= old_cells
+                placed.setdefault(n1, set()).add(old_leads[0])
+                placed.setdefault(n2, set()).add(old_leads[1])
                 continue
             _s, p1, p2, standing = best
             p["leads"] = [list(p1), list(p2)]
@@ -1240,13 +1263,25 @@ def solve(state, cfg, propose=False):
         net_of_hole[xyv] = net
         find(xyv)
     pad_bridges = []
+    bridge_pairs_seen = set()  # frozenset({holeA,holeB}) の重複防止（(a)/(b) が同じ隣接をどちらも見つけ得る）
+
+    def _add_bridge(a, b):
+        key = frozenset((tuple(a), tuple(b)))
+        if key in bridge_pairs_seen:
+            return
+        bridge_pairs_seen.add(key)
+        pad_bridges.append([list(a), list(b)])
+
     for net in sorted({n for n in bd.net_of_lead.values() if n}):
         nodes = sorted([xyv for xyv, n in net_of_hole.items() if n == net])
         for a in nodes:
             for nb in neighbors(a):
                 if nb in net_of_hole and net_of_hole[nb] == net and find(a) != find(nb):
-                    pad_bridges.append([list(a), list(nb)])
+                    _add_bridge(a, nb)
                     union(a, nb)
+
+    def _adjacent(a, b):
+        return a != b and abs(a[0] - b[0]) + abs(a[1] - b[1]) == 1
 
     wires, warnings = [], []
     for net in sorted({n for n in bd.net_of_lead.values() if n}):
@@ -1262,29 +1297,100 @@ def solve(state, cfg, propose=False):
             main, rest = groups[0], groups[1:]
             tgt = min(rest, key=lambda g: min(dist(a, b) for a in g for b in main))
             pa, pb = min(((a, b) for a in tgt for b in main), key=lambda ab: dist(*ab))
-            ends = []
-            for grp, anchor2, other in ((tgt, pa, pb), (main, pb, pa)):
+
+            def _pick_single(grp, anchor2, other, exclude=None):
                 cand = None
                 for m in sorted(grp, key=lambda m2: dist(m2, anchor2)):
                     for nb in neighbors(m):
+                        if nb == exclude:
+                            continue
                         if bd.usable(nb) and nb not in net_of_hole:
                             pen = (0 if m == anchor2 else 10) + 0.05 * dist(nb, other)
                             if cand is None or pen < cand[0]:
                                 cand = (pen, nb, m)
-                if cand is None:
+                return cand
+
+            def _candidates(grp, anchor2, other):
+                """INC-3(a)/(c): (a)向けに再union対象の候補穴を、(c)向けに両端連動スコアの直積を作るため、
+                1件だけでなく4近傍の空き穴候補を全列挙する（候補空間自体は従来と同じ4近傍空き穴のまま）。
+                同一 nb に複数 member から届く場合は最小 pen のものだけ残す。"""
+                by_hole = {}
+                for m in sorted(grp, key=lambda m2: dist(m2, anchor2)):
+                    for nb in neighbors(m):
+                        if bd.usable(nb) and nb not in net_of_hole:
+                            pen = (0 if m == anchor2 else 10) + 0.05 * dist(nb, other)
+                            if nb not in by_hole or pen < by_hole[nb][0]:
+                                by_hole[nb] = (pen, nb, m)
+                return list(by_hole.values())
+
+            cand_tgt = _candidates(tgt, pa, pb)
+            cand_main = _candidates(main, pb, pa)
+
+            def _axis(h1, h2):
+                return h1[0] == h2[0] or h1[1] == h2[1]
+
+            # INC-3(c) 直交優先: 両側を独立に argmin するのでなく、両端候補の直積から
+            # (0 if 軸整列 else K_DIAG_ENDPOINT) + 既存 pen 合計 + 0.05*ユークリッド長 が最小のペアを選ぶ。
+            opts_t = cand_tgt if cand_tgt else [(0, pa, pa)]
+            opts_m = cand_main if cand_main else [(0, pb, pb)]
+            best = None
+            for ct2 in opts_t:
+                for cm2 in opts_m:
+                    if ct2[1] == cm2[1]:
+                        continue  # 同じ空き穴に両端は着地できない
+                    axis_pen = 0 if _axis(ct2[1], cm2[1]) else K_DIAG_ENDPOINT
+                    score = axis_pen + ct2[0] + cm2[0] + 0.05 * dist(ct2[1], cm2[1])
+                    if best is None or score < best[0]:
+                        best = (score, ct2, cm2)
+            if best is not None:
+                _score, ct, cm = best
+            else:
+                # 退行時の安全弁（両側の候補が単一かつ同一穴を指す等の極端なケース）:
+                # 元の逐次アルゴリズム（tgt を先に確定し、その穴を除外して main を探す）にフォールバック。
+                ct_single = _pick_single(tgt, pa, pb)
+                ct = ct_single if ct_single else (0, pa, pa)
+                cm_single = _pick_single(main, pb, pa, exclude=(ct[1] if ct_single else None))
+                cm = cm_single if cm_single else (0, pb, pb)
+
+            ends = []
+            for grp_cand, anchor2, had_real in ((ct, pa, bool(cand_tgt)), (cm, pb, bool(cand_main))):
+                if not had_real:
                     ends.append({"tap": None, "pad": list(anchor2), "hole": list(anchor2), "direct": True})
                     warnings.append(f"{net}: {anchor2} 直付け")
                 else:
-                    _pen, hole, member = cand
+                    _pen, hole, member = grp_cand
                     ends.append({"tap": None, "pad": list(anchor2), "hole": list(hole), "bridgeTo": list(member), "direct": False})
                     net_of_hole[hole] = net
                     bd.occupied.add(hole)
                     find(hole)
                     union(hole, member)
+                    # INC-3(a) 再union: 着地穴の4近傍にある同ネット既存導体「全て」と union する
+                    # （bridgeTo の1穴だけでなく）。V5 10B/10C 型の丸ごと余分な1本＋直付けを構造的に消す。
+                    for nb in neighbors(hole):
+                        if nb == member:
+                            continue
+                        if nb in net_of_hole and net_of_hole[nb] == net and find(hole) != find(nb):
+                            _add_bridge(hole, nb)
+                            union(hole, nb)
             tapmap = {tuple(v): k for k, v in bd.lead_pos.items()}
             for e in ends:
                 e["tap"] = tapmap.get(tuple(e["pad"]), net)
-            union(tuple(ends[0]["hole"]), tuple(ends[1]["hole"]))
+            h0, h1 = tuple(ends[0]["hole"]), tuple(ends[1]["hole"])
+            union(h0, h1)
+            # INC-3(b) 隣接=ブリッジ: 両端の着地穴が直交隣接なら、1穴スパンの被覆線を出さずに
+            # 半田ブリッジ1本（pad_bridges）へ置換する（bridgeTo 経由で (a) がすでに同じペアを
+            # 追加済みのことが多いが _add_bridge が重複を防ぐので常に安全に呼べる）。
+            # 注意: erc_audit は net_of_hole ではなく leads/padBridges/wires からグラフを再構築する
+            # ため、着地穴→member（元の実導体）の接続は通常「省略しなかった場合の wire オブジェクト自身の
+            # bridgeTo」が担う。ここで wire を出さない選択をする以上、その bridgeTo 分も pad_bridges として
+            # 明示しないと、着地穴どうしが「本体から浮いた孤立ペア」になり openNets を誘発する（要修正済みの
+            # 実バグ: ci_smoke で pico_plant_sitter Recommended に openNets が出て発覚）。
+            if _adjacent(h0, h1):
+                _add_bridge(h0, h1)
+                for e in ends:
+                    if not e["direct"] and e.get("bridgeTo"):
+                        _add_bridge(tuple(e["hole"]), tuple(e["bridgeTo"]))
+                continue
             wlen = dist(ends[0]["hole"], ends[1]["hole"])
             mx = bd.cdef(net).get("max_wire_holes", 99)
             if wlen > mx:
@@ -1459,23 +1565,137 @@ def synthesize_guard(state, cfg, hiz_net, guard_net=None):
         meta["candidates"] = candidates
     return new, meta
 
+def _ccw(a, b, c):
+    return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
+
+def _on_seg(p, q, r):
+    return min(p[0], r[0]) <= q[0] <= max(p[0], r[0]) and min(p[1], r[1]) <= q[1] <= max(p[1], r[1])
+
+def _segments_cross(p1, p2, p3, p4):
+    """真の交差判定（端点共有は交差扱いしない）。propose_multi のローカル美観指標専用の純関数
+    ——監査(ee)には一切入れない。共通の抵抗/コンデンサの片端が同じ穴に集まるのは通常仕様
+    (padJoints で別途監査済み) なので、shared endpoint は交差にカウントしない。"""
+    if p1 in (p3, p4) or p2 in (p3, p4):
+        return False
+    d1, d2, d3, d4 = _ccw(p3, p4, p1), _ccw(p3, p4, p2), _ccw(p1, p2, p3), _ccw(p1, p2, p4)
+    if ((d1 > 0 and d2 < 0) or (d1 < 0 and d2 > 0)) and ((d3 > 0 and d4 < 0) or (d3 < 0 and d4 > 0)):
+        return True
+    if d1 == 0 and _on_seg(p3, p1, p4):
+        return True
+    if d2 == 0 and _on_seg(p3, p2, p4):
+        return True
+    if d3 == 0 and _on_seg(p1, p3, p2):
+        return True
+    if d4 == 0 and _on_seg(p1, p4, p2):
+        return True
+    return False
+
+def _wire_cross_count(wires):
+    """島連結ワイヤ同士の見た目の交差本数（純関数・監査 ee には入れない・propose_multi 選択専用）。"""
+    segs = [(tuple(w["a"]["hole"]), tuple(w["b"]["hole"])) for w in wires]
+    n = 0
+    for i in range(len(segs)):
+        for j in range(i + 1, len(segs)):
+            if _segments_cross(segs[i][0], segs[i][1], segs[j][0], segs[j][1]):
+                n += 1
+    return n
+
+def _diag_wire_count(wires):
+    """軸整列していない（斜めに引かれた）島連結ワイヤの本数（純関数・監査 ee には入れない）。"""
+    n = 0
+    for w in wires:
+        a, b = w["a"]["hole"], w["b"]["hole"]
+        if a[0] != b[0] and a[1] != b[1]:
+            n += 1
+    return n
+
+def _propose_orders(state, cfg):
+    """INC-5(a): 決定的な配置順序を最大4通り生成する（自然順・逆順・接続次数降順・
+    関与ネット最大幅降順）。Board を1回だけ読み取り専用で構築するだけで、渡された
+    state/cfg 自体は変更しない（solve() 側は別途フレッシュな deep copy を渡される）。"""
+    bd = Board(json.loads(json.dumps(state)), cfg)
+    movable_ids = [p["id"] for p in bd.parts if p["kind"] != "ic" and not p.get("locked")]
+    idx = {pid: i for i, pid in enumerate(movable_ids)}
+    net_counts = {}
+    for net in bd.net_of_lead.values():
+        if net:
+            net_counts[net] = net_counts.get(net, 0) + 1
+    by_id = {p["id"]: p for p in bd.parts}
+
+    def _lead_names(pid):
+        p = by_id.get(pid)
+        if not p:
+            return []
+        return p.get("leadNames") or [pid + ".a", pid + ".b"]
+
+    def _degree(pid):
+        return sum(max(0, net_counts.get(bd.net_of_lead.get(nm), 0) - 1) for nm in _lead_names(pid))
+
+    def _max_net_width(pid):
+        widths = [net_counts.get(bd.net_of_lead.get(nm), 0) for nm in _lead_names(pid)]
+        return max(widths) if widths else 0
+
+    base = cfg.get("propose_order") or []
+    return [
+        ("natural", base),
+        ("reverse", list(reversed(movable_ids))),
+        ("degree_desc", sorted(movable_ids, key=lambda pid: (-_degree(pid), idx[pid]))),
+        ("net_width_desc", sorted(movable_ids, key=lambda pid: (-_max_net_width(pid), idx[pid]))),
+    ]
+
+# INC-5(b): craft 重みプリセット（現行プロファイル値 = None つまり無上書き／強craft値2点）。
+# bb×wl 格子を (10,20)×(0.5,1.0) に縮約し、4順序 × 3プリセット × 4格子 = 48 ラン以内に収める。
+_CRAFT_PRESETS = [
+    ("keep", None),
+    ("strong", {"diag_penalty": 50.0, "span_penalty": 20.0, "standing_penalty": 50.0}),
+    ("max", {"diag_penalty": 80.0, "span_penalty": 30.0, "standing_penalty": 80.0}),
+]
+
 def propose_multi(state, cfg):
-    """複数候補スコアリング: 重み格子で再配置を回し、(eeNg, 被覆線数, 注意数) 最小の案を採用。決定的。"""
-    grid = [(bb, wl) for bb in (10, 20, 30) for wl in (0.5, 1.0, 2.0)]
+    """複数候補スコアリング（INC-5）: 配置順序(4) × craft 重みプリセット(3) × (bridge_bonus, wire_len)
+    格子(4) = 最大48ラン を掃引し、辞書式最小の案を採用。決定的（CLI --propose-n 専用、JS 鏡映なし）。
+    選択キー = (eeNg, crosstalk数, direct数, wires数, ワイヤ交差数, 斜めワイヤ数, standing部品数,
+    cautions数, 総ワイヤ長) — eeNg 等は erc_audit/topology_audit の出力を読むだけで監査計算自体は
+    変更しない。crossings/diagWires は propose_multi ローカルの純関数（_wire_cross_count/
+    _diag_wire_count）で、ee には入れない。"""
+    grid = [(bb, wl) for bb in (10, 20) for wl in (0.5, 1.0)]
+    orders = _propose_orders(state, cfg)
     best, scored = None, []
     for bb, wl in grid:
-        c = json.loads(json.dumps(cfg))
-        c.setdefault("weights", {})
-        c["weights"]["bridge_bonus"] = bb
-        c["weights"]["wire_len"] = wl
-        r = solve(json.loads(json.dumps(state)), c, propose=True)
-        s = r["stats"]
-        score = (s["eeNg"], s["wires"], s["cautions"])
-        scored.append({"bridge_bonus": bb, "wire_len": wl, "eeNg": s["eeNg"], "wires": s["wires"], "cautions": s["cautions"]})
-        if best is None or score < best[0]:
-            best = (score, r, (bb, wl))
+        for craft_name, craft_over in _CRAFT_PRESETS:
+            for order_name, order_ids in orders:
+                c = json.loads(json.dumps(cfg))
+                c.setdefault("weights", {})
+                c["weights"]["bridge_bonus"] = bb
+                c["weights"]["wire_len"] = wl
+                if craft_over:
+                    c["weights"].update(craft_over)
+                c["propose_order"] = order_ids
+                r = solve(json.loads(json.dumps(state)), c, propose=True)
+                s = r["stats"]
+                wires_list = r["wires"]
+                crossings = _wire_cross_count(wires_list)
+                diag_wires = _diag_wire_count(wires_list)
+                standing_n = sum(1 for p in r["parts"] if p.get("standing"))
+                crosstalk_n = len(r["ee"].get("crosstalk", []))
+                total_len = round(sum(dist(w["a"]["hole"], w["b"]["hole"]) for w in wires_list), 1)
+                score = (s["eeNg"], crosstalk_n, s["direct"], s["wires"], crossings, diag_wires,
+                         standing_n, s["cautions"], total_len)
+                scored.append({
+                    "bridge_bonus": bb, "wire_len": wl, "craft": craft_name, "order": order_name,
+                    "eeNg": s["eeNg"], "wires": s["wires"], "cautions": s["cautions"],
+                    "crossings": crossings, "diagWires": diag_wires, "standing": standing_n,
+                    "direct": s["direct"], "crosstalk": crosstalk_n, "totalLen": total_len,
+                })
+                if best is None or score < best[0]:
+                    best = (score, r, (bb, wl, craft_name, order_name))
     best[1]["proposeScores"] = scored
-    best[1]["proposeBest"] = {"bridge_bonus": best[2][0], "wire_len": best[2][1], "eeNg": best[0][0], "wires": best[0][1]}
+    best[1]["proposeBest"] = {
+        "bridge_bonus": best[2][0], "wire_len": best[2][1], "craft": best[2][2], "order": best[2][3],
+        "eeNg": best[0][0], "crosstalk": best[0][1], "direct": best[0][2], "wires": best[0][3],
+        "crossings": best[0][4], "diagWires": best[0][5], "standing": best[0][6],
+        "cautions": best[0][7], "totalLen": best[0][8],
+    }
     return best[1]
 
 _KNOWN_KINDS = {"ic", "r", "film", "disc", "elec"}

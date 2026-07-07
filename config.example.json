@@ -154,9 +154,10 @@
     "caution_base": 1.5,
     "hiz_mult": 3.0,
     "keep_away_penalty": 6.0,
-    "diag_penalty": 4.0,
-    "span_penalty": 1.5,
-    "standing_penalty": 1.0
+    "diag_penalty": 30.0,
+    "span_penalty": 15.0,
+    "standing_penalty": 30.0,
+    "pwr_attract": 0.2
   },
   "_placement_profiles": "配置の目的（手法）プリセット。初心者は平易な目的名で選ぶ→ weights に展開。エージェントは回路種別で既定を選ぶ。HTML側 DEFCFG.profiles と weights 一致を parity_check が検証。default_profile はガイダンス無しの新規盤の既定。weights を直接編集すると UI は『カスタム』表示。",
   "default_profile": "analog",
@@ -173,9 +174,10 @@
         "caution_base": 2.5,
         "hiz_mult": 3.0,
         "keep_away_penalty": 4.0,
-        "diag_penalty": 6.0,
-        "span_penalty": 2.5,
-        "standing_penalty": 3.5
+        "diag_penalty": 50.0,
+        "span_penalty": 20.0,
+        "standing_penalty": 50.0,
+        "pwr_attract": 0.2
       }
     },
     "analog": {
@@ -189,9 +191,10 @@
         "caution_base": 1.5,
         "hiz_mult": 3.0,
         "keep_away_penalty": 6.0,
-        "diag_penalty": 4.0,
-        "span_penalty": 1.5,
-        "standing_penalty": 1.0
+        "diag_penalty": 30.0,
+        "span_penalty": 15.0,
+        "standing_penalty": 30.0,
+        "pwr_attract": 0.2
       }
     },
     "compact": {
@@ -207,7 +210,8 @@
         "keep_away_penalty": 3.0,
         "diag_penalty": 1.5,
         "span_penalty": 0.5,
-        "standing_penalty": 0.3
+        "standing_penalty": 0.3,
+        "pwr_attract": 1.0
       }
     }
   },
@@ -248,5 +252,5 @@
     "C1",
     "C2"
   ],
-  "_weights_craft": "diag_penalty: 斜め配置の罰則 / span_penalty: 本体長を超える伸長の罰則(穴) / standing_penalty: 立て実装の罰則。大きいほど整然・直交・寝かせ優先（配置を再提案で反映）"
+  "_weights_craft": "diag_penalty: 斜め配置の罰則 / span_penalty: 本体長を超える伸長の罰則(穴) / standing_penalty: 立て実装の罰則。大きいほど整然・直交・寝かせ優先（配置を再提案で反映）。pwr_attract: PWR クラス（電源/GND レール）ネットへの引力（bridge_bonus/wire_len 項）のスケール(0-1)。基板上に散在するレールタップへの『重力井戸』捕獲を弱め、機能的に近い信号ネット同士の凝集を相対的に優先させる。1.0=無効化（従来挙動）。keep_away 等の安全罰則はスケールしない"
 }

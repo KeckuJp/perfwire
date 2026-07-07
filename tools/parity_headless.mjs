@@ -64,8 +64,18 @@ const norm = {
 const sample = JSON.parse(readFileSync(join(ROOT, 'examples', 'pico_motor_driver.json'), 'utf8'));
 const fails = [];
 for (const prop of sample.proposals) {
-  const js = renderEE(deepLink(prop.state));
-  const py = solverEE(prop.state);
+  // solver.py always recomputes wires/padBridges from scratch (it never trusts a state's own
+  // pre-baked geometry); but the browser's connect() is lazy — it only runs when D.wires is
+  // empty (see index.html "自動結線" load path) and otherwise just renders whatever geometry
+  // is already embedded in the shipped example. That made this parity check silently compare
+  // solver.py's FRESH output against the JS side's STALE baked-in wires (which just happen to
+  // match whatever solver.py version last generated the fixture) instead of ever exercising
+  // connect() at all. Strip the cached geometry from a throwaway copy so both engines are
+  // forced to compute it fresh from the same part positions — the actual parity surface this
+  // gate exists to cover. This never touches the checked-in example file.
+  const freshState = { ...prop.state, wires: [], padBridges: [] };
+  const js = renderEE(deepLink(freshState));
+  const py = solverEE(freshState);
   for (const f of ['wireLength', 'decoupling', 'grounding']) {
     if (norm[f](js[f]) !== norm[f](py[f])) fails.push(`${prop.name} :: ${f}\n    JS=${norm[f](js[f])}\n    PY=${norm[f](py[f])}`);
   }

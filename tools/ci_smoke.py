@@ -36,6 +36,48 @@ ALL_EE_KEYS = ("openNets", "singleLeadNets", "unconnectedLeads", "duplicateIds",
                "degraded", "fabReady")
 
 
+def assert_propose_no_regression(name, state, failures):
+    """Invariant: re-proposing a layout must never INCREASE eeNg.
+
+    Regression lock for the "phantom footprint" placement bug (movable parts were bulk-
+    cleared from occupancy tracking before the propose search loop; a part whose search
+    failed (best=None) was skipped without restoring its true footprint, so a later part
+    could legally search onto cells the stuck part still physically occupied -- producing
+    a fresh bodyOverlaps NG immediately after re-proposing, with no further edits). Runs
+    the solver twice (baseline allocate, then --propose) and compares stats.eeNg.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        state_p = pathlib.Path(td) / "state.json"
+        before_p = pathlib.Path(td) / "before.json"
+        after_p = pathlib.Path(td) / "after.json"
+        state_p.write_text(json.dumps(state), encoding="utf-8")
+        r0 = subprocess.run(
+            [sys.executable, str(ROOT / "solver.py"), str(state_p),
+             "--config", str(ROOT / "config.example.json"), "-o", str(before_p)],
+            capture_output=True, text=True,
+        )
+        if r0.returncode != 0:
+            failures.append(f"{name}: baseline solver exit {r0.returncode}\n{r0.stderr[-500:]}")
+            return
+        r1 = subprocess.run(
+            [sys.executable, str(ROOT / "solver.py"), str(state_p),
+             "--config", str(ROOT / "config.example.json"), "--propose", "-o", str(after_p)],
+            capture_output=True, text=True,
+        )
+        if r1.returncode != 0:
+            failures.append(f"{name}: --propose solver exit {r1.returncode}\n{r1.stderr[-500:]}")
+            return
+        eeng_before = json.loads(before_p.read_text(encoding="utf-8"))["stats"]["eeNg"]
+        eeng_after = json.loads(after_p.read_text(encoding="utf-8"))["stats"]["eeNg"]
+        if eeng_after > eeng_before:
+            failures.append(
+                f"{name}: --propose increased eeNg ({eeng_before} -> {eeng_after}) "
+                "-- placement regression (phantom footprint / occupancy not restored?)"
+            )
+        else:
+            print(f"OK: {name} propose eeNg {eeng_before} -> {eeng_after} (no regression)")
+
+
 def run_solver(name, state, failures):
     with tempfile.TemporaryDirectory() as td:
         state_p = pathlib.Path(td) / "state.json"
@@ -80,6 +122,7 @@ def check_pico_motor_driver(failures):
     sample = json.loads((ROOT / "examples" / "pico_motor_driver.json").read_text(encoding="utf-8"))
     for prop in sample["proposals"]:
         name = prop["name"]
+        assert_propose_no_regression(name, prop["state"], failures)
         res = run_solver(name, prop["state"], failures)
         if res is None:
             continue
@@ -105,6 +148,7 @@ def check_pico_plant_sitter(failures):
     sample = json.loads((ROOT / "examples" / "pico_plant_sitter.json").read_text(encoding="utf-8"))
     for prop in sample["proposals"]:
         name = prop["name"]
+        assert_propose_no_regression(name, prop["state"], failures)
         res = run_solver(name, prop["state"], failures)
         if res is None:
             continue
@@ -130,6 +174,40 @@ def check_pico_plant_sitter(failures):
                 failures.append(f"{name}: expected no clampRisk, got {ee['clampRisk']}")
             if not ee.get("fabReady"):
                 failures.append(f"{name}: expected fabReady=true, got ee={ee}")
+
+
+def check_dense_propose_regress(failures):
+    """Regression lock for the phantom-footprint propose bug on a hand-engineered dense
+    board (see examples/dense_propose_regress.json for the full mechanism). Before the
+    fix this fixture reliably turned a --propose call's eeNg 2 -> 4 by placing one movable
+    part directly on top of another that had genuinely failed to find a new slot; after
+    the fix it must stay at eeNg 2 (both pre-existing decoupling violations, unchanged)
+    with zero bodyOverlaps introduced by propose."""
+    sample = json.loads((ROOT / "examples" / "dense_propose_regress.json").read_text(encoding="utf-8"))
+    for prop in sample["proposals"]:
+        name = prop["name"]
+        assert_propose_no_regression(name, prop["state"], failures)
+        with tempfile.TemporaryDirectory() as td:
+            state_p = pathlib.Path(td) / "state.json"
+            out_p = pathlib.Path(td) / "out.json"
+            state_p.write_text(json.dumps(prop["state"]), encoding="utf-8")
+            r = subprocess.run(
+                [sys.executable, str(ROOT / "solver.py"), str(state_p),
+                 "--config", str(ROOT / "config.example.json"), "--propose", "-o", str(out_p)],
+                capture_output=True, text=True,
+            )
+            if r.returncode != 0:
+                failures.append(f"{name}: --propose solver exit {r.returncode}\n{r.stderr[-500:]}")
+                continue
+            res = json.loads(out_p.read_text(encoding="utf-8"))
+            ee = res.get("ee", {})
+            if ee.get("bodyOverlaps"):
+                failures.append(f"{name}: --propose introduced bodyOverlaps {ee['bodyOverlaps']}")
+            if res.get("stats", {}).get("eeNg") != 2:
+                failures.append(
+                    f"{name}: expected eeNg=2 (the two pre-existing, unfixable decoupling "
+                    f"violations) after --propose, got {res.get('stats')}"
+                )
 
 
 def check_pkg_phys3d_roundtrip(failures):
@@ -180,6 +258,7 @@ def main() -> None:
     failures = []
     check_pico_motor_driver(failures)
     check_pico_plant_sitter(failures)
+    check_dense_propose_regress(failures)
     check_pkg_phys3d_roundtrip(failures)
     if failures:
         print("\n".join("NG: " + f for f in failures))

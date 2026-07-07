@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.6.14] — 2026-07-07
+
+### Fixed
+- **Re-proposing a layout could start with a fresh NG right away.** `solve(propose=True)` (and the
+  editor's mirrored `preparePropose()`/`placePart()`) cleared every movable part's occupied cells
+  up front, then skipped parts whose search failed to find a new slot — without restoring their
+  true (unchanged) footprint into occupancy tracking. A later-placed part could then legally land
+  on cells the stuck part still physically occupied, producing a fresh `bodyOverlaps` NG the moment
+  re-proposing finished. Both engines now clear only the part currently being searched, right
+  before its own search, and fully restore it (occupied holes, footprint cells, and attraction
+  targets) if the search fails. Added `examples/dense_propose_regress.json`, a hand-built dense
+  board that deterministically reproduces the bug, plus a `tools/ci_smoke.py` invariant asserting
+  `--propose` never increases `eeNg` across any bundled fixture.
+- **`solve()`'s placement search could register an unconnected pin's coordinates as an attraction
+  target**, letting a stray `None`-net entry pollute scoring for nearby candidates — normally masked
+  by other score terms, but exposed by this release's PWR-net attraction scaling (below), where it
+  could make `solver.py` and the editor pick different (though both electrically valid) placements
+  for the same board. Found during pre-merge review; guarded to match the editor's existing
+  behavior.
+
+### Added
+- **Placement and wiring now optimize for hand-solder craft quality, not just electrical
+  correctness.** The `diag_penalty`/`span_penalty`/`standing_penalty` weights that bias placement
+  toward orthogonal, minimally-spanned, laid-flat parts were roughly an order of magnitude too weak
+  to actually steer `--propose` away from standing mounts and diagonal leads — rebalanced against
+  real measured thresholds (`config.example.json` + the editor's `DEFCFG`, all placement profiles).
+- **Wire generation now prefers orthogonal, non-redundant runs.** When connecting disconnected
+  islands of the same net, the solver now (a) unions a landing hole with *every* same-net conductor
+  in its 4-neighborhood instead of just the one it searched from, removing structurally redundant
+  extra wires on dense boards; (b) replaces a 1-hole-span insulated wire with a solder bridge
+  whenever the two final endpoints land orthogonally adjacent; and (c) picks each wire's landing
+  holes jointly (not independently per side), preferring axis-aligned pairs. Reduces diagonal-wire
+  ratio substantially on the bundled examples with no increase in wire count or audit NGs.
+- **A new `pwr_attract` weight tones down the "gravity well" effect of wide power/ground nets**,
+  which could previously pull unrelated parts toward a GND/V+ stub at the expense of their own
+  net's layout (e.g. splitting up a voltage divider to hug a ground pad).
+- **`propose_multi` (the agent-side `--propose-n` CLI repair loop) now also sweeps placement order
+  and the craft weights above**, and selects using a richer key (electrical NG count, crosstalk,
+  direct-solder count, wire count, wire crossings, diagonal-wire count, standing-mount count,
+  cautions, total wire length) instead of just NG/wire/caution counts. CLI-only — no editor/UI
+  equivalent.
+
+### Notes
+- Diagnosed via a stage-based expert panel (floorplanning / routing / assembly / rework-inspection
+  / hand-solder craft, each grounded in real `--propose` output on the bundled examples, adversarially
+  cross-examined before anything was implemented). A full grid-based autorouter, a functional-block
+  clustering objective, and folding wire-crossing counts into the formal audit were all considered
+  and deliberately deferred — each would touch a wider surface (wire-segment data shape, audit
+  parity, `fabReady` semantics) than this release's measured gains justified.
+
 ## [0.6.13] — 2026-07-07
 
 ### Added
