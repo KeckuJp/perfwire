@@ -1588,7 +1588,17 @@ buildNetClasses();buildLegend();render();auditNow();};
 row.appendChild(xb);}
 box.appendChild(row);});any=true;}
 if(!any)box.innerHTML='<div class="hint">'+tr('部品がありません')+'</div>';}
-var NETPAL=['#d62839','#1f7a8c','#e0a100','#7b2cbf','#2a9d8f','#ef476f','#118ab2','#9c6644','#6a994e','#ff7b00','#5e548e','#bc6c25'];
+/* NETPALはネット割当順(netColor参照)に並ぶ12色。先頭8色は正常/protan/deutan(P型/D型)の
+   3視覚モード全てでペアワイズΔE76(CIELAB, Viénot 1999法でCVDをシミュレート)>=25を満たすよう
+   探索で選定(達成値: 正常39.0 / protan25.8 / deutan25.6。測定・再現は tools/cud_check.js)。
+   後半4色(9-12番目に割当)はΔE>=25を保証しないベストエフォート(全12色内min: 正常22.8/
+   protan18.8/deutan16.8)——8ネットを超える盤面でのみ使われるため優先度を落とした。
+   設計時の注意: 旧パレット監査で「D型でΔE≈0.6=ほぼ同色」という主張が出たが、独立した2手法
+   (a.係数と対になった正しいVienot LMS行列 b.Machado 2009の別方式)で再検証した結果ΔE≈13〜24
+   であり、旧主張は「正規化LMS行列(白点=(1,1,1)に正規化)に、別スケール用に較正された
+   シミュレーション係数(2.02344/-2.52581等)を誤って適用した」測定バグと判明(再現・原因は
+   tools/cud_check.js冒頭コメント参照)。今回の新パレットは係数と整合したLMS行列で検証済み。 */
+var NETPAL=['#7d73de','#b7bf22','#22bf9f','#bf2241','#73b8de','#9513ec','#bf2290','#bf6022','#deae73','#bf2268','#de7378','#7398de'];
 function netColor(net){if(net&&!D.netColors[net])D.netColors[net]=NETPAL[Object.keys(D.netColors).length%NETPAL.length];}
 function nextId(pre){var i=1;while(D.parts.some(function(p){return p.id===pre+i;}))i++;return pre+i;}
 function uniqName(base){var used={};props.forEach(function(p){used[p.name]=1;});
