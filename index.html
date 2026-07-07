@@ -344,7 +344,11 @@ var JE={
 'レイヤー: 部品 切替':'Layer: toggle parts','レイヤー: ラベル 切替':'Layer: toggle labels','レイヤー: ブリッジ 切替':'Layer: toggle bridges',
 'レイヤー: 端子 切替':'Layer: toggle ends','レイヤー: 注意× 切替':'Layer: toggle caution ×','レイヤー: ブロック穴 切替':'Layer: toggle blocked holes',
 '3Dビュー ツールバー':'perfboard 3D view toolbar','レイヤー表示切替: {0}':'Toggle layer: {0}',
-'3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替など）。':'3D view controls: the "3D" button reveals a toolbar (e.g. layer visibility toggles) at the top of the 3D view.',
+'3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。':'3D view controls: the "3D" button reveals a toolbar (e.g. layer visibility toggles) at the top of the 3D view. Click a "Nets" row in the legend to pin it in the 3D view.',
+'ネット一覧':'Nets','配線 {0}本':'{0} wires',
+'クリックでこのネットを3Dビューに固定表示（もう一度クリックで解除）':'Click to pin this net in the 3D view (click again to unpin)',
+'ホバーで基板上のこのネットを強調。3Dビューではクリックで固定表示できます。':'Hover to highlight this net on the board. In the 3D view, click to pin it.',
+'固定中: {0}':'Pinned: {0}','ネット固定を解除':'Unpin net',
 '写真を読み込み（下絵）':'Load photo (underlay)','写真を消去':'Clear photo','裏面ビュー 切替':'Toggle mirror view','作業ガイドを開始':'Start work guide','作業ガイドの進捗をリセット':'Reset guide progress','導通チェックリスト生成':'Generate continuity checklist',
 '比較':'Diff','比較を終了':'Close diff','編集前':'unedited original','比較: 編集前と比較':'Diff vs unedited original','比較を終了する':'Close the diff overlay',
 'デカップリング':'Decoupling','配線長':'Wire length','全クラス上限内':'all within class limits','本体重なり':'Body overlap','警告':'warn','パッド接合数':'Pad joints','以下':' max','ERC':'ERC','クリーン':'clean','トポロジ':'Topology','総合':'Overall','件':'','PASS ✓ 製作可':'PASS ✓ fab-ready',
@@ -1595,9 +1599,28 @@ D.wires=D.wires.filter(function(w){return w.a.tap!==cn.key&&w.b.tap!==cn.key;});
 buildNetClasses();buildLegend();render();auditNow();};
 row.appendChild(xb);}
 box.appendChild(row);});any=true;}
+/* ネット一覧セクション(増分INC-02): 「特定のネット/配線を1本確認する」ジョブに、3D上でワイヤを
+   探してクリックする以外の直接入口を与える。D.netColors(挿入順=netColor()が呼ばれた順)を正とし、
+   各ネットの配線本数はD.wiresから都度数える(monkeypatchでD.wiresが変わっても常に最新)。
+   行のクリックはGL3D.on(3Dビュー表示中)の時だけGL3D.pinnedNetをトグルする(gl3dClickの空クリック
+   でのトグルと同じ意味論)。2D/等角表示中はクリックしても何もしない(2D側の描画コードは不変=
+   絶対制約なので、pinnedNetは3D専用のまま)。ホバーはどのビューでも既存hoverNet経路で効く。 */
+var netKeys=Object.keys(D.netColors||{});
+if(netKeys.length){var nh=document.createElement('div');nh.style.cssText='font-weight:600;font-size:11.5px;margin:9px 0 3px';nh.textContent=tr('ネット一覧');box.appendChild(nh);
+netKeys.forEach(function(net){var cnt=D.wires.filter(function(w){return w.net===net;}).length;
+var pinned=GL3D.on&&GL3D.pinnedNet===net;
+var row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:7px;margin:3px 0;font-size:11px;cursor:pointer;border-radius:6px;padding:1px 3px;border:1px solid '+(pinned?(D.netColors[net]||'#fff'):'transparent')+(pinned?';background:rgba(255,255,255,.06)':'');
+row.title=GL3D.on?tr('クリックでこのネットを3Dビューに固定表示（もう一度クリックで解除）'):tr('ホバーで基板上のこのネットを強調。3Dビューではクリックで固定表示できます。');
+row.onmouseenter=function(){hoverNet=net;render();};row.onmouseleave=function(){hoverNet=null;render();};
+var sw=document.createElement('span');sw.style.cssText='flex:none;width:11px;height:11px;border-radius:2px;border:1px solid #fff;background:'+(D.netColors[net]||'#999');
+var nm3=document.createElement('span');nm3.style.fontWeight='600';nm3.textContent=net;
+var cntEl=document.createElement('span');cntEl.style.color='var(--mut)';cntEl.textContent='  '+trf('配線 {0}本',cnt);
+row.appendChild(sw);row.appendChild(nm3);row.appendChild(cntEl);
+row.onclick=function(){if(!GL3D.on)return;GL3D.pinnedNet=(GL3D.pinnedNet===net)?null:net;gl3dInvalidate();gl3dStatus();updateGl3dPinChip();buildLegend();};
+box.appendChild(row);});any=true;}
 if(!any)box.innerHTML='<div class="hint">'+tr('部品がありません')+'</div>';
 var g3h=document.createElement('div');g3h.className='hint';g3h.style.marginTop='8px';
-g3h.textContent=tr('3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替など）。');
+g3h.textContent=tr('3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。');
 box.appendChild(g3h);}
 /* NETPALはネット割当順(netColor参照)に並ぶ12色。先頭8色は正常/protan/deutan(P型/D型)の
    3視覚モード全てでペアワイズΔE76(CIELAB, Viénot 1999法でCVDをシミュレート)>=25を満たすよう
@@ -1998,7 +2021,7 @@ if(ISO.on){if(e.key==='Escape'){
    絶対に届かない(実機検証で発見: Escapeがdocument.dispatchEventでもpinnedNetを消さなかった
    バグの実体はここだった)。WebGL表示中は1回目のEscapeでネット固定(pinnedNet)を解除、
    2回目で選択解除、という優先順位(要件2敵対的レビュー指摘)をここで扱う。 */
-  if(GL3D.on&&GL3D.pinnedNet){GL3D.pinnedNet=null;gl3dInvalidate();gl3dStatus();}
+  if(GL3D.on&&GL3D.pinnedNet){GL3D.pinnedNet=null;gl3dInvalidate();gl3dStatus();updateGl3dPinChip();}
   else{selClear();render();if(GL3D.on){gl3dInvalidate();gl3dStatus();}}}
  return;}/* 閲覧専用: ロック/削除キーは無効（Esc=選択解除・Ctrl+Zは上のundoで既に許可済み） */
 /* 盤面編集がポインタ専用（キーボード経路0%）だったのを埋める最小実装。SVG自体を1つのTabストップにし（tabindex=0）、
@@ -2749,8 +2772,13 @@ function setIso(v){if(v===ISO.on)return;ISO.on=v;
   if(rb){rb.style.display='';rb.title=tr('3Dビュー(自由回転)を最も近い90°へスナップ回転（見る角度が変わるだけ）');}
   showHelp(tr('3Dビュー: ドラッグで自由に回転、ホイールでズーム。上部のツールバーでレイヤー表示を切替できます。編集は2Dに戻って行います。'));
   GL3D.needFit=true;/* 開くたびにカメラを盤面へ再フィットする(既存ISO.S=0によるisoFit()再実行と同じ考え方) */
+  updateGl3dPinChip();/* GL3D.onがtrueになった瞬間、前回固定していたネットがあればチップを出す */
+  buildLegend();/* 凡例「ネット一覧」行のtitle/枠は現在のGL3D.onに応じて変わる(クリック可否の案内文)ので、
+    3D表示に入った直後に作り直して案内を最新化する(重いループではなく開閉時1回だけ)。 */
   renderGl3d();return;}
  GL3D.on=false;/* 3Dを閉じる/gl3dInit失敗でCanvas 2D等角にフォールバックする経路は全てWebGL非アクティブ */
+ updateGl3dPinChip();/* GL3D専用チップなのでGL3D.onがfalseになったら必ず隠す */
+ buildLegend();/* 同上: 2Dへ戻った直後にも凡例のネット行案内文を最新化する */
  if(GL3D.rotRaf){cancelAnimationFrame(GL3D.rotRaf);GL3D.rotRaf=null;}/* 90°スナップ回転トゥイーンが3Dクローズ後も回り続けないよう即キャンセル(gl3dSnapRotateのstep2ガードと二重の安全策) */
  if(cv)cv.style.display=v?'block':'none';if(cv3)cv3.style.display='none';
  if(rb){rb.style.display=v?'':'none';/* Canvas 2D等角ビュー表示中のみ回転ボタンを見せる */
@@ -4376,7 +4404,7 @@ function gl3dClick(ev){var pt=gl3dPt(ev),cw=GL3D.canvas.clientWidth,ch=GL3D.canv
     3Dで部品を選び直しても左パネルの部品エディタが直前の別部品のまま残り、
     誤対象を編集してしまう実害があった。 */
  if(selPart!==palLast){palLast=selPart;buildPalEdit();}
- syncSelBar();gl3dInvalidate();gl3dStatus();}
+ syncSelBar();gl3dInvalidate();gl3dStatus();updateGl3dPinChip();}
 /* ホバー(ドラッグ中でないpointermove)で穴座標を#st-posへ、当たった穴がワイヤ端子なら
    そのnetをhoverNetへ反映する(既存2D版isoHover()と同じ状態変数を共有、要件4/5)。
    ホバーはhit.part(部品AABBループ)を使わないため、フルpick(gl3dPick)ではなく地面
@@ -4549,6 +4577,23 @@ btn.onclick=function(){setLayer(x[1],!LY[x[1]]);};
 grp.appendChild(btn);});
 bar.appendChild(grp);}
 buildGl3dBar();
+/* 「固定中ネット」チップ(増分INC-02、GL3D専用チップの挿入スロット規約に従う)。凡例まで視線を
+   戻さなくても固定を解除できるよう、#gl3d-barの末尾にGL3D.pinnedNetがある間だけ出す。
+   #g3-group-layersは静的(初期化時に一度だけ構築、上のコメント参照)だが、このチップは
+   pinnedNetの有無で出入りするため、変化するたびに(gl3dClick/凡例クリック/Escape/setIsoの
+   GL3D.on切替から)個別に呼ぶ。 */
+function updateGl3dPinChip(){var bar=document.getElementById('gl3d-bar');if(!bar)return;
+var grp=document.getElementById('g3-group-pin');
+if(!GL3D.on||!GL3D.pinnedNet){if(grp)grp.remove();return;}
+if(!grp){grp=document.createElement('div');grp.id='g3-group-pin';grp.style.cssText='display:flex;gap:5px;align-items:center';bar.appendChild(grp);}
+grp.innerHTML='';
+var chip=document.createElement('span');chip.className='on';chip.style.cssText='display:inline-flex;align-items:center;gap:6px;backdrop-filter:blur(10px);background:rgba(18,22,27,.7);font-size:11px;padding:4px 9px;border-radius:6px';
+var dot=document.createElement('span');dot.style.cssText='flex:none;width:9px;height:9px;border-radius:2px;display:inline-block;background:'+(D.netColors[GL3D.pinnedNet]||'#fff');
+var nm=document.createElement('span');nm.textContent=trf('固定中: {0}',GL3D.pinnedNet);
+var xb=document.createElement('button');xb.type='button';xb.textContent='✕';xb.title=tr('ネット固定を解除');
+xb.style.cssText='font-size:10px;padding:0 6px';
+xb.onclick=function(){GL3D.pinnedNet=null;gl3dInvalidate();gl3dStatus();updateGl3dPinChip();buildLegend();};
+chip.appendChild(dot);chip.appendChild(nm);chip.appendChild(xb);grp.appendChild(chip);}
 var helpEl=null;
 /* 2つの役割を分離: sliderHelp = スライダー説明を所定の #sliderhelp 欄に（その場で見る）。
    showHelp = 操作の確認メッセージを画面上部の浮遊トースト #toast に出す（押した場所の近くで必ず見える）。
