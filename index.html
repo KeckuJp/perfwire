@@ -344,11 +344,17 @@ var JE={
 'レイヤー: 部品 切替':'Layer: toggle parts','レイヤー: ラベル 切替':'Layer: toggle labels','レイヤー: ブリッジ 切替':'Layer: toggle bridges',
 'レイヤー: 端子 切替':'Layer: toggle ends','レイヤー: 注意× 切替':'Layer: toggle caution ×','レイヤー: ブロック穴 切替':'Layer: toggle blocked holes',
 '3Dビュー ツールバー':'perfboard 3D view toolbar','レイヤー表示切替: {0}':'Toggle layer: {0}',
-'3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。':'3D view controls: the "3D" button reveals a toolbar (e.g. layer visibility toggles) at the top of the 3D view. Click a "Nets" row in the legend to pin it in the 3D view.',
+'3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替・分離表示など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。':'3D view controls: the "3D" button reveals a toolbar (e.g. layer visibility toggles, isolate mode) at the top of the 3D view. Click a "Nets" row in the legend to pin it in the 3D view.',
 'ネット一覧':'Nets','配線 {0}本':'{0} wires',
 'クリックでこのネットを3Dビューに固定表示（もう一度クリックで解除）':'Click to pin this net in the 3D view (click again to unpin)',
 'ホバーで基板上のこのネットを強調。3Dビューではクリックで固定表示できます。':'Hover to highlight this net on the board. In the 3D view, click to pin it.',
 '固定中: {0}':'Pinned: {0}','ネット固定を解除':'Unpin net',
+'分離表示':'Isolate','（分離表示中・Escで解除）':'(isolate on — Esc to release)',
+'3Dビュー: 分離表示 切替':'3D view: toggle isolate',
+'部品を選択するかネットを固定すると使えます（分離表示: それ以外を隠す）':'Select a part or pin a net to use this (isolate: hide everything else)',
+'選択中の部品/固定中のネット以外を非表示にする（もう一度クリックで解除）':'Hide everything except the selected part(s) / pinned net (click again to release)',
+'分離表示: 選択部品/固定ネット以外を非表示にしました（Escまたはもう一度クリックで解除）':'Isolate: hid everything except the selected part(s) / pinned net (Esc or click again to release)',
+'分離表示を解除しました。':'Isolate mode released.',
 '写真を読み込み（下絵）':'Load photo (underlay)','写真を消去':'Clear photo','裏面ビュー 切替':'Toggle mirror view','作業ガイドを開始':'Start work guide','作業ガイドの進捗をリセット':'Reset guide progress','導通チェックリスト生成':'Generate continuity checklist',
 '比較':'Diff','比較を終了':'Close diff','編集前':'unedited original','比較: 編集前と比較':'Diff vs unedited original','比較を終了する':'Close the diff overlay',
 'デカップリング':'Decoupling','配線長':'Wire length','全クラス上限内':'all within class limits','本体重なり':'Body overlap','警告':'warn','パッド接合数':'Pad joints','以下':' max','ERC':'ERC','クリーン':'clean','トポロジ':'Topology','総合':'Overall','件':'','PASS ✓ 製作可':'PASS ✓ fab-ready',
@@ -1620,7 +1626,7 @@ row.onclick=function(){if(!GL3D.on)return;GL3D.pinnedNet=(GL3D.pinnedNet===net)?
 box.appendChild(row);});any=true;}
 if(!any)box.innerHTML='<div class="hint">'+tr('部品がありません')+'</div>';
 var g3h=document.createElement('div');g3h.className='hint';g3h.style.marginTop='8px';
-g3h.textContent=tr('3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。');
+g3h.textContent=tr('3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替・分離表示など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。');
 box.appendChild(g3h);}
 /* NETPALはネット割当順(netColor参照)に並ぶ12色。先頭8色は正常/protan/deutan(P型/D型)の
    3視覚モード全てでペアワイズΔE76(CIELAB, Viénot 1999法でCVDをシミュレート)>=25を満たすよう
@@ -1973,6 +1979,7 @@ render();auditSoon();}},
 {n:'レイヤー: 端子 切替',k:'layer ends',f:function(){setLayer('ends',!LY.ends);}},
 {n:'レイヤー: 注意× 切替',k:'layer caution',f:function(){setLayer('caut',!LY.caut);}},
 {n:'レイヤー: ブロック穴 切替',k:'layer blocked',f:function(){setLayer('blocked',!LY.blocked);}},
+{n:'3Dビュー: 分離表示 切替',k:'iso 3d isolate focus solo hide unrelated ghost',f:function(){var btn=document.getElementById('g3-isolate-btn');if(btn)btn.click();}},
 {n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}},
 {n:'写真を読み込み（下絵）',k:'photo image load',f:function(){document.getElementById('ph-load').click();}},
 {n:'写真を消去',k:'photo clear',f:function(){document.getElementById('ph-clear').click();}},
@@ -2019,9 +2026,12 @@ if(ISO.on){if(e.key==='Escape'){
   /* ISO.onは「3D/等角ビューが開いている」を表すフラグで、WebGL成功時もGL3D.onと同時にtrueになる
    (setIso参照)。このためこの分岐が常に先に来てreturnし、GL3D.on専用の分岐を後ろに置いても
    絶対に届かない(実機検証で発見: Escapeがdocument.dispatchEventでもpinnedNetを消さなかった
-   バグの実体はここだった)。WebGL表示中は1回目のEscapeでネット固定(pinnedNet)を解除、
-   2回目で選択解除、という優先順位(要件2敵対的レビュー指摘)をここで扱う。 */
-  if(GL3D.on&&GL3D.pinnedNet){GL3D.pinnedNet=null;gl3dInvalidate();gl3dStatus();updateGl3dPinChip();}
+   バグの実体はここだった)。WebGL表示中は1回目のEscapeでisolate(増分3/8)を解除、
+   2回目でネット固定(pinnedNet)を解除、3回目で選択解除、という優先順位(要件2敵対的
+   レビュー指摘を拡張)をここで扱う。「一番狭い/直近の絞り込みから戻す」という一貫した
+   規則: isolateは絞り込みの表示だけを消す最も局所的な操作なので最初に戻す。 */
+  if(GL3D.on&&GL3D.isolate){GL3D.isolate=false;gl3dInvalidate();gl3dStatus();}
+  else if(GL3D.on&&GL3D.pinnedNet){GL3D.pinnedNet=null;gl3dInvalidate();gl3dStatus();updateGl3dPinChip();}
   else{selClear();render();if(GL3D.on){gl3dInvalidate();gl3dStatus();}}}
  return;}/* 閲覧専用: ロック/削除キーは無効（Esc=選択解除・Ctrl+Zは上のundoで既に許可済み） */
 /* 盤面編集がポインタ専用（キーボード経路0%）だったのを埋める最小実装。SVG自体を1つのTabストップにし（tabindex=0）、
@@ -2777,6 +2787,8 @@ function setIso(v){if(v===ISO.on)return;ISO.on=v;
     3D表示に入った直後に作り直して案内を最新化する(重いループではなく開閉時1回だけ)。 */
   renderGl3d();return;}
  GL3D.on=false;/* 3Dを閉じる/gl3dInit失敗でCanvas 2D等角にフォールバックする経路は全てWebGL非アクティブ */
+ GL3D.isolate=false;/* isolate(増分3/8)は3Dビュー専用の一時状態なので、閉じるたびにリセット
+   (次に開いた時、前回のisolateがGL3D.on再突入前から効いているように見える混乱を防ぐ)。 */
  updateGl3dPinChip();/* GL3D専用チップなのでGL3D.onがfalseになったら必ず隠す */
  buildLegend();/* 同上: 2Dへ戻った直後にも凡例のネット行案内文を最新化する */
  if(GL3D.rotRaf){cancelAnimationFrame(GL3D.rotRaf);GL3D.rotRaf=null;}/* 90°スナップ回転トゥイーンが3Dクローズ後も回り続けないよう即キャンセル(gl3dSnapRotateのstep2ガードと二重の安全策) */
@@ -2851,6 +2863,13 @@ var GL3D={on:false,ok:null,gl:null,canvas:null,
     pinnedNet/hoverNet、または部品選択由来)をキャッシュする。gl3dUpdateHLはキー不変時に
     早期returnするため、uLblFade判定(gl3dDraw)はこのキャッシュ値を読む。 */
  focusActive:false,
+ /* isolate(増分3/8): pinnedNet/selSet由来のfocusNetsが有る間、無関係な部品/配線を
+    (減光でなく)完全に消す3Dビュー専用トグル。KiCad/Fusion系ビューアの「フォーカス集合
+    以外を隠す」文法。フォーカス源(pinnedNet/selSet)が両方無い時は意味を持たないため、
+    ツールバーのボタン側でdisabledにする(gl3dStatus内のupdateGl3dIsolateBtn参照)。
+    hkキー(gl3dUpdateHL)に必ず含めること(「1操作遅れ」既知バグ類型の再演防止、
+    pinnedNetの教訓と同じ)。 */
+ isolate:false,
  yaw:45*Math.PI/180,pitch:30*Math.PI/180,dist:400,tx:0,ty:0,drag:null,raf:null,dpr:1};
 function m4ident(){return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);}
 function m4mul(a,b){var o=new Float32Array(16);for(var c=0;c<4;c++)for(var r=0;r<4;r++){var s=0;for(var k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s;}return o;}
@@ -2921,7 +2940,13 @@ var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;va
     1.0クランプでの階調ゼロ(飽和)を解消する。excess=max(0,fr-0.85)を使うことで
     fr<=0.85側はf=frの恒等となり(見た目の変化なし)、fr>0.85側だけ滑らかに丸める
     (元の`fr<0.85?fr:...`と数学的に同値だが、GLSL ES 1.00の分岐を避けた等価式)。 */
- 'void main(){vec3 n=normalize(vNormal);float d=max(0.0,dot(n,uLight));'+
+ /* isolate(増分3/8): gl3dUpdateHLがGL3D.isolate中の無関係頂点にvHL=-1.0を代入するので、
+    ここでdiscardして完全に消す(基板スラブはtagPart/tagNet=-1でvHL=0のまま残るため
+    discardされず、文脈として残る)。閾値を-0.99にして通常ゴースティングの-0.85/-0.45
+    は素通りさせる(isolate OFF時の既存の減光表示に一切影響しない)。透明合成は使わず
+    discardのみ(triangle-soup+深度テスト設計を壊さない、既決事項)。 */
+ 'void main(){if(vHL<-0.99)discard;'+
+ 'vec3 n=normalize(vNormal);float d=max(0.0,dot(n,uLight));'+
  'float amb=mix(uAmbDn,uAmbUp,n.y*0.5+0.5);float fr=amb+d;'+
  'float excess=max(0.0,fr-0.85);float f=min(fr,0.85)+0.30*(1.0-exp(-excess/0.30));'+
  'vec3 base=vColor*f;'+
@@ -3979,7 +4004,7 @@ function gl3dUpdateHL(gl){
     通常ごく少数なのでキー生成自体はO(選択数)で軽い。pinnedNetを必ずキーに含める
     (含め忘れると「1操作遅れ」の既知バグ類型の再演になる、と敵対的レビューが指摘)。 */
  var focusNet=GL3D.pinnedNet||hoverNet;
- var hk=GL3D.geomKey+'|'+selSet.map(function(p){return p.id;}).join(',')+'|'+(hoverNet||'')+'|'+(GL3D.pinnedNet||'');
+ var hk=GL3D.geomKey+'|'+selSet.map(function(p){return p.id;}).join(',')+'|'+(hoverNet||'')+'|'+(GL3D.pinnedNet||'')+'|'+(GL3D.isolate?1:0);
  if(GL3D_HLKEY.v===hk)return;
  GL3D_HLKEY.v=hk;
  var tp=GL3D.tagPart,tn=GL3D.tagNet,n=tp.length,hl=new Float32Array(n);
@@ -4007,12 +4032,17 @@ function gl3dUpdateHL(gl){
  if(focusNets){partOnFocus={};D.parts.forEach(function(p,pi){
   var names=partLeads(p);
   for(var i2=0;i2<names.length;i2++){var Ld=D.leads[names[i2].name];if(Ld&&focusNets[Ld.net]){partOnFocus[pi]=1;break;}}});}
+ /* isolate(増分3/8): focusNetsがある間だけ意味を持つ「隠す」モード。ghost値を通常の
+    減光(-0.45/-0.85)でなく-1.0にすることで、GL3D_FSのdiscard(vHL<-0.99)にだけ
+    引っかかるようにする(isolateがOFFの通常ゴースティングでは-0.85/-0.45のままなので
+    discardされず、これまで通り減光表示になる=既存挙動に影響しない)。 */
+ var isoGhost=GL3D.isolate&&focusNets;
  for(var i=0;i<n;i++){var v=0,pi=tp[i],ni=tn[i];
   if(pi>=0){var pp=D.parts[pi];
    if(pp&&inSel(pp))v=1;
-   else if(focusNets)v=partOnFocus[pi]?0:-0.45;}
+   else if(focusNets)v=partOnFocus[pi]?0:(isoGhost?-1.0:-0.45);}
   else if(ni>=0&&focusNets){
-   v=focusNets[GL3D.netList[ni]]?0.65:-0.85;}
+   v=focusNets[GL3D.netList[ni]]?0.65:(isoGhost?-1.0:-0.85);}
   hl[i]=v;}
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.hlbuf);gl.bufferData(gl.ARRAY_BUFFER,hl,gl.DYNAMIC_DRAW);}
 /* 盤面構造が変わった時だけジオメトリ/テクスチャを再構築する(既存isoEnsureBakeの
@@ -4271,8 +4301,12 @@ function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;
  gl.drawArrays(gl.TRIANGLES,0,6);
  /* 接地影パス(要件3)。乗算ブレンド(DST_COLOR,ZERO)＝src*dst。深度書き込みはOFFにする
     (影同士が重なっても深度バッファを汚さない)が深度テストはONのまま＝既に描画済みの
-    部品/スラブに自然に隠れる(gl3dDraw冒頭のコメント参照)。 */
- if(GL3D.shcount){gl.enable(gl.BLEND);gl.blendFunc(gl.DST_COLOR,gl.ZERO);gl.depthMask(false);
+    部品/スラブに自然に隠れる(gl3dDraw冒頭のコメント参照)。
+    isolate(増分3/8)中はスキップする: discardされた(消えた)部品の影だけが宙に浮いて
+    残る違和感を避けるため。影ジオメトリ自体はgl3dRebuildIfNeededでのみ再構築される
+    静的バッファなので、isolate中に個々の影を選別する再構築コストは掛けず、パス全体を
+    安価に止める。 */
+ if(GL3D.shcount&&!GL3D.isolate){gl.enable(gl.BLEND);gl.blendFunc(gl.DST_COLOR,gl.ZERO);gl.depthMask(false);
   gl.useProgram(GL3D.progSh);
   gl.uniformMatrix4fv(GL3D.uProjSh,false,proj);gl.uniformMatrix4fv(GL3D.uViewSh,false,view);
   gl.uniform3f(GL3D.uColSh,0.55,0.55,0.55);
@@ -4290,8 +4324,16 @@ function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;
   gl.uniform3f(GL3D.uUpL,basis.up[0],basis.up[1],basis.up[2]);
   /* ネットに注目中(pinnedNet/hoverNet)、または部品選択起点のフォーカスSetが有効
      (GL3D.focusActive、C11)なときはラベルを退かせ、配線側の色変調(gl3dUpdateHLの
-     focusNets式)が主役になる階層を宣言する(要件C13-3)。 */
-  gl.uniform1f(GL3D.uLblFadeL,(GL3D.pinnedNet||hoverNet||GL3D.focusActive)?0.25:1.0);
+     focusNets式)が主役になる階層を宣言する(要件C13-3)。
+     TODO(増分3/8): uLblFadeLは全ラベル共通の単一uniformで、ラベルごとのpart/net帰属を
+     持たない(gl3dLabelEntries/gl3dBuildLabelGeomにその帰属情報が無い)。本来はisolate中、
+     フォーカス対象のラベルだけを残し無関係ラベルをdiscardしたい(頂点シェーダ側で
+     6頂点/ラベルの動的フェードバッファをgl3dUpdateHLと同じキーで再計算する設計)が、
+     本増分ではコスト対効果を優先し「isolate中は全ラベルを一律ほぼ非表示」という
+     指示された暫定フォールバックを採用する(部品ボックス自体はdiscardで消えるので、
+     ラベルだけが宙に浮いて残る違和感は防げる)。次段の増分でラベル単位のフェードに
+     置き換えること。 */
+  gl.uniform1f(GL3D.uLblFadeL,GL3D.isolate?0.05:((GL3D.pinnedNet||hoverNet||GL3D.focusActive)?0.25:1.0));
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,GL3D.lblTex);gl.uniform1i(GL3D.uTexL,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblCBuf);gl.enableVertexAttribArray(GL3D.aCenterL);gl.vertexAttribPointer(GL3D.aCenterL,3,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblOBuf);gl.enableVertexAttribArray(GL3D.aCornerL);gl.vertexAttribPointer(GL3D.aCornerL,2,gl.FLOAT,false,0,0);
@@ -4450,11 +4492,26 @@ function gl3dStatus(){var el=document.getElementById('st-stats');if(!el)return;
    el.innerHTML+=' / <span class="wr">'+tr('外観寸法は推定')+(pk.source?trf('（{0}）',esc(pk.source)):'')+'</span>';}}
  /* #st-net(2D版と共有するチップ)に注目ネット(ホバー中またはクリック固定中)を表示する
     (要望2: 密集盤面で「今どのネットを見ているか」を明示する)。2D版と同じ要素・同じ
-    tr()パターンを再利用するので新規UI言語は最小限(ネット名のみの版+固定中の版を追加)。 */
- var sn=document.getElementById('st-net');
- if(sn){if(GL3D.pinnedNet){sn.innerHTML=trf('ネット <b>{0}</b>（固定中・Escで解除）',esc(GL3D.pinnedNet));sn.style.display='';}
-  else if(hoverNet){sn.innerHTML=trf('ネット <b>{0}</b>',esc(hoverNet));sn.style.display='';}
-  else sn.style.display='none';}}
+    tr()パターンを再利用するので新規UI言語は最小限(ネット名のみの版+固定中の版を追加)。
+    isolate(増分3/8)中は末尾に注記を足す。フォーカス源がネット(pinned/hover)ならこの
+    チップに、部品選択のみが起点でネット表示自体が無い場合は主stats行の選択表示側
+    (下のel.innerHTML)に足す＝どちらの起点でも「分離表示中」がどこかに必ず見える。 */
+ var sn=document.getElementById('st-net'),isoSuffix=GL3D.isolate?trf('（分離表示中・Escで解除）'):'';
+ if(sn){if(GL3D.pinnedNet){sn.innerHTML=trf('ネット <b>{0}</b>（固定中・Escで解除）',esc(GL3D.pinnedNet))+(GL3D.isolate?' '+isoSuffix:'');sn.style.display='';}
+  else if(hoverNet){sn.innerHTML=trf('ネット <b>{0}</b>',esc(hoverNet))+(GL3D.isolate?' '+isoSuffix:'');sn.style.display='';}
+  else sn.style.display='none';}
+ if(GL3D.isolate&&!GL3D.pinnedNet&&!hoverNet&&selPart)el.innerHTML+=' / <b>'+esc(isoSuffix)+'</b>';
+ updateGl3dIsolateBtn();}
+/* isolate(増分3/8)トグルの有効/無効(disabled)とon/off表示を、選択(selSet)/固定ネット
+   (pinnedNet)の変化に合わせて同期する。gl3dStatusの末尾から毎回呼ぶ(gl3dStatus自体は
+   クリック選択/ネット固定/ホバー/回転/Escapeなど3Dビューの主要な状態変化のたびに
+   既に呼ばれているため、専用のフック追加は不要)。フォーカス源が両方消えたら
+   GL3D.isolateも自動的にfalseへ戻す(disabledなのにon表示のまま、という矛盾状態を防ぐ)。 */
+function updateGl3dIsolateBtn(){var btn=document.getElementById('g3-isolate-btn');if(!btn)return;
+ var hasFocus=!!(GL3D.pinnedNet||selSet.length);
+ if(!hasFocus&&GL3D.isolate)GL3D.isolate=false;
+ btn.disabled=!hasFocus;btn.className=GL3D.isolate?'on':'';
+ btn.title=hasFocus?tr('選択中の部品/固定中のネット以外を非表示にする（もう一度クリックで解除）'):tr('部品を選択するかネットを固定すると使えます（分離表示: それ以外を隠す）');}
 function gl3dEaseOutCubic(t){return 1-Math.pow(1-t,3);}
 /* 90°スナップ回転(要件7)。既存#z-isorotボタンをWebGL表示中はこの動作に再定義する
    (Canvas 2D等角ビュー専用のisoRotate()には一切触れない、完全に別の関数)。GL3D.yawを
@@ -4575,7 +4632,18 @@ var btn=document.createElement('button');btn.type='button';btn.id='g3chip-'+x[1]
 btn.className=LY[x[1]]?'on':'';btn.title=trf('レイヤー表示切替: {0}',tr(x[0]));
 btn.onclick=function(){setLayer(x[1],!LY[x[1]]);};
 grp.appendChild(btn);});
-bar.appendChild(grp);}
+bar.appendChild(grp);
+/* isolate(増分3/8)トグル。フォーカス源(選択部品またはpinnedNet)が無い間はdisabled
+   (KiCad/Fusion系ビューアの「フォーカス集合以外を隠す」文法は、そもそも隠す/残す
+   基準になる集合が無いと無意味なため)。有効/無効・on/offの状態はgl3dStatus内の
+   updateGl3dIsolateBtnが選択/固定ネット変更のたびに再同期する(#g3-group-layers自体は
+   静的構築だが、このボタンは動的更新が要るのでupdateGl3dPinChip同様に個別関数を持つ)。 */
+var igrp=document.createElement('div');igrp.id='g3-group-isolate';igrp.style.cssText='display:flex;gap:5px';
+var ibtn=document.createElement('button');ibtn.type='button';ibtn.id='g3-isolate-btn';ibtn.textContent=tr('分離表示');
+ibtn.disabled=true;ibtn.title=tr('部品を選択するかネットを固定すると使えます（分離表示: それ以外を隠す）');
+ibtn.onclick=function(){if(ibtn.disabled)return;GL3D.isolate=!GL3D.isolate;gl3dInvalidate();gl3dStatus();
+ showHelp(GL3D.isolate?tr('分離表示: 選択部品/固定ネット以外を非表示にしました（Escまたはもう一度クリックで解除）'):tr('分離表示を解除しました。'));};
+igrp.appendChild(ibtn);bar.appendChild(igrp);}
 buildGl3dBar();
 /* 「固定中ネット」チップ(増分INC-02、GL3D専用チップの挿入スロット規約に従う)。凡例まで視線を
    戻さなくても固定を解除できるよう、#gl3d-barの末尾にGL3D.pinnedNetがある間だけ出す。
