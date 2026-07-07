@@ -4172,11 +4172,30 @@ function gl3dLabelEntries(){
     ことに合わせ、×はスタッガ対象外=常時y=1.6の従来どおりの表示に留める)。 */
  out.sort(function(a,b){if(a.x!==b.x)return a.x-b.x;if(a.z!==b.z)return a.z-b.z;return a.text<b.text?-1:(a.text>b.text?1:0);});
  var order=out.filter(function(e){return e.pri;}).sort(function(a,b){return b.pri-a.pri;});
- var STAG_BUCKET=10,STAG_STEP=2.8,occ={};
+ var STAG_BUCKET=8,STAG_STEP=2.8,STAG_JITTER=0.8,occ={};
  order.forEach(function(e){var bk=Math.round(e.x/STAG_BUCKET)+'_'+Math.round(e.z/STAG_BUCKET);
-  var lvl=occ[bk]||0;
-  if(lvl>0){e.y0=e.y;e.y=e.y+STAG_STEP*lvl;e.raised=true;}
-  occ[bk]=lvl+1;});
+  var o=occ[bk];
+  /* 小粒追加(残ラベル重なり対策、crowdedスクショで実測しながら調整): 元のSTAG_BUCKET=10
+     だと2穴(pitch2.54mm時5.08mm)しか離れていない2件が同一バケットに丸められ、
+     y段上げだけでは画面上の水平分離に効かず重なって見えるケースがあった(実測:
+     HCVCC/HCGNDの部分重なり)。バケットを8mmへ縮小し、この距離の2件はそもそも
+     別バケット扱い=無衝突・無加工の自然配置に戻すことでHCVCC/HCGNDは解消。
+     加えて、なお同一バケットに3件以上が競合する最密集部(SOILOUT/SOILVCC/SOILGND等)
+     向けに、既に置かれた先行エントリ群の重心からSTAG_JITTER(0.8mm)分だけ遠ざかる
+     向きへx/zを微小オフセットする(=固定回転角だと相手に近づく向きに当たりうることが
+     実測で判明したため、相手基準の相対方向にした)。重心が一致(完全同一座標)の退化
+     ケースのみ決定的なlvl依存角度にフォールバックする。この最密集部は3件以上が数mm
+     四方に密集しており、小さなオフセットでは別の隣接ラベルへ重なりが移動するだけで
+     完全解消はできなかった(実測確認済み・②への大規模投資は禁止のためこれ以上は
+     追わない)が、重なりが「3ラベル同時の判読不能な塊」から「2ラベルずつの部分
+     重なり(隣接ラベルは判読可能)」へ緩和されており改善それ自体はある。lvl0
+     (非衝突の先頭)は対象外=既存の見た目を変えない。 */
+  var lvl=o?o.n:0;
+  if(lvl>0){e.y0=e.y;e.y=e.y+STAG_STEP*lvl;e.raised=true;
+   var cx=o.sx/o.n,cz=o.sz/o.n,dx=e.x-cx,dz=e.z-cz,mag=Math.hypot(dx,dz);
+   if(mag<0.01){var ang=lvl*2.399963229728653;dx=Math.cos(ang);dz=Math.sin(ang);mag=1;}
+   e.x=e.x+STAG_JITTER*dx/mag;e.z=e.z+STAG_JITTER*dz/mag;}
+  if(o){o.n++;o.sx+=e.x;o.sz+=e.z;}else{occ[bk]={n:1,sx:e.x,sz:e.z};}});
  return out;}
 /* Canvas 2Dで1行=1エントリのテキストアトラスを焼く(既存gl3dBakeTexCanvasと同じ発想: 盤面
    構造+選択言語+DPRが変わった時だけ再構築、gl3dGeomKey参照)。行の高さはGL3D.dpr込みで
