@@ -44,6 +44,9 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 #ztools{position:absolute;top:12px;right:16px;display:flex;gap:6px;z-index:5}
 #ztools button{backdrop-filter:blur(10px);background:rgba(18,22,27,.7)}
 #ztools button.on{background:linear-gradient(135deg,#11a8e0,#0c7fb3);color:#06222e;font-weight:600}
+#gl3d-bar{position:absolute;top:12px;left:16px;display:none;gap:5px;z-index:5;max-width:74%;flex-wrap:wrap}
+#gl3d-bar button{backdrop-filter:blur(10px);background:rgba(18,22,27,.7);font-size:11px;padding:4px 9px}
+#gl3d-bar button.on{background:linear-gradient(135deg,#11a8e0,#0c7fb3);color:#06222e;font-weight:600}
 #status{padding:6px 16px;background:rgba(18,22,27,.72);backdrop-filter:blur(14px);border-top:1px solid var(--bd);font:12px Consolas,monospace;color:var(--mut);display:flex;gap:10px;flex-wrap:wrap}
 .chip{background:var(--panel2);border:1px solid var(--bd);border-radius:6px;padding:1px 9px}
 .chip b{color:var(--tx);font-weight:600}
@@ -191,6 +194,7 @@ svg{display:block;margin:16px auto}
 <svg id="pw-svg" style="touch-action:none" role="application" tabindex="0" aria-label="基板配線図。矢印キーで部品を選択、Shift+矢印キーで1穴移動。"></svg>
 <canvas id="pw-iso" style="display:none;touch-action:none" aria-label="基板3Dビュー"></canvas>
 <canvas id="pw-iso3d" style="display:none;touch-action:none" aria-label="基板3Dビュー（自由回転）"></canvas>
+<div id="gl3d-bar" style="display:none"></div>
 </div>
 <footer id="status"><span class="chip" id="st-mode"></span><span class="chip" id="st-pos">—</span><span class="chip" id="st-net" style="display:none"></span><span class="chip" id="st-stats"></span><span class="chip" id="st-lasttoast" style="display:inline-block;max-width:26vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle"></span></footer>
 </main>
@@ -282,8 +286,8 @@ var JE={
 '配線を再計算':'Rewire','配置を再提案':'Re-place & route','案として保存':'Save as proposal','作業ガイド':'Work guide','元に戻す':'Undo','やり直す':'Redo','開く…':'Open…','書き出し':'Export','URL共有':'Share URL',
 '戻す操作はありません。':'Nothing to undo.','やり直す操作はありません。':'Nothing to redo.','元に戻しました。':'Undone.','やり直しました。':'Redone.',
 '盤面を斜め上から見る3Dビュー（閲覧専用・編集は2Dに戻って行います）':'3D view of the board from above (view-only — go back to 2D to edit)',
-'3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。編集は2Dに戻って行います。':'3D view: a view-only isometric overview. Click to select, drag to pan, Ctrl+wheel to zoom. Go back to 2D to edit.',
-'3Dビュー: ドラッグで自由に回転、ホイールでズーム。編集は2Dに戻って行います。':'3D view: drag to freely rotate, wheel to zoom. Go back to 2D to edit.',
+'3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。上部のツールバーでレイヤー表示を切替できます。編集は2Dに戻って行います。':'3D view: a view-only isometric overview. Click to select, drag to pan, Ctrl+wheel to zoom. Use the toolbar at the top to toggle layer visibility. Go back to 2D to edit.',
+'3Dビュー: ドラッグで自由に回転、ホイールでズーム。上部のツールバーでレイヤー表示を切替できます。編集は2Dに戻って行います。':'3D view: drag to freely rotate, wheel to zoom. Use the toolbar at the top to toggle layer visibility. Go back to 2D to edit.',
 '3Dビュー 切替':'Toggle 3D view',
 '3Dビューを90°回転（見る角度が変わるだけ。基板の天面はそのまま表示されます）':'Rotate the 3D view 90° (changes only the viewing angle — the board\'s top face stays shown)',
 '3Dビュー(自由回転)を最も近い90°へスナップ回転（見る角度が変わるだけ）':'Snap the free-orbit 3D view to the nearest 90° (changes only the viewing angle)',
@@ -337,6 +341,10 @@ var JE={
 'モード: ブリッジ':'Mode: bridges','モード: 穴ブロック':'Mode: block holes','モード: テスター（導通プローブ）':'Mode: probe (continuity)',
 '書き出し（JSON）':'Export (JSON)','ファイルを開く（JSON / KiCAD .net）':'Open file (JSON / KiCAD .net)','URL共有（圧縮リンク生成）':'Share URL (compressed link)','印刷（1:1原寸 — 実基板に重ねて検品。裏面は「裏面」ONで）':'Print (1:1 scale — overlay on the real board; toggle Back for solder side)',
 'ズーム イン':'Zoom in','ズーム アウト':'Zoom out','ズーム 100%':'Zoom 100%','レイヤー: 実寸法 切替':'Layer: toggle true size','レイヤー: 被覆線 切替':'Layer: toggle wires',
+'レイヤー: 部品 切替':'Layer: toggle parts','レイヤー: ラベル 切替':'Layer: toggle labels','レイヤー: ブリッジ 切替':'Layer: toggle bridges',
+'レイヤー: 端子 切替':'Layer: toggle ends','レイヤー: 注意× 切替':'Layer: toggle caution ×','レイヤー: ブロック穴 切替':'Layer: toggle blocked holes',
+'3Dビュー ツールバー':'perfboard 3D view toolbar','レイヤー表示切替: {0}':'Toggle layer: {0}',
+'3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替など）。':'3D view controls: the "3D" button reveals a toolbar (e.g. layer visibility toggles) at the top of the 3D view.',
 '写真を読み込み（下絵）':'Load photo (underlay)','写真を消去':'Clear photo','裏面ビュー 切替':'Toggle mirror view','作業ガイドを開始':'Start work guide','作業ガイドの進捗をリセット':'Reset guide progress','導通チェックリスト生成':'Generate continuity checklist',
 '比較':'Diff','比較を終了':'Close diff','編集前':'unedited original','比較: 編集前と比較':'Diff vs unedited original','比較を終了する':'Close the diff overlay',
 'デカップリング':'Decoupling','配線長':'Wire length','全クラス上限内':'all within class limits','本体重なり':'Body overlap','警告':'warn','パッド接合数':'Pad joints','以下':' max','ERC':'ERC','クリーン':'clean','トポロジ':'Topology','総合':'Overall','件':'','PASS ✓ 製作可':'PASS ✓ fab-ready',
@@ -1587,7 +1595,10 @@ D.wires=D.wires.filter(function(w){return w.a.tap!==cn.key&&w.b.tap!==cn.key;});
 buildNetClasses();buildLegend();render();auditNow();};
 row.appendChild(xb);}
 box.appendChild(row);});any=true;}
-if(!any)box.innerHTML='<div class="hint">'+tr('部品がありません')+'</div>';}
+if(!any)box.innerHTML='<div class="hint">'+tr('部品がありません')+'</div>';
+var g3h=document.createElement('div');g3h.className='hint';g3h.style.marginTop='8px';
+g3h.textContent=tr('3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替など）。');
+box.appendChild(g3h);}
 /* NETPALはネット割当順(netColor参照)に並ぶ12色。先頭8色は正常/protan/deutan(P型/D型)の
    3視覚モード全てでペアワイズΔE76(CIELAB, Viénot 1999法でCVDをシミュレート)>=25を満たすよう
    探索で選定(達成値: 正常39.0 / protan25.8 / deutan25.6。測定・再現は tools/cud_check.js)。
@@ -1931,8 +1942,14 @@ render();auditSoon();}},
 {n:'ズーム 100%',k:'zoom fit',f:function(){document.getElementById('z-fit').click();}},
 {n:'3Dビュー 切替',k:'iso 3d view',f:function(){setIso(!ISO.on);}},
 {n:'3Dビュー 回転（90°）',k:'iso 3d view rotate 90 yaw camera turntable',f:function(){if(GL3D.on)gl3dSnapRotate();else isoRotate(1);}},
-{n:'レイヤー: 実寸法 切替',k:'layer footprint',f:function(){LY.foot=!LY.foot;render();}},
-{n:'レイヤー: 被覆線 切替',k:'layer wires',f:function(){LY.wires=!LY.wires;render();}},
+{n:'レイヤー: 実寸法 切替',k:'layer footprint',f:function(){setLayer('foot',!LY.foot);}},
+{n:'レイヤー: 被覆線 切替',k:'layer wires',f:function(){setLayer('wires',!LY.wires);}},
+{n:'レイヤー: 部品 切替',k:'layer parts',f:function(){setLayer('parts',!LY.parts);}},
+{n:'レイヤー: ラベル 切替',k:'layer labels',f:function(){setLayer('labels',!LY.labels);}},
+{n:'レイヤー: ブリッジ 切替',k:'layer bridges',f:function(){setLayer('bridges',!LY.bridges);}},
+{n:'レイヤー: 端子 切替',k:'layer ends',f:function(){setLayer('ends',!LY.ends);}},
+{n:'レイヤー: 注意× 切替',k:'layer caution',f:function(){setLayer('caut',!LY.caut);}},
+{n:'レイヤー: ブロック穴 切替',k:'layer blocked',f:function(){setLayer('blocked',!LY.blocked);}},
 {n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}},
 {n:'写真を読み込み（下絵）',k:'photo image load',f:function(){document.getElementById('ph-load').click();}},
 {n:'写真を消去',k:'photo clear',f:function(){document.getElementById('ph-clear').click();}},
@@ -2707,6 +2724,10 @@ function setIso(v){if(v===ISO.on)return;ISO.on=v;
  var rb=document.getElementById('z-isorot');/* 表示可否は分岐後に決める(下記参照): WebGLパスは
     isoCvが未生成(null)のままなのでisoRotate()が呼ばれるとTypeErrorになる。回転ボタンは
     Canvas 2D等角ビューでのみ意味を持つ。 */
+ var g3b=document.getElementById('gl3d-bar');/* フローティングツールバーはWebGL/Canvas2D等角の
+    どちらでもISO.on中は出す(レイヤートグルはgl3dGeomKey/renderIsoの両方が既にLY.*を尊重するため)。
+    GL3D専用ボタンを将来ここに足す場合はGL3D.onで個別に隠すこと(バー自体の表示可否はISO.onのみで決める)。 */
+ if(g3b)g3b.style.display=v?'flex':'none';
  if(v&&MIRROR)setMirror(false);
  svg.style.display=v?'none':'';
  var cv=document.getElementById('pw-iso'),cv3=document.getElementById('pw-iso3d');
@@ -2726,7 +2747,7 @@ function setIso(v){if(v===ISO.on)return;ISO.on=v;
      タイトルもWebGL版の挙動に合わせて差し替える(2Dへ戻った時に元のJA/EN文言へ戻す、
      下のelse節参照)。 */
   if(rb){rb.style.display='';rb.title=tr('3Dビュー(自由回転)を最も近い90°へスナップ回転（見る角度が変わるだけ）');}
-  showHelp(tr('3Dビュー: ドラッグで自由に回転、ホイールでズーム。編集は2Dに戻って行います。'));
+  showHelp(tr('3Dビュー: ドラッグで自由に回転、ホイールでズーム。上部のツールバーでレイヤー表示を切替できます。編集は2Dに戻って行います。'));
   GL3D.needFit=true;/* 開くたびにカメラを盤面へ再フィットする(既存ISO.S=0によるisoFit()再実行と同じ考え方) */
   renderGl3d();return;}
  GL3D.on=false;/* 3Dを閉じる/gl3dInit失敗でCanvas 2D等角にフォールバックする経路は全てWebGL非アクティブ */
@@ -2735,7 +2756,7 @@ function setIso(v){if(v===ISO.on)return;ISO.on=v;
  if(rb){rb.style.display=v?'':'none';/* Canvas 2D等角ビュー表示中のみ回転ボタンを見せる */
   rb.title=tr('3Dビューを90°回転（見る角度が変わるだけ。基板の天面はそのまま表示されます）');}
  if(v){ISO.S=0;ISO.bakeKey='';ISO.listKey='';
-  showHelp(tr('3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。編集は2Dに戻って行います。'));}
+  showHelp(tr('3Dビュー: 斜め俯瞰の閲覧専用表示。クリックで選択、ドラッグでパン、Ctrl+ホイールでズーム。上部のツールバーでレイヤー表示を切替できます。編集は2Dに戻って行います。'));}
  render();}
 document.getElementById('z-iso').onclick=function(){setIso(!ISO.on);};
 document.getElementById('z-isorot').onclick=function(){if(GL3D.on)gl3dSnapRotate();else isoRotate(1);};
@@ -4496,12 +4517,38 @@ window.__dbg3d={GL3D:GL3D,gl3dInit:gl3dInit,redraw:gl3dDraw,
  _debugParts:function(){return D.parts.map(function(p){var PF=physFor(p);var box=gl3dPartBox(p,PF);
   return {id:p.id,kind:p.kind,hasLeads:!!p.leads,hasPins:!!p.pins,pads:gl3dPadPts(p),box:box,h:isoPartHeight(p,PF)};});},
  status:gl3dStatus,hoverNet:function(){return hoverNet;}};
+/* LYフラグの唯一の更新口。左パネル#layersのcheckboxと3Dビュー上#gl3d-barのチップは、
+   どちらから変更してもここを通ることで双方向同期する(片方だけ変更→もう片方は表示が古いまま、
+   を防ぐ)。 */
+function setLayer(k,val){LY[k]=val;
+var cb=document.getElementById('lyck-'+k);if(cb)cb.checked=val;
+var ch=document.getElementById('g3chip-'+k);if(ch)ch.className=val?'on':'';
+render();}
 function tgl(box,label,k){label=tr(label);var d=document.createElement('label');d.className='tgl';
-var i=document.createElement('input');i.type='checkbox';i.checked=LY[k];
-i.onchange=function(){LY[k]=i.checked;render();};
+var i=document.createElement('input');i.type='checkbox';i.id='lyck-'+k;i.checked=LY[k];
+i.onchange=function(){setLayer(k,i.checked);};
 d.appendChild(i);d.appendChild(document.createTextNode(label));box.appendChild(d);}
 (function(){var b=document.getElementById('layers');
 [['部品','parts'],['ラベル','labels'],['被覆線','wires'],['ブリッジ','bridges'],['端子','ends'],['注意×','caut'],['ブロック穴','blocked'],['実寸法（本体）','foot']].forEach(function(x){tgl(b,x[0],x[1]);});})();
+/* 3Dビュー上のフローティングツールバー(#gl3d-bar、setIsoがISO.on中のみ表示)。「3D閲覧の文脈から
+   レイヤー機構を発見可能にする」が本増分の目的で、機構自体(LY.*→render/renderIso/renderGl3d)は
+   既存のまま(全レンダラが既にLY.*を尊重する)。DOMは初期化時に一度だけ静的に構築し、
+   render()の都度は再構築しない(低性能統合GPU機での毎フレームDOM操作コストを避ける)。
+   foot(実寸法)は2D編集ビュー専用のためここには出さない。
+   挿入スロット: 後続増分(ネット固定表示・isolate・X線・経路整形)は#gl3d-barへ
+   #g3-group-*という新しいグループdivをこのgroup(#g3-group-layers)の後ろに追加していく想定。
+   GL3D専用の操作を足す場合は、そのチップ自身をGL3D.onで個別に隠すこと(バー全体の開閉は
+   setIso側のISO.on判定のみが担う)。 */
+function buildGl3dBar(){var bar=document.getElementById('gl3d-bar');if(!bar)return;bar.innerHTML='';
+bar.setAttribute('role','toolbar');bar.setAttribute('aria-label',tr('3Dビュー ツールバー'));
+var grp=document.createElement('div');grp.id='g3-group-layers';grp.style.cssText='display:flex;gap:5px;flex-wrap:wrap';
+[['部品','parts'],['ラベル','labels'],['被覆線','wires'],['ブリッジ','bridges'],['端子','ends'],['注意×','caut'],['ブロック穴','blocked']].forEach(function(x){
+var btn=document.createElement('button');btn.type='button';btn.id='g3chip-'+x[1];btn.textContent=tr(x[0]);
+btn.className=LY[x[1]]?'on':'';btn.title=trf('レイヤー表示切替: {0}',tr(x[0]));
+btn.onclick=function(){setLayer(x[1],!LY[x[1]]);};
+grp.appendChild(btn);});
+bar.appendChild(grp);}
+buildGl3dBar();
 var helpEl=null;
 /* 2つの役割を分離: sliderHelp = スライダー説明を所定の #sliderhelp 欄に（その場で見る）。
    showHelp = 操作の確認メッセージを画面上部の浮遊トースト #toast に出す（押した場所の近くで必ず見える）。
