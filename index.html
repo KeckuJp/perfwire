@@ -3060,9 +3060,9 @@ function gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,sy,sz,hx,hz,lw,col){
 /* 共有: はんだフィレット(穴の位置に小さな円錐台。上=リード径に近い細さ、下(基板面)=
    広がったはんだの盛り上がり)。「基板に実装されている」という知覚の大部分はこの一点が
    担う(専門家統合案より)。全kind共通で再利用する前提の関数。 */
-function gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw){
+function gl3dSolderFillet(pV,pN,pC,pTP,pTN,tagP,tagN,hx,hz,lw){
  var topR=lw*1.6,botR=lw*3.2,h=0.7;
- gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,hx,h,hz,hx,0,hz,topR,botR,hex2rgb01('#9aa0a6'),8,false,true);
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,tagP,tagN,hx,h,hz,hx,0,hz,topR,botR,hex2rgb01('#9aa0a6'),8,false,true);
 }
 /* 部品ごとのバウンディングボックス(mm、盤面中心原点のワールドXZ)。ピッキング(AABBとの
    交差判定)と接地影の足跡の両方が共有する判定用ジオメトリ(見た目用メッシュは
@@ -3109,17 +3109,37 @@ function gl3dPartBox(p,PF){
 }
 /* 部品種別ごとの簡易色(GL3D_MESHが無いkindのフォールバックbox用)。 */
 var GL3D_PART_COL={r:'#d9b38c',ic:'#262a31',elec:'#1a2230',disc:'#b5651d',film:'#f2d22e'};
+/* ネット種別分類(C09配線階層用のrender-onlyヘルパ)。destWord()と同じGND/電源判定の
+   正規表現をここに複製する(destWordはtr()済みの表示文字列を返すため直接は使えない。
+   destWordの正規表現を変えたときはこちらも合わせて見直すこと)。 */
+function gl3dNetClass(net){var n=(net||'').toUpperCase();
+ if(/GND|VSS/.test(n))return 'gnd';
+ if(/V3V3|VCC|VDD|VMID|3V3|5V/.test(n))return 'pwr';
+ return 'sig';}
+/* 配線ケーシング(C03)の暗色。色リボンの下に幅広に敷き、交差点で手前の配線が奥の配線を
+   「切る」地図学的line-breakを作る(render-only、ee/ERCの数値・判定には無関係)。 */
+var GL3D_WIRE_CASE_COL=hex2rgb01('#0a0c10');
 /* 配線: isoWirePrimsと同じ放物線の弧の式(z=4*apex*t*(1-t))をワールドmmでそのまま
    流用し、帯(リボン)ジオメトリとして押し出す。弧は常にpa→pbを結ぶ水平線を含む
    鉛直面内にあるため、帯の幅方向(水平面内の垂直ベクトル)は弧全体で一定でよい
    (ねじれない)。法線は帯の実ジオメトリから外積で求める(弧の起伏に応じて自然に
-   陰影が変化する)。tagN=net index(gl3dUpdateHLのホバー判定用、要件4)。 */
+   陰影が変化する)。tagN=net index(gl3dUpdateHLのホバー判定用、要件4)。
+   INC3(C02+C03+C04+C09統合): ケーシング(暗色・幅広・僅かに下)→本体色リボン(疑似
+   チューブ法線)の2重押し出し+ネット種別による恒常太さ階層+端点はんだドームで、
+   密集部でも「どの線がどこからどこへ」を読めるようにする(水平経路wa→wb自体は不変
+   =2D等角ビューとのデータ整合を維持)。 */
 function gl3dPushWire(pV,pN,pC,pTP,pTN,tagN,w,obst,hoverCache){
- var col=hex2rgb01(D.netColors[w.net]||'#999999');
+ var col=hex2rgb01(D.netColors[w.net]||'#999999'),netCls=gl3dNetClass(w.net);
+ if(netCls!=='sig'){/* C09: GND/電源は灰方向へ~15%減彩(「太い実用線」に見せる) */
+  var gray=(col[0]+col[1]+col[2])/3;
+  col=[col[0]+(gray-col[0])*0.15,col[1]+(gray-col[1])*0.15,col[2]+(gray-col[2])*0.15];}
  var pa=w.a.direct?w.a.pad:w.a.hole,pb=w.b.direct?w.b.pad:w.b.hole;
- var Lmm=dist(pa,pb)*CFG.pitch,apex=Math.min(9,Math.max(3,2.5+0.3*Lmm));
+ /* C09: apex基礎式を低減(短距離はほぼ這わせ、障害物クリアランスが要る所だけ持ち上がる
+    =高低差自体が「下に部品がある」情報になる)。 */
+ var Lmm=dist(pa,pb)*CFG.pitch,apex=Math.min(9,Math.max(1.4,1.2+0.22*Lmm));
  var wa=[gl3dWX(pa[0]),gl3dWZ(pa[1])],wb=[gl3dWX(pb[0]),gl3dWZ(pb[1])];
- var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,px=-dz/L,pz=dx/L,hw=0.45;
+ var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,px=-dz/L,pz=dx/L;
+ var hw=(netCls==='sig')?0.42:0.58;/* C09: ネット種別ごとの恒常太さ階層 */
  /* 障害物クリアランス(ユーザー指摘: 配線が部品を突き抜けて見える問題への対応)。
     放物線y(t)=4*apex*t(1-t)が区間[t0,t1]で高さT以上を保つ条件は、凹関数t(1-t)が
     区間端で最小になることから 4*apex*min(t0(1-t0),t1(1-t1)) >= T で導ける。
@@ -3143,7 +3163,7 @@ function gl3dPushWire(pV,pN,pC,pTP,pTN,tagN,w,obst,hoverCache){
   var lo2=Math.max(lo,0.1),hi2=Math.min(hi,0.9);/* 端点10%は降下ゾーン(穴へ向かう区間)として免除 */
   if(lo2>hi2)return;
   var q=Math.min(lo2*(1-lo2),hi2*(1-hi2));
-  apex=Math.max(apex,(o.top+1.2)/(4*q));});
+  apex=Math.max(apex,(o.top+2.6)/(4*q));/* C09: 部品天面との分離を視認可能にするため1.2→2.6 */});
  apex=Math.min(apex,14);/* 上限(異常系でアーチが屋根のように高くなり過ぎないためのクランプ) */
  /* ホバーピック用キャッシュ(敵対的レビュー指摘R2対応): 障害物クリアランスで
     引き上げた後の「最終apex」をそのまま保存する。ホバー側が基本式(2.5+0.3*Lmm)を
@@ -3151,19 +3171,49 @@ function gl3dPushWire(pV,pN,pC,pTP,pTN,tagN,w,obst,hoverCache){
     低いままになり、狙いのシーンでこそピックが実際の見た目の下に外れる
     (描画とピックの二重実装によるドリフト)。 */
  if(hoverCache)hoverCache.push({wa:wa,wb:wb,apex:apex,net:w.net});
- var NS=Math.min(20,Math.max(12,Math.round(6+apex))),prevL=null,prevR=null;
- for(var i=0;i<=NS;i++){var t=i/NS;
-  var cx=wa[0]+dx*t,cz=wa[1]+dz*t,cy=4*apex*t*(1-t);
-  var Lp=[cx+px*hw,cy,cz+pz*hw],Rp=[cx-px*hw,cy,cz-pz*hw];
-  if(prevL){
-   var e1x=Rp[0]-prevL[0],e1y=Rp[1]-prevL[1],e1z=Rp[2]-prevL[2];
-   var e2x=Lp[0]-prevL[0],e2y=Lp[1]-prevL[1],e2z=Lp[2]-prevL[2];
-   var nx=e1y*e2z-e1z*e2y,ny=e1z*e2x-e1x*e2z,nz=e1x*e2y-e1y*e2x,nl=Math.hypot(nx,ny,nz)||1;
-   nx/=nl;ny/=nl;nz/=nl;if(ny<0){nx=-nx;ny=-ny;nz=-nz;}
-   [[prevL,prevR,Rp],[prevL,Rp,Lp]].forEach(function(tri){tri.forEach(function(v){
-    pV.push(v[0],v[1],v[2]);pN.push(nx,ny,nz);pC.push(col[0],col[1],col[2]);
-    pTP.push(-1);pTN.push(tagN);});});}
-  prevL=Lp;prevR=Rp;}}
+ var NS=Math.min(20,Math.max(12,Math.round(6+apex)));
+ /* C03+C04: リボン押し出しを内部関数emitRibbonへ括り出し、ケーシング(暗色・幅広・
+    僅かに下)→本体色リボン(疑似チューブ法線)の順に2回呼ぶ。両方とも深度テストLESSの
+    対象になるため、手前の線のケーシングが交差点で奥の線を自動で切る(地図学的
+    line-break、ICの天面上でも暗い縁取りとして輝度差が出る)。tube=trueのときだけ、
+    断面の左右エッジへ固定の疑似チューブ法線(px,pzと上向きから±55°傾けた向き、
+    このワイヤ全体で一定=ねじれない)を割り当て、稜線にスペキュラーのグリント筋を
+    通して同色線でも1本ずつ分離して見えるようにする(ケーシング側は従来通りの
+    フラット法線のまま=交差の切れ目だけを担う)。 */
+ var TUBE_C=0.573576,TUBE_S=0.819152,nLx=-TUBE_S*px,nLy=TUBE_C,nLz=-TUBE_S*pz,
+     nRx=TUBE_S*px,nRy=TUBE_C,nRz=TUBE_S*pz;
+ function emitRibbon(hwArg,yOff,colArg,tube){
+  var prevL=null,prevR=null;
+  for(var i=0;i<=NS;i++){var t=i/NS;
+   var cx=wa[0]+dx*t,cz=wa[1]+dz*t,cy=4*apex*t*(1-t)+yOff;
+   var Lp=[cx+px*hwArg,cy,cz+pz*hwArg],Rp=[cx-px*hwArg,cy,cz-pz*hwArg];
+   if(prevL){
+    if(tube){
+     [[prevL,nLx,nLy,nLz],[prevR,nRx,nRy,nRz],[Rp,nRx,nRy,nRz],
+      [prevL,nLx,nLy,nLz],[Rp,nRx,nRy,nRz],[Lp,nLx,nLy,nLz]].forEach(function(vn){
+      pV.push(vn[0][0],vn[0][1],vn[0][2]);pN.push(vn[1],vn[2],vn[3]);
+      pC.push(colArg[0],colArg[1],colArg[2]);pTP.push(-1);pTN.push(tagN);});
+    }else{
+     var e1x=Rp[0]-prevL[0],e1y=Rp[1]-prevL[1],e1z=Rp[2]-prevL[2];
+     var e2x=Lp[0]-prevL[0],e2y=Lp[1]-prevL[1],e2z=Lp[2]-prevL[2];
+     var nx=e1y*e2z-e1z*e2y,ny=e1z*e2x-e1x*e2z,nz=e1x*e2y-e1y*e2x,nl=Math.hypot(nx,ny,nz)||1;
+     nx/=nl;ny/=nl;nz/=nl;if(ny<0){nx=-nx;ny=-ny;nz=-nz;}
+     [[prevL,prevR,Rp],[prevL,Rp,Lp]].forEach(function(tri){tri.forEach(function(v){
+      pV.push(v[0],v[1],v[2]);pN.push(nx,ny,nz);pC.push(colArg[0],colArg[1],colArg[2]);
+      pTP.push(-1);pTN.push(tagN);});});
+    }}
+   prevL=Lp;prevR=Rp;}}
+ emitRibbon(hw*1.5,-0.08,GL3D_WIRE_CASE_COL,false);
+ emitRibbon(hw,0,col,true);
+ /* C02: 終端アンカー(はんだドーム)。wa/wbの各端点に着地を記号化するフィレットを打つ
+    (tagP=-1・tagN=tagNでネット単位のハイライトに素直に乗る)。lw=0.33は部品側の
+    gl3dSolderFillet呼び出し群(lw=0.25〜0.35系、電解コンデンサのちょうど0.35と完全一致
+    すると同一位置に同一半径のフィレットが二重に立ってz-fightingするため、既存lw値と
+    厳密に重ならない値を選ぶ)より小さく抑える: botR=0.33*3.2=1.056mm<半ピッチ1.27mmで
+    隣接穴のフィレットとも融合しない。 */
+ gl3dSolderFillet(pV,pN,pC,pTP,pTN,-1,tagN,wa[0],wa[1],0.33);
+ gl3dSolderFillet(pV,pN,pC,pTP,pTN,-1,tagN,wb[0],wb[1],0.33);
+}
 /* --- 部品種別ごとの実ジオメトリ(要件1)。Canvas 2D版ISO_DRAWの見た目言語(電解=円柱+極性
    マーカー、円板=扁平楕円体、film=箱、r=寝かせ/立てで異なる形状+カラーバンド、
    ic=箱+ノッチ+ピン足)をWebGLメッシュへ移植する。寸法はphysFor/isoPartHeightを共有し、
@@ -3186,7 +3236,7 @@ function gl3dMeshElec(p,PF,pV,pN,pC,pTP,pTN,idx){
  [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
   var sx=cx+ux*dSock*sign,sz=cz+uz*dSock*sign;
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,standoff,sz,wq[0],wq[1],lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,wq[0],wq[1],lw);});
  /* polarity mark: a short red rod near the '+' lead, standing off the can's outer wall */
  var plusPt=(p.plus===1)?wb:wa,dxp=plusPt[0]-cx,dzp=plusPt[1]-cz,dl=Math.hypot(dxp,dzp)||1;
  var mx=cx+dxp/dl*r*0.9,mz=cz+dzp/dl*r*0.9;
@@ -3211,7 +3261,7 @@ function gl3dMeshDisc(p,PF,pV,pN,pC,pTP,pTN,idx){
      (実物のリードが円板の縁から出て穴へ曲がって伸びる様子に対応)。 */
   var sx=cx+ux*thick*0.85*sign,sz=cz+uz*thick*0.85*sign,sy=standoff+r*0.15;
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,sy,sz,wq[0],wq[1],lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,wq[0],wq[1],lw);});
 }
 function gl3dMeshFilm(p,PF,pV,pN,pC,pTP,pTN,idx){
  var a=p.leads[0],b=p.leads[1],wa=[gl3dWX(a[0]),gl3dWZ(a[1])],wb=[gl3dWX(b[0]),gl3dWZ(b[1])];
@@ -3223,7 +3273,7 @@ function gl3dMeshFilm(p,PF,pV,pN,pC,pTP,pTN,idx){
  [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
   var sx=cx+ux*dSock*sign,sz=cz+uz*dSock*sign;
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,z0,sz,wq[0],wq[1],lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,wq[0],wq[1],lw);});
 }
 function gl3dMeshR(p,PF,pV,pN,pC,pTP,pTN,idx){
  var a=p.leads[0],b=p.leads[1],wa=[gl3dWX(a[0]),gl3dWZ(a[1])],wb=[gl3dWX(b[0]),gl3dWZ(b[1])];
@@ -3231,11 +3281,11 @@ function gl3dMeshR(p,PF,pV,pN,pC,pTP,pTN,idx){
  if(standing){var rw=(PF.bodyWid||2.5)/2,H=PF.bodyLen||6.5;
   gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,wa[0],1,wa[1],wa[0],1+H,wa[1],rw,rw,hex2rgb01('#d9b38c'),12,false,true);
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,wa[0],1,wa[1],wa[0],wa[1],lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wa[0],wa[1],lw);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,wa[0],wa[1],lw);
   /* return-loop lead: 本体天面から折り返して隣の穴へ降りる(2D版の弧脚と同じ意匠)。
      socketを本体天面に置くとgl3dFormLeadsの中間折れ点が自然にヘアピン状になる。 */
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,wa[0],1+H,wa[1],wb[0],wb[1],lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wb[0],wb[1],lw);
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,wb[0],wb[1],lw);
   return;}
  var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L;
  var bl=PF.bodyLen||6.5,bw=PF.bodyWid||2.5,zA=bw/2+0.6,cx=(wa[0]+wb[0])/2,cz=(wa[1]+wb[1])/2;
@@ -3246,7 +3296,7 @@ function gl3dMeshR(p,PF,pV,pN,pC,pTP,pTN,idx){
  [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
   var sx=cx+ux*bl/2*sign,sz=cz+uz*bl/2*sign;
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,zA,sz,wq[0],wq[1],lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,wq[0],wq[1],lw);});
 }
 function gl3dMeshIC(p,PF,pV,pN,pC,pTP,pTN,idx){
  var ks=Object.keys(p.pins);if(!ks.length)return;
@@ -3298,7 +3348,7 @@ function gl3dMeshIC(p,PF,pV,pN,pC,pTP,pTN,idx){
   }else{
    gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,zB+0.9,sz,hx,hz,lw,lcol);
   }
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,hx,hz,lw);});
 }
 /* GL3D_MESHに無いkind(将来ユーザーが追加する未知の部品種別)向けの汎用フォールバック
    (要件2)。「最低限、基板にはんだ付けされた箱」として描く: gl3dFormLeads/
@@ -3318,7 +3368,7 @@ function gl3dMeshGeneric(p,PF,pV,pN,pC,pTP,pTN,idx){
   var dSock=Math.min(L/2,bl/2*0.9);
   [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
    gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,cx+ux*dSock*sign,y0,cz+uz*dSock*sign,wq[0],wq[1],lw,lcol);
-   gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+   gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,wq[0],wq[1],lw);});
   return;}
  var box=gl3dPartBox(p,PF);
  gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-box.hw,box.cx+box.hw,y0,y0+h,box.cz-box.hd,box.cz+box.hd,col,{});
@@ -3328,7 +3378,7 @@ function gl3dMeshGeneric(p,PF,pV,pN,pC,pTP,pTN,idx){
   var sx=Math.max(box.cx-box.hw*0.85,Math.min(box.cx+box.hw*0.85,hx));
   var sz=Math.max(box.cz-box.hd*0.85,Math.min(box.cz+box.hd*0.85,hz));
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,y0,sz,hx,hz,lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,hx,hz,lw);});
 }
 var GL3D_MESH={elec:gl3dMeshElec,disc:gl3dMeshDisc,film:gl3dMeshFilm,r:gl3dMeshR,ic:gl3dMeshIC};
 /* ============================================================
@@ -3374,7 +3424,7 @@ function gl3dShapeDome(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
  var dx=wb[0]-wa[0],dz=wb[1]-wa[1],L=Math.hypot(dx,dz)||1,ux=dx/L,uz=dz/L,dSock=Math.min(L/2,r*0.85);
  [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,cx+ux*dSock*sign,standoff,cz+uz*dSock*sign,wq[0],wq[1],lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});}
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,wq[0],wq[1],lw);});}
 function gl3dShapeDcyl(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
  /* TO-92のDフラット断面は簡略化して円柱で近似する(単純な三角ソープ合成では
     断面欠き取りに追加プリミティブが要るため、今回の投資対効果からは見送り。
@@ -3385,7 +3435,7 @@ function gl3dShapeDcyl(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
  gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,cx,0,cz,cx,h,cz,r,r,col,10,false,true);
  pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,cx,0,cz,hx,hz,lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,hx,hz,lw);});}
 function gl3dShapeTabBox(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
  var pts=gl3dPadPts(p);if(!pts.length)return;
  var box=gl3dPartBox(p,PF),col=hex2rgb01(pk.color),lw=0.3,lcol=hex2rgb01('#cfd8df');
@@ -3396,7 +3446,7 @@ function gl3dShapeTabBox(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
  pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
   var sx=Math.max(box.cx-hl*0.8,Math.min(box.cx+hl*0.8,hx));
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,0,box.cz+hw*0.9,hx,hz,lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,hx,hz,lw);});}
 function gl3dShapeAxial(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
  /* 寝かせ抵抗(gl3dMeshRの寝かせケース)と同じ「両端からリード、本体は円柱」構成に
     極性帯(カソードマーク)を1本足す。ダイオードの表現として再利用する設計
@@ -3414,7 +3464,7 @@ function gl3dShapeAxial(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
  gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,kSide[0],kSide[1],kSide[2],bandOuter[0],bandOuter[1],bandOuter[2],r*1.02,r*1.02,hex2rgb01(pk.bandColor||'#d8d8d8'),10,false,false);
  var lw=0.3,lcol=hex2rgb01('#cfd8df');
  [[wa,a],[wb,b]].forEach(function(pr){gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,pr[1][0],pr[1][1],pr[1][2],pr[0][0],pr[0][1],lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,pr[0][0],pr[0][1],lw);});}
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,pr[0][0],pr[0][1],lw);});}
 function gl3dShapePlungerBox(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
  var pts=gl3dPadPts(p);if(!pts.length)return;
  var box=gl3dPartBox(p,PF),col=hex2rgb01(pk.color),lw=0.28,lcol=hex2rgb01('#cfd8df');
@@ -3424,7 +3474,7 @@ function gl3dShapePlungerBox(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
  pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
   var sx=Math.max(box.cx-hl*0.85,Math.min(box.cx+hl*0.85,hx)),sz=Math.max(box.cz-hw*0.85,Math.min(box.cz+hw*0.85,hz));
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,0,sz,hx,hz,lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,hx,hz,lw);});}
 function gl3dShapeHeader(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
  var pts=gl3dPadPts(p);if(!pts.length)return;
  var box=gl3dPartBox(p,PF),bodyH=pk.bodyH_mm,pinW=pk.pinW_mm,col=hex2rgb01(pk.color);
@@ -3446,21 +3496,21 @@ function gl3dShapeBoxPkg(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
   var dSock=Math.min(L/2,bl/2*0.9);
   [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
    gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,cx+ux*dSock*sign,y0,cz+uz*dSock*sign,wq[0],wq[1],lw,lcol);
-   gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+   gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,wq[0],wq[1],lw);});
   return;}
  var box=gl3dPartBox(p,PF),hl=(pk.len_mm||box.hw*2)/2,hw=(pk.wid_mm||box.hd*2)/2;
  gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,box.cx-hl,box.cx+hl,y0,y0+h,box.cz-hw,box.cz+hw,col,{});
  pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
   var sx=Math.max(box.cx-hl*0.85,Math.min(box.cx+hl*0.85,hx)),sz=Math.max(box.cz-hw*0.85,Math.min(box.cz+hw*0.85,hz));
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,y0,sz,hx,hz,lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,hx,hz,lw);});}
 function gl3dShapeCyl(p,PF,pk,pV,pN,pC,pTP,pTN,idx){
  var pts=gl3dPadPts(p);if(!pts.length)return;
  var box=gl3dPartBox(p,PF),r=pk.dia_mm/2,h=pk.h_mm,standoff=pk.standoff_mm,col=hex2rgb01(pk.color),lw=0.3,lcol=hex2rgb01('#cfd8df');
  gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,box.cx,standoff,box.cz,box.cx,standoff+h,box.cz,r,r,col,14,true,true);
  pts.forEach(function(q){var hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,box.cx,standoff,box.cz,hx,hz,lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});}
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,-1,hx,hz,lw);});}
 var GL3D_SHAPE={dome:gl3dShapeDome,dcyl:gl3dShapeDcyl,tab_box:gl3dShapeTabBox,axial:gl3dShapeAxial,
  plunger_box:gl3dShapePlungerBox,header:gl3dShapeHeader,box:gl3dShapeBoxPkg,cyl:gl3dShapeCyl};
 /* ソリッドパス全体(スラブ側面/底面＋部品(kind別実形状)＋配線帯)を1本のtriangle soupへ
