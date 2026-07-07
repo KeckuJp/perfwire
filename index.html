@@ -3108,7 +3108,7 @@ function gl3dPartBox(p,PF){
  return {cx:(bx0+bx1)/2,cz:(bz0+bz1)/2,hw:(bx1-bx0)/2,hd:(bz1-bz0)/2};
 }
 /* 部品種別ごとの簡易色(GL3D_MESHが無いkindのフォールバックbox用)。 */
-var GL3D_PART_COL={r:'#d9b38c',ic:'#1c1e22',elec:'#1a2230',disc:'#b5651d',film:'#f2d22e'};
+var GL3D_PART_COL={r:'#d9b38c',ic:'#262a31',elec:'#1a2230',disc:'#b5651d',film:'#f2d22e'};
 /* 配線: isoWirePrimsと同じ放物線の弧の式(z=4*apex*t*(1-t))をワールドmmでそのまま
    流用し、帯(リボン)ジオメトリとして押し出す。弧は常にpa→pbを結ぶ水平線を含む
    鉛直面内にあるため、帯の幅方向(水平面内の垂直ベクトル)は弧全体で一定でよい
@@ -3178,6 +3178,10 @@ function gl3dMeshElec(p,PF,pV,pN,pC,pTP,pTN,idx){
     「実装された部品」に見える。 */
  var standoff=0.8;
  gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,cx,standoff,cz,cx,H,cz,r,r,hex2rgb01('#1a2230'),14,true,true);
+ /* 面別カラー焼き分け(要件展開C16): 缶天面にアルミ色の薄い円盤を追加する。俯瞰視点でも
+    「これは電解コンデンサだ」と即読みできる最優先の1点(専門家統合案)。缶本体よりわずかに
+    小さい半径(r*0.98)で段差を作り、厚み0.3mmの円盤として缶の上に乗せる。 */
+ gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,cx,H,cz,cx,H+0.3,cz,r*0.98,r*0.98,hex2rgb01('#b9c2c9'),14,false,true);
  var lw=0.35,lcol=hex2rgb01('#cfd8df'),dHole=L/2,dSock=Math.min(dHole,r*0.7);
  [[wa,-1],[wb,1]].forEach(function(pr){var wq=pr[0],sign=pr[1];
   var sx=cx+ux*dSock*sign,sz=cz+uz*dSock*sign;
@@ -3247,20 +3251,54 @@ function gl3dMeshR(p,PF,pV,pN,pC,pTP,pTN,idx){
 function gl3dMeshIC(p,PF,pV,pN,pC,pTP,pTN,idx){
  var ks=Object.keys(p.pins);if(!ks.length)return;
  var xs=ks.map(function(k){return p.pins[k][0];}),ys=ks.map(function(k){return p.pins[k][1];});
- var x0=Math.min.apply(null,xs)-0.3,x1=Math.max.apply(null,xs)+0.3,y0=Math.min.apply(null,ys)-0.3,y1=Math.max.apply(null,ys)+0.3;
- var wx0=gl3dWX(x0),wx1=gl3dWX(x1),wz0=gl3dWZ(y0),wz1=gl3dWZ(y1),zB=1.3,zT=4.5;
- gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,wx0,wx1,zB,zT,wz0,wz1,hex2rgb01('#1c1e22'),{});
+ var x0g=Math.min.apply(null,xs),x1g=Math.max.apply(null,xs),y0g=Math.min.apply(null,ys),y1g=Math.max.apply(null,ys);
+ /* リード足の視覚文法復元(要件展開2): ピン列の走行軸(スパンが大きい方)は現行通り
+    +0.3グリッドパディングのまま、それと直交する軸(走行軸に垂直=行分離の軸)のピン値が
+    ちょうど2群に分離する場合(2列DIP)だけ、その軸の本体エッジをピン列位置から
+    0.9〜1.2mm内側へインセットする(mm空間=gl3dWX/gl3dWZ変換後で行う。グリッド座標の
+    まま動かすと基板ピッチが変わったときにインセット量が意図せず変動するため)。
+    こうするとピン穴が本体壁の外側に張り出し、下のソケットクランプで水平オフセットが
+    生まれ、gl3dFormLeadsが側面から出て曲がるガルウィング状のリードを描ける
+    (単一列やK1リレーのような不規則配置は2群判定に掛からず現行の垂直退化のまま)。 */
+ var rowIsX=(x1g-x0g)>=(y1g-y0g);
+ var wx0=gl3dWX(x0g-0.3),wx1=gl3dWX(x1g+0.3),wz0=gl3dWZ(y0g-0.3),wz1=gl3dWZ(y1g+0.3);
+ var INSET=1.0,MINHALF=1.2;
+ var perpVals=rowIsX?ys:xs,uniqPerp=perpVals.filter(function(v,i){return perpVals.indexOf(v)===i;});
+ if(uniqPerp.length===2){
+  var pv0=Math.min.apply(null,uniqPerp),pv1=Math.max.apply(null,uniqPerp);
+  if(rowIsX){
+   var cz=(gl3dWZ(pv0)+gl3dWZ(pv1))/2,z0i=gl3dWZ(pv0)+INSET,z1i=gl3dWZ(pv1)-INSET;
+   if((z1i-z0i)/2<MINHALF){z0i=cz-MINHALF;z1i=cz+MINHALF;}
+   wz0=z0i;wz1=z1i;
+  }else{
+   var cx=(gl3dWX(pv0)+gl3dWX(pv1))/2,x0i=gl3dWX(pv0)+INSET,x1i=gl3dWX(pv1)-INSET;
+   if((x1i-x0i)/2<MINHALF){x0i=cx-MINHALF;x1i=cx+MINHALF;}
+   wx0=x0i;wx1=x1i;
+  }
+ }
+ var zB=1.3,zT=4.5;
+ /* 面別カラー焼き分け(要件展開C16): 単色一枚岩の箱は暗すぎて質感が潰れるため、
+    側面(暗め)と天面(明るめ)を別のgl3dPushBox呼び出しで塗り分け、基調もわずかに
+    持ち上げてライティング/スペキュラーの効く余地を作る。 */
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,wx0,wx1,zB,zT,wz0,wz1,hex2rgb01('#1a1d21'),{top:false,bottom:false});
+ gl3dPushBox(pV,pN,pC,pTP,pTN,idx,-1,wx0,wx1,zB,zT,wz0,wz1,hex2rgb01('#2a2e34'),{nx:false,px:false,nz:false,pz:false,bottom:false});
  /* pin-1 notch marker: a small red rivet on the top face near the pin-1 corner */
  var p1=p.pins[ks[0]],p1x=gl3dWX(p1[0]),p1z=gl3dWZ(p1[1]);
  gl3dPushCyl(pV,pN,pC,pTP,pTN,idx,-1,p1x,zT,p1z,p1x,zT+0.35,p1z,0.5,0.5,hex2rgb01('#ff5d5d'),8,false,true);
- /* pin legs: 本体直下から各ピン穴へ、gl3dFormLeads(この場合は水平オフセット0=垂直に
-    退化)+gl3dSolderFilletで「差し込まれてはんだ付けされている」見た目にする
-    (要件展開)。ピッチが密でもフィレット底半径(lw*3.2)が半ピッチ未満のため隣接ピン
-    同士は干渉しない。 */
- var lw=0.25,lcol=hex2rgb01('#9aa4ae');
- ks.forEach(function(k){var q=p.pins[k],wq=[gl3dWX(q[0]),gl3dWZ(q[1])];
-  gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,wq[0],zB,wq[1],wq[0],wq[1],lw,lcol);
-  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,wq[0],wq[1],lw);});
+ /* pin legs(要件展開2/3): ソケットをインセット後の本体壁面へクランプする
+    (gl3dMeshGenericのbox.cx-box.hw*0.85クランプと同じ考え方をこの本体境界に適用)。
+    2列DIPは側面から出て曲がって穴へ降りるガルウィング形リードになる。クランプ後の
+    水平オフセットが小さい(単一列/K1リレーのような不規則配置)場合は現行の垂直退化
+    呼び出しへそのままフォールバックし、既存の見た目を壊さない。 */
+ var lw=0.25,lcol=hex2rgb01('#cfd8df'),FALLBACK_MIN=0.15;
+ ks.forEach(function(k){var q=p.pins[k],hx=gl3dWX(q[0]),hz=gl3dWZ(q[1]);
+  var sx=Math.max(wx0,Math.min(wx1,hx)),sz=Math.max(wz0,Math.min(wz1,hz));
+  if(Math.hypot(sx-hx,sz-hz)<FALLBACK_MIN){
+   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,hx,zB,hz,hx,hz,lw,lcol);
+  }else{
+   gl3dFormLeads(pV,pN,pC,pTP,pTN,idx,sx,zB+0.9,sz,hx,hz,lw,lcol);
+  }
+  gl3dSolderFillet(pV,pN,pC,pTP,pTN,idx,hx,hz,lw);});
 }
 /* GL3D_MESHに無いkind(将来ユーザーが追加する未知の部品種別)向けの汎用フォールバック
    (要件2)。「最低限、基板にはんだ付けされた箱」として描く: gl3dFormLeads/
