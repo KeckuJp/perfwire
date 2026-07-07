@@ -2788,6 +2788,10 @@ var GL3D={on:false,ok:null,gl:null,canvas:null,
     コードは一切参照しない(3D限定のスコープ。既存2D/等角には触れないという絶対制約に
     正面から抵触するため、あえて3ビュー共有にはしない=敵対的レビューの必須修正)。 */
  pinnedNet:null,wireHoverCache:null,
+ /* focusActive(C11): gl3dUpdateHLが計算した「今フォーカスSetが有効か」(ワイヤ由来の
+    pinnedNet/hoverNet、または部品選択由来)をキャッシュする。gl3dUpdateHLはキー不変時に
+    早期returnするため、uLblFade判定(gl3dDraw)はこのキャッシュ値を読む。 */
+ focusActive:false,
  yaw:45*Math.PI/180,pitch:30*Math.PI/180,dist:400,tx:0,ty:0,drag:null,raf:null,dpr:1};
 function m4ident(){return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);}
 function m4mul(a,b){var o=new Float32Array(16);for(var c=0;c<4;c++)for(var r=0;r<4;r++){var s=0;for(var k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s;}return o;}
@@ -2830,7 +2834,7 @@ var GL3D_VS='attribute vec3 aPos;attribute vec3 aNormal;attribute vec3 aColor;at
  'vNormal=mat3(uModel)*aNormal;vColor=aColor;vHL=aHL;vDepth=-vp.z;vMat=aMat;}';
 var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;varying float vHL;varying float vDepth;varying float vMat;'+
  'uniform vec3 uLight;uniform float uAmbUp,uAmbDn;uniform vec3 uHalf,uViewDir;'+
- 'uniform float uFogNear,uFogScale,uFogMax;uniform vec3 uFogCol;'+
+ 'uniform float uFogNear,uFogScale,uFogMax;uniform vec3 uFogCol,uGhostTint;'+
  /* uLight is intentionally NOT normalized here: its magnitude is calibrated to match
     the 2D isometric normalShade() model (dot(n,LIGHT)/|n|, LIGHT itself unnormalized)
     so the two views render the same brightness for the same face. This diffuse term
@@ -2851,7 +2855,9 @@ var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;va
     (要件2敵対的レビュー承認済み設計: 注目ネットがある間、無関係な配線は-0.85・
     無関係な部品は-0.45で不透明・無彩色寄りに沈める。透明合成はtriangle-soup+
     深度テスト設計を壊すため使わず、輝度ベースの不透明減光で「focus+context」を
-    実現する)。 */
+    実現する)。C11: ゴースト色はuGhostTint(基板色由来)を輝度と半々に混ぜてから
+    暗くする=「黒く穴が開く」でなく「輪郭と固有色の痕跡を残したまま基板色に
+    沈む」解剖図ゴースティングにする(暗背景+暗色IC上での視認性低下への対策)。 */
  /* INC1: 軟肩ロールオフ(C05)。fr=amb+dが0.85を超える分だけexpで漸近的に圧縮し、
     1.0クランプでの階調ゼロ(飽和)を解消する。excess=max(0,fr-0.85)を使うことで
     fr<=0.85側はf=frの恒等となり(見た目の変化なし)、fr>0.85側だけ滑らかに丸める
@@ -2865,7 +2871,7 @@ var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;va
  'float hlAtt=vHL<0.0?max(0.0,1.0+vHL):1.0;'+
  'base+=vec3(spec+rim)*hlAtt;'+
  'vec3 tinted;if(vHL>=0.0){tinted=mix(base,vec3(0.37,0.86,1.0),vHL*0.55);}'+
- 'else{float lum=dot(base,vec3(0.299,0.587,0.114));tinted=mix(base,vec3(lum*0.35),-vHL);}'+
+ 'else{float lum=dot(base,vec3(0.299,0.587,0.114));tinted=mix(base,mix(vec3(lum),uGhostTint,0.5)*0.55,-vHL);}'+
  'float fog=clamp((vDepth-uFogNear)*uFogScale,0.0,uFogMax);'+
  'tinted=mix(tinted,uFogCol,fog);'+
  'gl_FragColor=vec4(tinted,1.0);}';
@@ -3918,20 +3924,36 @@ function gl3dUpdateHL(gl){
  if(GL3D_HLKEY.v===hk)return;
  GL3D_HLKEY.v=hk;
  var tp=GL3D.tagPart,tn=GL3D.tagNet,n=tp.length,hl=new Float32Array(n);
- /* focusNet(注目ネット)がある間のゴースティング用: 部品ごとに「この部品のリード/
-    ピンがfocusNetに繋がっているか」を頂点ループの外で1回だけ判定する(partLeadsで
-    名前を取りD.leadsのnetを引く。既存のtagPart/tagNetだけでは部品→ネット所属が
-    分からないため、要望2の統合案が指摘した追加実装)。 */
+ /* C11: focusNet(ワイヤ由来、pinned/hover)を単一ネットのfocusNetsSet(size=1)に正規化し、
+    さらにfocusNetが無い(=ワイヤを注目していない)場合は選択中の部品(selSet)から
+    接続ネット集合を導出してfocusNetsとする(Fusion/Altium慣行=部品を選ぶとその
+    接続配線が主役化する)。以降のゴースティング判定は「単一ネット比較」でなく
+    「Setメンバーシップ」に一般化し、両方の起点を同一コードパスで扱う。 */
+ var focusNets=null;
+ if(focusNet){focusNets={};focusNets[focusNet]=1;}
+ else if(selSet.length){
+  var fn={};
+  selSet.forEach(function(p){var names=partLeads(p);
+   for(var i2=0;i2<names.length;i2++){var Ld=D.leads[names[i2].name];if(Ld&&Ld.net)fn[Ld.net]=1;}});
+  if(Object.keys(fn).length)focusNets=fn;}
+ /* INC7(uLblFade)からも参照する「フォーカスが有効か」のフラグ。gl3dUpdateHLは
+    キー不変ならこの関数自体をスキップするため、GL3D.focusActiveは前回計算値が
+    そのまま生きる(状態は変わっていないので正しい)。 */
+ GL3D.focusActive=!!focusNets;
+ /* focusNets(注目ネット集合)がある間のゴースティング用: 部品ごとに「この部品のリード/
+    ピンがfocusNetsのいずれかに繋がっているか」を頂点ループの外で1回だけ判定する
+    (partLeadsで名前を取りD.leadsのnetを引く。既存のtagPart/tagNetだけでは部品→
+    ネット所属が分からないため、要望2の統合案が指摘した追加実装)。 */
  var partOnFocus=null;
- if(focusNet){partOnFocus={};D.parts.forEach(function(p,pi){
+ if(focusNets){partOnFocus={};D.parts.forEach(function(p,pi){
   var names=partLeads(p);
-  for(var i2=0;i2<names.length;i2++){var Ld=D.leads[names[i2].name];if(Ld&&Ld.net===focusNet){partOnFocus[pi]=1;break;}}});}
+  for(var i2=0;i2<names.length;i2++){var Ld=D.leads[names[i2].name];if(Ld&&focusNets[Ld.net]){partOnFocus[pi]=1;break;}}});}
  for(var i=0;i<n;i++){var v=0,pi=tp[i],ni=tn[i];
   if(pi>=0){var pp=D.parts[pi];
    if(pp&&inSel(pp))v=1;
-   else if(focusNet)v=partOnFocus[pi]?0:-0.45;}
-  else if(ni>=0&&focusNet){
-   v=(GL3D.netList[ni]===focusNet)?0.65:-0.85;}
+   else if(focusNets)v=partOnFocus[pi]?0:-0.45;}
+  else if(ni>=0&&focusNets){
+   v=focusNets[GL3D.netList[ni]]?0.65:-0.85;}
   hl[i]=v;}
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.hlbuf);gl.bufferData(gl.ARRAY_BUFFER,hl,gl.DYNAMIC_DRAW);}
 /* 盤面構造が変わった時だけジオメトリ/テクスチャを再構築する(既存isoEnsureBakeの
@@ -4010,6 +4032,9 @@ function gl3dCreateResources(gl){
  GL3D.uHalf=gl.getUniformLocation(GL3D.prog,'uHalf');GL3D.uViewDir=gl.getUniformLocation(GL3D.prog,'uViewDir');
  GL3D.uFogNear=gl.getUniformLocation(GL3D.prog,'uFogNear');GL3D.uFogScale=gl.getUniformLocation(GL3D.prog,'uFogScale');
  GL3D.uFogMax=gl.getUniformLocation(GL3D.prog,'uFogMax');GL3D.uFogCol=gl.getUniformLocation(GL3D.prog,'uFogCol');
+ /* C11: ゴースト色(基板色由来、slabHexから導出=uFogColと同じ発想)。テクスチャパス
+    (基板天面)にはゴースティング対象の頂点が無いのでprogTex側には持たない。 */
+ GL3D.uGhostTint=gl.getUniformLocation(GL3D.prog,'uGhostTint');
  GL3D.progTex=gl3dProgram(gl,GL3D_VS_TEX,GL3D_FS_TEX);
  GL3D.aPosT=gl.getAttribLocation(GL3D.progTex,'aPos');GL3D.aNrmT=gl.getAttribLocation(GL3D.progTex,'aNormal');
  GL3D.aUV=gl.getAttribLocation(GL3D.progTex,'aUV');
@@ -4163,6 +4188,10 @@ function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;
  gl.uniform3f(GL3D.uHalf,Hx,Hy,Hz);gl.uniform3f(GL3D.uViewDir,basis.fwd[0],basis.fwd[1],basis.fwd[2]);
  gl.uniform1f(GL3D.uFogNear,uFogNearV);gl.uniform1f(GL3D.uFogScale,uFogScaleV);gl.uniform1f(GL3D.uFogMax,uFogMaxV);
  gl.uniform3f(GL3D.uFogCol,uFogColV[0],uFogColV[1],uFogColV[2]);
+ /* C11: ゴースト色は基板色そのまま(fogRgb、fog用に*0.5した後のuFogColVではない)を
+    渡す=ゴースト頂点は「基板の上で影に沈んだ」ように読める(uFogCol/ghostTintの
+    導出元がslabHexで共通なので基板タイプが変わっても追従する)。 */
+ gl.uniform3f(GL3D.uGhostTint,fogRgb[0],fogRgb[1],fogRgb[2]);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.vbuf);gl.enableVertexAttribArray(GL3D.aPos);gl.vertexAttribPointer(GL3D.aPos,3,gl.FLOAT,false,0,0);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.nbuf);gl.enableVertexAttribArray(GL3D.aNrm);gl.vertexAttribPointer(GL3D.aNrm,3,gl.FLOAT,false,0,0);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.cbuf);gl.enableVertexAttribArray(GL3D.aCol);gl.vertexAttribPointer(GL3D.aCol,3,gl.FLOAT,false,0,0);
@@ -4200,9 +4229,10 @@ function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;
   gl.uniformMatrix4fv(GL3D.uProjL,false,proj);gl.uniformMatrix4fv(GL3D.uViewL,false,view);
   gl.uniform3f(GL3D.uRightL,basis.right[0],basis.right[1],basis.right[2]);
   gl.uniform3f(GL3D.uUpL,basis.up[0],basis.up[1],basis.up[2]);
-  /* ネットに注目中(pinnedNet/hoverNet)はラベルを退かせ、配線側の色変調(gl3dUpdateHLの
-     focusNet式)が主役になる階層を宣言する(要件C13-3)。 */
-  gl.uniform1f(GL3D.uLblFadeL,(GL3D.pinnedNet||hoverNet)?0.25:1.0);
+  /* ネットに注目中(pinnedNet/hoverNet)、または部品選択起点のフォーカスSetが有効
+     (GL3D.focusActive、C11)なときはラベルを退かせ、配線側の色変調(gl3dUpdateHLの
+     focusNets式)が主役になる階層を宣言する(要件C13-3)。 */
+  gl.uniform1f(GL3D.uLblFadeL,(GL3D.pinnedNet||hoverNet||GL3D.focusActive)?0.25:1.0);
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,GL3D.lblTex);gl.uniform1i(GL3D.uTexL,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblCBuf);gl.enableVertexAttribArray(GL3D.aCenterL);gl.vertexAttribPointer(GL3D.aCenterL,3,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblOBuf);gl.enableVertexAttribArray(GL3D.aCornerL);gl.vertexAttribPointer(GL3D.aCornerL,2,gl.FLOAT,false,0,0);
