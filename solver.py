@@ -1563,23 +1563,137 @@ def synthesize_guard(state, cfg, hiz_net, guard_net=None):
         meta["candidates"] = candidates
     return new, meta
 
+def _ccw(a, b, c):
+    return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
+
+def _on_seg(p, q, r):
+    return min(p[0], r[0]) <= q[0] <= max(p[0], r[0]) and min(p[1], r[1]) <= q[1] <= max(p[1], r[1])
+
+def _segments_cross(p1, p2, p3, p4):
+    """真の交差判定（端点共有は交差扱いしない）。propose_multi のローカル美観指標専用の純関数
+    ——監査(ee)には一切入れない。共通の抵抗/コンデンサの片端が同じ穴に集まるのは通常仕様
+    (padJoints で別途監査済み) なので、shared endpoint は交差にカウントしない。"""
+    if p1 in (p3, p4) or p2 in (p3, p4):
+        return False
+    d1, d2, d3, d4 = _ccw(p3, p4, p1), _ccw(p3, p4, p2), _ccw(p1, p2, p3), _ccw(p1, p2, p4)
+    if ((d1 > 0 and d2 < 0) or (d1 < 0 and d2 > 0)) and ((d3 > 0 and d4 < 0) or (d3 < 0 and d4 > 0)):
+        return True
+    if d1 == 0 and _on_seg(p3, p1, p4):
+        return True
+    if d2 == 0 and _on_seg(p3, p2, p4):
+        return True
+    if d3 == 0 and _on_seg(p1, p3, p2):
+        return True
+    if d4 == 0 and _on_seg(p1, p4, p2):
+        return True
+    return False
+
+def _wire_cross_count(wires):
+    """島連結ワイヤ同士の見た目の交差本数（純関数・監査 ee には入れない・propose_multi 選択専用）。"""
+    segs = [(tuple(w["a"]["hole"]), tuple(w["b"]["hole"])) for w in wires]
+    n = 0
+    for i in range(len(segs)):
+        for j in range(i + 1, len(segs)):
+            if _segments_cross(segs[i][0], segs[i][1], segs[j][0], segs[j][1]):
+                n += 1
+    return n
+
+def _diag_wire_count(wires):
+    """軸整列していない（斜めに引かれた）島連結ワイヤの本数（純関数・監査 ee には入れない）。"""
+    n = 0
+    for w in wires:
+        a, b = w["a"]["hole"], w["b"]["hole"]
+        if a[0] != b[0] and a[1] != b[1]:
+            n += 1
+    return n
+
+def _propose_orders(state, cfg):
+    """INC-5(a): 決定的な配置順序を最大4通り生成する（自然順・逆順・接続次数降順・
+    関与ネット最大幅降順）。Board を1回だけ読み取り専用で構築するだけで、渡された
+    state/cfg 自体は変更しない（solve() 側は別途フレッシュな deep copy を渡される）。"""
+    bd = Board(json.loads(json.dumps(state)), cfg)
+    movable_ids = [p["id"] for p in bd.parts if p["kind"] != "ic" and not p.get("locked")]
+    idx = {pid: i for i, pid in enumerate(movable_ids)}
+    net_counts = {}
+    for net in bd.net_of_lead.values():
+        if net:
+            net_counts[net] = net_counts.get(net, 0) + 1
+    by_id = {p["id"]: p for p in bd.parts}
+
+    def _lead_names(pid):
+        p = by_id.get(pid)
+        if not p:
+            return []
+        return p.get("leadNames") or [pid + ".a", pid + ".b"]
+
+    def _degree(pid):
+        return sum(max(0, net_counts.get(bd.net_of_lead.get(nm), 0) - 1) for nm in _lead_names(pid))
+
+    def _max_net_width(pid):
+        widths = [net_counts.get(bd.net_of_lead.get(nm), 0) for nm in _lead_names(pid)]
+        return max(widths) if widths else 0
+
+    base = cfg.get("propose_order") or []
+    return [
+        ("natural", base),
+        ("reverse", list(reversed(movable_ids))),
+        ("degree_desc", sorted(movable_ids, key=lambda pid: (-_degree(pid), idx[pid]))),
+        ("net_width_desc", sorted(movable_ids, key=lambda pid: (-_max_net_width(pid), idx[pid]))),
+    ]
+
+# INC-5(b): craft 重みプリセット（現行プロファイル値 = None つまり無上書き／強craft値2点）。
+# bb×wl 格子を (10,20)×(0.5,1.0) に縮約し、4順序 × 3プリセット × 4格子 = 48 ラン以内に収める。
+_CRAFT_PRESETS = [
+    ("keep", None),
+    ("strong", {"diag_penalty": 50.0, "span_penalty": 20.0, "standing_penalty": 50.0}),
+    ("max", {"diag_penalty": 80.0, "span_penalty": 30.0, "standing_penalty": 80.0}),
+]
+
 def propose_multi(state, cfg):
-    """複数候補スコアリング: 重み格子で再配置を回し、(eeNg, 被覆線数, 注意数) 最小の案を採用。決定的。"""
-    grid = [(bb, wl) for bb in (10, 20, 30) for wl in (0.5, 1.0, 2.0)]
+    """複数候補スコアリング（INC-5）: 配置順序(4) × craft 重みプリセット(3) × (bridge_bonus, wire_len)
+    格子(4) = 最大48ラン を掃引し、辞書式最小の案を採用。決定的（CLI --propose-n 専用、JS 鏡映なし）。
+    選択キー = (eeNg, crosstalk数, direct数, wires数, ワイヤ交差数, 斜めワイヤ数, standing部品数,
+    cautions数, 総ワイヤ長) — eeNg 等は erc_audit/topology_audit の出力を読むだけで監査計算自体は
+    変更しない。crossings/diagWires は propose_multi ローカルの純関数（_wire_cross_count/
+    _diag_wire_count）で、ee には入れない。"""
+    grid = [(bb, wl) for bb in (10, 20) for wl in (0.5, 1.0)]
+    orders = _propose_orders(state, cfg)
     best, scored = None, []
     for bb, wl in grid:
-        c = json.loads(json.dumps(cfg))
-        c.setdefault("weights", {})
-        c["weights"]["bridge_bonus"] = bb
-        c["weights"]["wire_len"] = wl
-        r = solve(json.loads(json.dumps(state)), c, propose=True)
-        s = r["stats"]
-        score = (s["eeNg"], s["wires"], s["cautions"])
-        scored.append({"bridge_bonus": bb, "wire_len": wl, "eeNg": s["eeNg"], "wires": s["wires"], "cautions": s["cautions"]})
-        if best is None or score < best[0]:
-            best = (score, r, (bb, wl))
+        for craft_name, craft_over in _CRAFT_PRESETS:
+            for order_name, order_ids in orders:
+                c = json.loads(json.dumps(cfg))
+                c.setdefault("weights", {})
+                c["weights"]["bridge_bonus"] = bb
+                c["weights"]["wire_len"] = wl
+                if craft_over:
+                    c["weights"].update(craft_over)
+                c["propose_order"] = order_ids
+                r = solve(json.loads(json.dumps(state)), c, propose=True)
+                s = r["stats"]
+                wires_list = r["wires"]
+                crossings = _wire_cross_count(wires_list)
+                diag_wires = _diag_wire_count(wires_list)
+                standing_n = sum(1 for p in r["parts"] if p.get("standing"))
+                crosstalk_n = len(r["ee"].get("crosstalk", []))
+                total_len = round(sum(dist(w["a"]["hole"], w["b"]["hole"]) for w in wires_list), 1)
+                score = (s["eeNg"], crosstalk_n, s["direct"], s["wires"], crossings, diag_wires,
+                         standing_n, s["cautions"], total_len)
+                scored.append({
+                    "bridge_bonus": bb, "wire_len": wl, "craft": craft_name, "order": order_name,
+                    "eeNg": s["eeNg"], "wires": s["wires"], "cautions": s["cautions"],
+                    "crossings": crossings, "diagWires": diag_wires, "standing": standing_n,
+                    "direct": s["direct"], "crosstalk": crosstalk_n, "totalLen": total_len,
+                })
+                if best is None or score < best[0]:
+                    best = (score, r, (bb, wl, craft_name, order_name))
     best[1]["proposeScores"] = scored
-    best[1]["proposeBest"] = {"bridge_bonus": best[2][0], "wire_len": best[2][1], "eeNg": best[0][0], "wires": best[0][1]}
+    best[1]["proposeBest"] = {
+        "bridge_bonus": best[2][0], "wire_len": best[2][1], "craft": best[2][2], "order": best[2][3],
+        "eeNg": best[0][0], "crosstalk": best[0][1], "direct": best[0][2], "wires": best[0][3],
+        "crossings": best[0][4], "diagWires": best[0][5], "standing": best[0][6],
+        "cautions": best[0][7], "totalLen": best[0][8],
+    }
     return best[1]
 
 _KNOWN_KINDS = {"ic", "r", "film", "disc", "elec"}
