@@ -1139,7 +1139,9 @@ def solve(state, cfg, propose=False):
         for lead, xyv in bd.lead_pos.items():
             pid = lead.split(".")[0]
             if pid in fixed_ids or pid.startswith("W"):
-                placed.setdefault(bd.net_of_lead.get(lead), set()).add(xyv)
+                net = bd.net_of_lead.get(lead)
+                if net is not None:  # 未接続ピンをplaced[None]へ混入させない（index.htmlのif(n)と揃える）
+                    placed.setdefault(net, set()).add(xyv)
         order = cfg.get("propose_order") or []
         movable.sort(key=lambda p: order.index(p["id"]) if p["id"] in order else 99)
         hiz_leads = []
