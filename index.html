@@ -2771,7 +2771,7 @@ var GL3D={on:false,ok:null,gl:null,canvas:null,
     right/up軸(uRight/uUp、フレームごとに再計算)で押し出す＝常にカメラを向く板。
     テクスチャは1枚のCanvas 2Dアトラス(gl3dBakeLabelAtlas)にrefdes/外部端子名/注意マーク/
     極性+マークを焼き込む。 */
- progLbl:null,aCenterL:-1,aCornerL:-1,aUVL:-1,uProjL:null,uViewL:null,uRightL:null,uUpL:null,uTexL:null,
+ progLbl:null,aCenterL:-1,aCornerL:-1,aUVL:-1,uProjL:null,uViewL:null,uRightL:null,uUpL:null,uTexL:null,uLblFadeL:null,
  lblCBuf:null,lblOBuf:null,lblUBuf:null,lblTex:null,lblVcount:0,
  vbuf:null,nbuf:null,cbuf:null,hlbuf:null,mbuf:null,vcount:0,topVBuf:null,topNBuf:null,topUVBuf:null,tex:null,
  /* tagPart/tagNet: 頂点ごとの所属(部品indexまたはnet index、どちらも無ければ-1)。ジオメトリ
@@ -2936,8 +2936,11 @@ var GL3D_VS_LBL='attribute vec3 aCenter;attribute vec2 aCorner;attribute vec2 aU
    ラベルアトラスは複数ラベルを縦に敷き詰めるため境界密度が高く、実害(下端の滲み)が
    出得ると指摘されたのはこちら。真のmediump実装でも従来同値にフォールバックする。 */
 var GL3D_FS_LBL='#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n'+
- 'varying vec2 vUV;uniform sampler2D uTex;'+
- 'void main(){vec4 c=texture2D(uTex,vUV);if(c.a<0.04)discard;gl_FragColor=c;}';
+ 'varying vec2 vUV;uniform sampler2D uTex;uniform float uLblFade;'+
+ /* discard判定は元アルファ(フェード前)で行う=フェード中でも縁のdiscard閾値がぶれない
+    (フェード後アルファで判定すると0.25倍時に閾値0.04/0.25=0.16未満の薄い縁が余分に
+    discardされ、文字の輪郭が痩せて見えるのを避ける、要件C13)。 */
+ 'void main(){vec4 c=texture2D(uTex,vUV);if(c.a<0.04)discard;gl_FragColor=vec4(c.rgb,c.a*uLblFade);}';
 function gl3dShader(gl,type,src){var s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);
  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){var log=gl.getShaderInfoLog(s);gl.deleteShader(s);throw new Error('shader compile: '+log);}
  return s;}
@@ -3586,6 +3589,12 @@ function gl3dBuildSolidGeom(){
  if(LY.ends)(D.wires||[]).forEach(function(w){var ni=netIdOf(w.net),ecol=hex2rgb01(D.netColors[w.net]||'#999999');
   [w.a,w.b].forEach(function(e){var pos=e.direct?e.pad:e.hole,wp=[gl3dWX(pos[0]),gl3dWZ(pos[1])];
    gl3dPushCyl(pV,pN,pC,pM,pTP,pTN,-1,ni,wp[0],GL3D_SHADOW_Y*0.5,wp[1],wp[0],GL3D_SHADOW_Y*1.5,wp[1],1.05,1.05,ecol,10,true,true,GL3D_MAT_BRIDGE);});});
+ /* C14リーダー線: gl3dLabelEntries()がスタッガで持ち上げた(raised:true)ラベルにだけ、
+    元の高さ(y0、部品天面/端子近傍)からラベル基部(y)へ細い垂直円柱を通す(タグ-1/-1=
+    選択/ネットハイライトの対象外、depth testが効く通常のソリッドとして描かれるので
+    手前の部品に正しく隠れる)。浮いて見えるラベルに必ず帰属を持たせる(要件C14)。 */
+ if(LY.labels)gl3dLabelEntries().forEach(function(e){if(!e.raised)return;
+  gl3dPushCyl(pV,pN,pC,pM,pTP,pTN,-1,-1,e.x,e.y0,e.z,e.x,e.y,e.z,0.07,0.07,hex2rgb01('#8a9099'),6,false,false,GL3D_MAT_MARK);});
  GL3D.tagPart=pTP;GL3D.tagNet=pTN;GL3D.netList=netList;
  return {pos:new Float32Array(pV),nrm:new Float32Array(pN),col:new Float32Array(pC),mat:new Float32Array(pM),count:pV.length/3};}
 /* 基板天面テクスチャ(オフスクリーンCanvas 2D)。既存Canvas 2D等角ビューの
@@ -3797,7 +3806,14 @@ function gl3dCautionMarks(){
     out.push({c:p2[0]+dd[0]/2,r:p2[1]+dd[1]/2});}});});
  return out;}
 /* refdes/外部端子名/電解の極性+マーク/注意×マークのビルボード配置(ワールドmm座標＋
-   テキスト＋色)。LY.labelsで部品名/外部端子名をゲートする(2Dの K.labels と同じ意味論)。 */
+   テキスト＋色)。LY.labelsで部品名/外部端子名をゲートする(2Dの K.labels と同じ意味論)。
+   要件C13/C14: 中身はrefdesトークン(p.label)のみ(familyはhover/2D側の情報経路へ委譲、
+   インク量を減らして密集盤面での判読性を上げる)。末尾で同一XZ約10mm内の衝突を検出し、
+   優先度(外部端子名>refdes>'+'。×注意マークは非参加、詳細は下のコメント参照)の低い側の
+   yを+2.8mm/段ずつ持ち上げる決定的スタッガを行う(raised:trueで印を付け、
+   gl3dBuildSolidGeomがリーダー線を追加する判断材料にする)。処理はsort→bucket
+   occupancyの純粋関数=同じDから毎回同じ結果になる(要件: undo/redo・案切替・
+   言語切替で配置が揺れない)。 */
 function gl3dLabelEntries(){
  var out=[];
  if(LY.labels){
@@ -3808,17 +3824,35 @@ function gl3dLabelEntries(){
       約5.2mm/寝かせr bodyWid≥3.2mm)でラベルが部品本体に沈み込み得た。他kindは
       gl3dPickTopHがisoPartHeightにフォールバックするので値は変わらない。 */
    var h=gl3dPickTopH(p,PF),box=gl3dPartBox(p,PF);
-   out.push({x:box.cx,y:h+1.6,z:box.cz,text:(p.family?p.family+' ':'')+p.label,col:'#dce3ea'});
+   out.push({x:box.cx,y:h+1.6,z:box.cz,text:p.label,col:'#dce3ea',pri:2});
    if(p.kind==='elec'){var a=p.leads[0],b=p.leads[1],pl=(p.plus===1)?b:a,wx=gl3dWX(pl[0]),wz=gl3dWZ(pl[1]);
     /* アンカーは缶頂(h=gl3dPickTopH、elecはisoPartHeightにフォールバックしgl3dMeshElecの
        H=max(6,dia*1.15)と一致)より上に置く。旧実装のh*0.6は缶高の6割位置=缶本体の
        裏側になり、pitch 20/45/85度の全視点で可視ピクセル0になっていた(refdesラベルと
        同じh+1.6オフセットに揃えて解消)。 */
-    out.push({x:wx,y:h+1.6,z:wz,text:'+',col:'#ff7b7b'});}});
+    out.push({x:wx,y:h+1.6,z:wz,text:'+',col:'#ff7b7b',pri:1});}});
   Object.keys(D.leads).forEach(function(nm){if(nm.slice(0,2)!=='W.')return;var Lx=D.leads[nm];if(!Lx||!Lx.at)return;
-   out.push({x:gl3dWX(Lx.at[0]),y:3.2,z:gl3dWZ(Lx.at[1]),text:nm.slice(2),col:'#dce3ea'});});
+   out.push({x:gl3dWX(Lx.at[0]),y:3.2,z:gl3dWZ(Lx.at[1]),text:nm.slice(2),col:'#dce3ea',pri:3});});
  }
  gl3dCautionMarks().forEach(function(m){out.push({x:gl3dWX(m.c),y:1.6,z:gl3dWZ(m.r),text:'×',col:'#ff5d5d'});});
+ /* C14スタッガ: 決定性のため先に(x,z,text)でソートし、そのうえで優先度降順(外部端子名3
+    >refdes2>'+'1)に並べ替えて処理する(同一優先度内の処理順は直前の(x,z,text)ソート
+    順のまま=毎回同じ盤面なら毎回同じ結果になる)。約10mm四方のバケットに量子化して
+    衝突を検出し、既に埋まっているバケットに後から入る(=優先度が同じか低い)エントリ
+    だけをyを+2.8mm/段ずつ持ち上げてraised:trueにする。raisedエントリの元の高さはy0に
+    退避する(gl3dBuildSolidGeomがリーダー線の始点=部品天面側として使う)。 ×注意マークは
+    pri未設定=このバケット衝突判定に一切参加しない(実測で判明した回帰: 密集盤面では
+    ×が同一10mmバケットに10個以上乗り、優先度タイなので連鎖的に段を食い合って
+    y=30mm超(部品高の3倍以上)まで積み上がり、細いリーダー線が林立する「竹串の山」に
+    見えていた。指示書の優先度定義が外部端子名/refdes/'+'の3種のみでxを含んでいない
+    ことに合わせ、×はスタッガ対象外=常時y=1.6の従来どおりの表示に留める)。 */
+ out.sort(function(a,b){if(a.x!==b.x)return a.x-b.x;if(a.z!==b.z)return a.z-b.z;return a.text<b.text?-1:(a.text>b.text?1:0);});
+ var order=out.filter(function(e){return e.pri;}).sort(function(a,b){return b.pri-a.pri;});
+ var STAG_BUCKET=10,STAG_STEP=2.8,occ={};
+ order.forEach(function(e){var bk=Math.round(e.x/STAG_BUCKET)+'_'+Math.round(e.z/STAG_BUCKET);
+  var lvl=occ[bk]||0;
+  if(lvl>0){e.y0=e.y;e.y=e.y+STAG_STEP*lvl;e.raised=true;}
+  occ[bk]=lvl+1;});
  return out;}
 /* Canvas 2Dで1行=1エントリのテキストアトラスを焼く(既存gl3dBakeTexCanvasと同じ発想: 盤面
    構造+選択言語+DPRが変わった時だけ再構築、gl3dGeomKey参照)。行の高さはGL3D.dpr込みで
@@ -3829,7 +3863,13 @@ function gl3dLabelEntries(){
    entries自体を切り詰める(v>1になったUVがCLAMP_TO_EDGEで最終行を使い回し、
    ラベルが崩れて見えるのを避ける=見えないラベルが出る方が誤表示より安全)。 */
 function gl3dBakeLabelAtlas(gl){
- var entries=gl3dLabelEntries(),dpr=GL3D.dpr||1,rowH=Math.max(14,Math.round(22*dpr)),pad=4;
+ var entries=gl3dLabelEntries(),dpr=GL3D.dpr||1,rowH=Math.max(14,Math.round(22*dpr));
+ /* ハロー(縁取り)幅は行高比例で決める(要件C13): 旧来の固定lineWidth=3+半透明rgba(0,0,0,.7)
+    はdpr=2時の約31px文字に対し字高10%未満(可読ハローの実務目安15〜20%を下回る)で
+    「縁がにじむだけ」に見えていた。rowH*0.22の不透明ストロークへ変え、配線/部品と
+    重なっても文字が沈まない堅い縁を作る。padはこの新lineWidthに合わせて広げる
+    (でないとストロークがアトラスのセル境界で欠ける)。 */
+ var lineW=Math.max(4,Math.round(rowH*0.22)),pad=4+Math.ceil(lineW/2);
  var maxTex=(gl&&gl.getParameter)?(gl.getParameter(gl.MAX_TEXTURE_SIZE)||2048):2048;
  var scratch=document.createElement('canvas').getContext('2d');
  scratch.font='700 '+Math.round(rowH*0.7)+'px "Segoe UI",system-ui,sans-serif';
@@ -3841,8 +3881,9 @@ function gl3dBakeLabelAtlas(gl){
  var cnv=document.createElement('canvas');cnv.width=texW;cnv.height=texH;var g=cnv.getContext('2d');
  g.font='700 '+Math.round(rowH*0.7)+'px "Segoe UI",system-ui,sans-serif';g.textAlign='left';g.textBaseline='middle';
  var rects=[];
+ g.lineJoin='round';
  entries.forEach(function(e,i){var y=i*rowH+rowH/2,w=widths[i];
-  g.lineWidth=3;g.strokeStyle='rgba(0,0,0,.7)';g.strokeText(e.text||'',pad,y);
+  g.lineWidth=lineW;g.strokeStyle='#0d1117';g.strokeText(e.text||'',pad,y);g.strokeText(e.text||'',pad,y);
   g.fillStyle=e.col||'#fff';g.fillText(e.text||'',pad,y);
   rects.push({u0:0,v0:i*rowH/texH,u1:w/texW,v1:(i*rowH+rowH)/texH,wpx:w,hpx:rowH});});
  return {canvas:cnv,entries:entries,rects:rects};}
@@ -3994,6 +4035,7 @@ function gl3dCreateResources(gl){
  GL3D.uProjL=gl.getUniformLocation(GL3D.progLbl,'uProj');GL3D.uViewL=gl.getUniformLocation(GL3D.progLbl,'uView');
  GL3D.uRightL=gl.getUniformLocation(GL3D.progLbl,'uRight');GL3D.uUpL=gl.getUniformLocation(GL3D.progLbl,'uUp');
  GL3D.uTexL=gl.getUniformLocation(GL3D.progLbl,'uTex');
+ GL3D.uLblFadeL=gl.getUniformLocation(GL3D.progLbl,'uLblFade');
  GL3D.vbuf=gl.createBuffer();GL3D.nbuf=gl.createBuffer();GL3D.cbuf=gl.createBuffer();GL3D.hlbuf=gl.createBuffer();
  GL3D.mbuf=gl.createBuffer();
  GL3D.topVBuf=gl.createBuffer();GL3D.topNBuf=gl.createBuffer();GL3D.topUVBuf=gl.createBuffer();
@@ -4158,6 +4200,9 @@ function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;
   gl.uniformMatrix4fv(GL3D.uProjL,false,proj);gl.uniformMatrix4fv(GL3D.uViewL,false,view);
   gl.uniform3f(GL3D.uRightL,basis.right[0],basis.right[1],basis.right[2]);
   gl.uniform3f(GL3D.uUpL,basis.up[0],basis.up[1],basis.up[2]);
+  /* ネットに注目中(pinnedNet/hoverNet)はラベルを退かせ、配線側の色変調(gl3dUpdateHLの
+     focusNet式)が主役になる階層を宣言する(要件C13-3)。 */
+  gl.uniform1f(GL3D.uLblFadeL,(GL3D.pinnedNet||hoverNet)?0.25:1.0);
   gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,GL3D.lblTex);gl.uniform1i(GL3D.uTexL,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblCBuf);gl.enableVertexAttribArray(GL3D.aCenterL);gl.vertexAttribPointer(GL3D.aCenterL,3,gl.FLOAT,false,0,0);
   gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.lblOBuf);gl.enableVertexAttribArray(GL3D.aCornerL);gl.vertexAttribPointer(GL3D.aCornerL,2,gl.FLOAT,false,0,0);
