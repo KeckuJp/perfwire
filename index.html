@@ -2817,28 +2817,58 @@ function hex2rgb01(hex){var hh=hex.charAt(0)==='#'?hex.slice(1):hex;if(hh.length
    1 draw callで描く(弱いGPUでもdraw call数を増やさないための設計)。色は頂点属性
    (aColor)で持つ＝オブジェクトごとにuColorを切り替える必要が無い。 */
 var GL3D_VS='attribute vec3 aPos;attribute vec3 aNormal;attribute vec3 aColor;attribute float aHL;'+
- 'uniform mat4 uProj,uView,uModel;varying vec3 vNormal;varying vec3 vColor;varying float vHL;'+
- 'void main(){gl_Position=uProj*uView*uModel*vec4(aPos,1.0);vNormal=mat3(uModel)*aNormal;vColor=aColor;vHL=aHL;}';
-var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;varying float vHL;'+
- 'uniform vec3 uLight;uniform float uAmb;'+
+ 'uniform mat4 uProj,uView,uModel;varying vec3 vNormal;varying vec3 vColor;varying float vHL;varying float vDepth;'+
+ /* vDepth(C10デプスキュー用): カメラ空間でのZ距離(手前が小さい正の値になるよう符号反転)。
+    view*model後のzは正射影下ではカメラ前方が負なので-1倍する。射影前のview空間量なので
+    ジオメトリの生成方法(gl3dPushBox等)には一切影響しない=render-onlyの追加varying。 */
+ 'void main(){vec4 wp=uModel*vec4(aPos,1.0);vec4 vp=uView*wp;gl_Position=uProj*vp;'+
+ 'vNormal=mat3(uModel)*aNormal;vColor=aColor;vHL=aHL;vDepth=-vp.z;}';
+var GL3D_FS='precision mediump float;varying vec3 vNormal;varying vec3 vColor;varying float vHL;varying float vDepth;'+
+ 'uniform vec3 uLight;uniform float uAmbUp,uAmbDn;uniform vec3 uHalf,uViewDir;'+
+ 'uniform float uFogNear,uFogScale,uFogMax;uniform vec3 uFogCol;'+
  /* uLight is intentionally NOT normalized here: its magnitude is calibrated to match
     the 2D isometric normalShade() model (dot(n,LIGHT)/|n|, LIGHT itself unnormalized)
-    so the two views render the same brightness for the same face. */
+    so the two views render the same brightness for the same face. This diffuse term
+    (uLight・d) is UNCHANGED by the INC1 lighting upgrade below.
+    parityDecision逸脱理由(このシェーダが2D normalShade()と意図的に食い違う2点。
+    ee/ERC監査には無関係=render-onlyの見た目強化であり、2D等角ビューには同等表現が
+    無い/要らないためparity_check.mjs/parity_headless.mjsの対象外):
+    (1) 半球アンビエント(uAmbUp/uAmbDn)は法線のn.y(ワールドYup)で環境光を上下に
+        分割する——2Dのnormalshade()は視点固定の単一定数ambしか持たない。3Dは自由回転
+        カメラのため「常に画面奥=上」という2Dの前提が成立せず、面の向き(上/下)だけで
+        決まるhemisphere近似の方が安価かつ破綻しない。
+    (2) スペキュラー(uHalf)・リムライト(uViewDir)・デプスキューフォグ(uFogNear/Scale/Max/Col)
+        は2Dのシェーディングモデルに対応概念が存在しない純3D専用の追加項。真上からの
+        正射影である2D等角ビューでは視点依存ハイライトも奥行き感も表現不能/不要なため、
+        意図的に2D側には移植しない。 */
  /* vHL (-1..1、頂点ごと): 0=通常、~0.65=注目中のネット、1.0=選択部品(2D等角ビューの
     シアン破線選択と同じアクセント色に寄せる=表現言語の統一)、負値=ゴースティング
     (要件2敵対的レビュー承認済み設計: 注目ネットがある間、無関係な配線は-0.85・
     無関係な部品は-0.45で不透明・無彩色寄りに沈める。透明合成はtriangle-soup+
     深度テスト設計を壊すため使わず、輝度ベースの不透明減光で「focus+context」を
     実現する)。 */
+ /* INC1: 軟肩ロールオフ(C05)。fr=amb+dが0.85を超える分だけexpで漸近的に圧縮し、
+    1.0クランプでの階調ゼロ(飽和)を解消する。excess=max(0,fr-0.85)を使うことで
+    fr<=0.85側はf=frの恒等となり(見た目の変化なし)、fr>0.85側だけ滑らかに丸める
+    (元の`fr<0.85?fr:...`と数学的に同値だが、GLSL ES 1.00の分岐を避けた等価式)。 */
  'void main(){vec3 n=normalize(vNormal);float d=max(0.0,dot(n,uLight));'+
- 'float f=min(1.0,uAmb+d);vec3 base=vColor*f;'+
+ 'float amb=mix(uAmbDn,uAmbUp,n.y*0.5+0.5);float fr=amb+d;'+
+ 'float excess=max(0.0,fr-0.85);float f=min(fr,0.85)+0.30*(1.0-exp(-excess/0.30));'+
+ 'vec3 base=vColor*f;'+
+ 'float spec=pow(max(0.0,dot(n,uHalf)),24.0)*0.35;'+
+ 'float rim=pow(1.0-max(0.0,dot(n,-uViewDir)),3.0)*0.10;'+
+ 'float hlAtt=vHL<0.0?max(0.0,1.0+vHL):1.0;'+
+ 'base+=vec3(spec+rim)*hlAtt;'+
  'vec3 tinted;if(vHL>=0.0){tinted=mix(base,vec3(0.37,0.86,1.0),vHL*0.55);}'+
  'else{float lum=dot(base,vec3(0.299,0.587,0.114));tinted=mix(base,vec3(lum*0.35),-vHL);}'+
+ 'float fog=clamp((vDepth-uFogNear)*uFogScale,0.0,uFogMax);'+
+ 'tinted=mix(tinted,uFogCol,fog);'+
  'gl_FragColor=vec4(tinted,1.0);}';
 /* テクスチャパス(基板天面のみ)。天面は平面なので正射影下でも普通の画像として貼れる。 */
 var GL3D_VS_TEX='attribute vec3 aPos;attribute vec3 aNormal;attribute vec2 aUV;'+
- 'uniform mat4 uProj,uView,uModel;varying vec3 vNormal;varying vec2 vUV;'+
- 'void main(){gl_Position=uProj*uView*uModel*vec4(aPos,1.0);vNormal=mat3(uModel)*aNormal;vUV=aUV;}';
+ 'uniform mat4 uProj,uView,uModel;varying vec3 vNormal;varying vec2 vUV;varying float vDepth;'+
+ 'void main(){vec4 wp=uModel*vec4(aPos,1.0);vec4 vp=uView*wp;gl_Position=uProj*vp;'+
+ 'vNormal=mat3(uModel)*aNormal;vUV=aUV;vDepth=-vp.z;}';
 /* 精度指定(CG理論レビューFinding 1への対応、推奨事項3): vUVはテクスチャアトラス内の
    矩形を指すvaryingなので、mediump varying補間の丸め誤差(真のFP16実装での相対誤差
    目安2^-10)がアトラス境界付近で隣接領域を巻き込みうる。GL_FRAGMENT_PRECISION_HIGHが
@@ -2846,11 +2876,23 @@ var GL3D_VS_TEX='attribute vec3 aPos;attribute vec3 aNormal;attribute vec2 aUV;'
    定義されていない実装(古いモバイルGPU等)では従来通りmediumpにフォールバックするので
    退行はない。ASCII のみ・GLSLプリプロセッサ行として改行必須(1行に連結不可)。 */
 var GL3D_FS_TEX='#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n'+
- 'varying vec3 vNormal;varying vec2 vUV;'+
- 'uniform vec3 uLight;uniform float uAmb;uniform sampler2D uTex;'+
- /* see GL3D_FS above: uLight stays unnormalized to match the 2D calibration. */
+ 'varying vec3 vNormal;varying vec2 vUV;varying float vDepth;'+
+ 'uniform vec3 uLight;uniform float uAmbUp,uAmbDn;uniform vec3 uHalf;'+
+ 'uniform float uFogNear,uFogScale,uFogMax;uniform vec3 uFogCol;uniform sampler2D uTex;'+
+ /* see GL3D_FS above: uLight stays unnormalized to match the 2D calibration; the
+    hemisphere ambient/specular/fog additions here mirror the solid pass (INC1)
+    so the board top reads as part of the same lit scene as the parts/wires.
+    天面はほぼ常にn.y=1(水平)なのでhemisphere分岐の影響は小さいが、傾いた基板は
+    現状無い前提でも将来の拡張に備え同じ式を適用する。スペキュラーは弱め固定
+    (アトラス材質ごとの変調は無し=指示(7)の通り)。 */
  'void main(){vec3 n=normalize(vNormal);float d=max(0.0,dot(n,uLight));'+
- 'float f=min(1.0,uAmb+d);vec4 c=texture2D(uTex,vUV);gl_FragColor=vec4(c.rgb*f,1.0);}';
+ 'float amb=mix(uAmbDn,uAmbUp,n.y*0.5+0.5);float fr=amb+d;'+
+ 'float excess=max(0.0,fr-0.85);float f=min(fr,0.85)+0.30*(1.0-exp(-excess/0.30));'+
+ 'float spec=pow(max(0.0,dot(n,uHalf)),16.0)*0.12;'+
+ 'vec4 c=texture2D(uTex,vUV);vec3 col=c.rgb*f+vec3(spec);'+
+ 'float fog=clamp((vDepth-uFogNear)*uFogScale,0.0,uFogMax);'+
+ 'col=mix(col,uFogCol,fog);'+
+ 'gl_FragColor=vec4(col,1.0);}';
 /* アウトライン(反転ハル)パス。頂点法線方向にごくわずかに膨らませ、カメラから見て背面
    (=法線がカメラ方向と逆＝dot<=0)の頂点だけをフラグメントシェーダでdiscardせず残す。
    凸形状(部品ボックス/円柱/楕円体、スラブ側面)では、内部は本体パス(通常の深度テスト)に
@@ -3693,13 +3735,23 @@ function gl3dCreateResources(gl){
  GL3D.aCol=gl.getAttribLocation(GL3D.prog,'aColor');GL3D.aHL=gl.getAttribLocation(GL3D.prog,'aHL');
  GL3D.uProj=gl.getUniformLocation(GL3D.prog,'uProj');GL3D.uView=gl.getUniformLocation(GL3D.prog,'uView');
  GL3D.uModel=gl.getUniformLocation(GL3D.prog,'uModel');GL3D.uLight=gl.getUniformLocation(GL3D.prog,'uLight');
- GL3D.uAmb=gl.getUniformLocation(GL3D.prog,'uAmb');
+ /* INC1: uAmb(単一環境光)をuAmbUp/uAmbDn(半球アンビエント)へ置換。加えてBlinn-Phong
+    スペキュラー用uHalf・リムライト用uViewDir・デプスキューフォグ用uFogNear/uFogScale/
+    uFogMax/uFogColを追加(全てgl3dDraw側で毎フレーム設定、詳細はGL3D_FS上のコメント参照)。 */
+ GL3D.uAmbUp=gl.getUniformLocation(GL3D.prog,'uAmbUp');GL3D.uAmbDn=gl.getUniformLocation(GL3D.prog,'uAmbDn');
+ GL3D.uHalf=gl.getUniformLocation(GL3D.prog,'uHalf');GL3D.uViewDir=gl.getUniformLocation(GL3D.prog,'uViewDir');
+ GL3D.uFogNear=gl.getUniformLocation(GL3D.prog,'uFogNear');GL3D.uFogScale=gl.getUniformLocation(GL3D.prog,'uFogScale');
+ GL3D.uFogMax=gl.getUniformLocation(GL3D.prog,'uFogMax');GL3D.uFogCol=gl.getUniformLocation(GL3D.prog,'uFogCol');
  GL3D.progTex=gl3dProgram(gl,GL3D_VS_TEX,GL3D_FS_TEX);
  GL3D.aPosT=gl.getAttribLocation(GL3D.progTex,'aPos');GL3D.aNrmT=gl.getAttribLocation(GL3D.progTex,'aNormal');
  GL3D.aUV=gl.getAttribLocation(GL3D.progTex,'aUV');
  GL3D.uProjT=gl.getUniformLocation(GL3D.progTex,'uProj');GL3D.uViewT=gl.getUniformLocation(GL3D.progTex,'uView');
  GL3D.uModelT=gl.getUniformLocation(GL3D.progTex,'uModel');GL3D.uLightT=gl.getUniformLocation(GL3D.progTex,'uLight');
- GL3D.uAmbT=gl.getUniformLocation(GL3D.progTex,'uAmb');GL3D.uTex=gl.getUniformLocation(GL3D.progTex,'uTex');
+ GL3D.uAmbUpT=gl.getUniformLocation(GL3D.progTex,'uAmbUp');GL3D.uAmbDnT=gl.getUniformLocation(GL3D.progTex,'uAmbDn');
+ GL3D.uHalfT=gl.getUniformLocation(GL3D.progTex,'uHalf');
+ GL3D.uFogNearT=gl.getUniformLocation(GL3D.progTex,'uFogNear');GL3D.uFogScaleT=gl.getUniformLocation(GL3D.progTex,'uFogScale');
+ GL3D.uFogMaxT=gl.getUniformLocation(GL3D.progTex,'uFogMax');GL3D.uFogColT=gl.getUniformLocation(GL3D.progTex,'uFogCol');
+ GL3D.uTex=gl.getUniformLocation(GL3D.progTex,'uTex');
  GL3D.progOut=gl3dProgram(gl,GL3D_VS_OUT,GL3D_FS_OUT);
  GL3D.aPosO=gl.getAttribLocation(GL3D.progOut,'aPos');GL3D.aNrmO=gl.getAttribLocation(GL3D.progOut,'aNormal');
  GL3D.uProjO=gl.getUniformLocation(GL3D.progOut,'uProj');GL3D.uViewO=gl.getUniformLocation(GL3D.progOut,'uView');
@@ -3799,6 +3851,27 @@ function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;
  var nearD=Math.max(-2000,GL3D.dist-sceneRad),farD=Math.min(4000,GL3D.dist+sceneRad);
  var aspect=ext.w/ext.h,h=GL3D.dist*0.6,proj=m4ortho(-h*aspect,h*aspect,-h,h,nearD,farD);
  var basis=gl3dCamBasis(),eye=basis.eye,view=m4lookAt(eye,[GL3D.tx,0,GL3D.ty],[0,1,0]),ident=m4ident();
+ /* INC1: Blinn-Phongスペキュラー用ハーフベクトルHを毎フレーム1回だけCPUで計算する
+    (フラグメントごとに正規化するより安い。正射影ではV=一定なので特に無駄が無い)。
+    Ln=uLight(du,dz,dv)を正規化したコピー——拡散項に使うuLight自体(非正規化)は
+    2D calibrationのため不変、Lnはスペキュラー計算専用の別ベクトル。
+    V=-basis.fwd(=面から見て「カメラへ向かう」方向。gl3dCamBasis().fwdは「カメラが
+    向いている」方向=視線方向なのでその逆)。 */
+ var Llen=Math.hypot(LIGHT.du,LIGHT.dz,LIGHT.dv)||1,
+  Lnx=LIGHT.du/Llen,Lny=LIGHT.dz/Llen,Lnz=LIGHT.dv/Llen,
+  Vx=-basis.fwd[0],Vy=-basis.fwd[1],Vz=-basis.fwd[2],
+  Hx=Lnx+Vx,Hy=Lny+Vy,Hz=Lnz+Vz,Hlen=Math.hypot(Hx,Hy,Hz)||1;
+ Hx/=Hlen;Hy/=Hlen;Hz/=Hlen;
+ /* 半球アンビエント上下値(INC1): 平均約0.9*amb(uAmbUp=amb*1.15/uAmbDn=amb*0.65)。 */
+ var ambUp=LIGHT.amb*1.15,ambDn=LIGHT.amb*0.65;
+ /* デプスキュー(C10)パラメータ: near=dist(カメラ寄り)を0、遠方をsceneRad*2で最大濃度に
+    達するよう線形スケール。uFogMaxは8-12%厳守(較正済み2D輝度からの乖離を抑える)。
+    フォグ色は基板色(gl3dBuildSolidGeom/isoEnsureBakeと同じslabHex三項式)を約50%暗く
+    した値=「空気の霧」でなく「盤上の光量落ち」に見えるよう基板タイプへ自動追従させる。 */
+ var fogBt=D.grid.type||'perf',
+  fogHex=fogBt==='strip'?'#3a2a1c':((fogBt==='mesh'||fogBt==='breadboard'||fogBt==='cluster'||fogBt==='custom')?'#402b1a':'#2c6e46'),
+  fogRgb=hex2rgb01(fogHex),uFogColV=[fogRgb[0]*0.5,fogRgb[1]*0.5,fogRgb[2]*0.5],
+  uFogNearV=GL3D.dist-sceneRad,uFogScaleV=1/Math.max(1,sceneRad*2),uFogMaxV=0.10;
  /* アウトラインパス(要件2)。ソリッドパスと同じ位置/法線バッファ(GL3D.vbuf/nbuf)を
     再利用する(頂点を複製しない、GL3D_VS_OUT参照)。ソリッドパスより先に描く: 膨らませた
     ジオメトリが書き込む深度は本体の深度よりわずかに遠いので、後で描くソリッドパスが
@@ -3815,7 +3888,11 @@ function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;
     gl3dUpdateHLが毎フレーム再計算する選択/ホバーの色変調量(要件4)。 */
  gl.useProgram(GL3D.prog);
  gl.uniformMatrix4fv(GL3D.uProj,false,proj);gl.uniformMatrix4fv(GL3D.uView,false,view);gl.uniformMatrix4fv(GL3D.uModel,false,ident);
- gl.uniform3f(GL3D.uLight,LIGHT.du,LIGHT.dz,LIGHT.dv);gl.uniform1f(GL3D.uAmb,LIGHT.amb);
+ gl.uniform3f(GL3D.uLight,LIGHT.du,LIGHT.dz,LIGHT.dv);
+ gl.uniform1f(GL3D.uAmbUp,ambUp);gl.uniform1f(GL3D.uAmbDn,ambDn);
+ gl.uniform3f(GL3D.uHalf,Hx,Hy,Hz);gl.uniform3f(GL3D.uViewDir,basis.fwd[0],basis.fwd[1],basis.fwd[2]);
+ gl.uniform1f(GL3D.uFogNear,uFogNearV);gl.uniform1f(GL3D.uFogScale,uFogScaleV);gl.uniform1f(GL3D.uFogMax,uFogMaxV);
+ gl.uniform3f(GL3D.uFogCol,uFogColV[0],uFogColV[1],uFogColV[2]);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.vbuf);gl.enableVertexAttribArray(GL3D.aPos);gl.vertexAttribPointer(GL3D.aPos,3,gl.FLOAT,false,0,0);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.nbuf);gl.enableVertexAttribArray(GL3D.aNrm);gl.vertexAttribPointer(GL3D.aNrm,3,gl.FLOAT,false,0,0);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.cbuf);gl.enableVertexAttribArray(GL3D.aCol);gl.vertexAttribPointer(GL3D.aCol,3,gl.FLOAT,false,0,0);
@@ -3824,7 +3901,10 @@ function gl3dDraw(){var gl=GL3D.gl;if(!gl)return;
  /* テクスチャパス(基板天面) */
  gl.useProgram(GL3D.progTex);
  gl.uniformMatrix4fv(GL3D.uProjT,false,proj);gl.uniformMatrix4fv(GL3D.uViewT,false,view);gl.uniformMatrix4fv(GL3D.uModelT,false,ident);
- gl.uniform3f(GL3D.uLightT,LIGHT.du,LIGHT.dz,LIGHT.dv);gl.uniform1f(GL3D.uAmbT,LIGHT.amb);
+ gl.uniform3f(GL3D.uLightT,LIGHT.du,LIGHT.dz,LIGHT.dv);
+ gl.uniform1f(GL3D.uAmbUpT,ambUp);gl.uniform1f(GL3D.uAmbDnT,ambDn);gl.uniform3f(GL3D.uHalfT,Hx,Hy,Hz);
+ gl.uniform1f(GL3D.uFogNearT,uFogNearV);gl.uniform1f(GL3D.uFogScaleT,uFogScaleV);gl.uniform1f(GL3D.uFogMaxT,uFogMaxV);
+ gl.uniform3f(GL3D.uFogColT,uFogColV[0],uFogColV[1],uFogColV[2]);
  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,GL3D.tex);gl.uniform1i(GL3D.uTex,0);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.topVBuf);gl.enableVertexAttribArray(GL3D.aPosT);gl.vertexAttribPointer(GL3D.aPosT,3,gl.FLOAT,false,0,0);
  gl.bindBuffer(gl.ARRAY_BUFFER,GL3D.topNBuf);gl.enableVertexAttribArray(GL3D.aNrmT);gl.vertexAttribPointer(GL3D.aNrmT,3,gl.FLOAT,false,0,0);
