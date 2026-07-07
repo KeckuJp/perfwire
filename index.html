@@ -47,6 +47,13 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 #gl3d-bar{position:absolute;top:12px;left:16px;display:none;gap:5px;z-index:5;max-width:74%;flex-wrap:wrap}
 #gl3d-bar button{backdrop-filter:blur(10px);background:rgba(18,22,27,.7);font-size:11px;padding:4px 9px}
 #gl3d-bar button.on{background:linear-gradient(135deg,#11a8e0,#0c7fb3);color:#06222e;font-weight:600}
+/* ホバーインスペクト・ツールチップ(INC-05/8)。#canvasが position:relative なのでカーソル近傍への
+   絶対配置は#canvas基準になる。pointer-events:noneでカーソル自体の当たり判定を邪魔しない。 */
+#gl3d-tip{position:absolute;display:none;pointer-events:none;z-index:6;max-width:240px;
+ background:rgba(18,22,27,.88);backdrop-filter:blur(10px);border:1px solid var(--bd2);
+ border-radius:6px;padding:5px 8px;font:11px/1.5 Consolas,monospace;color:var(--tx);
+ box-shadow:0 4px 14px rgba(0,0,0,.35)}
+#gl3d-tip b{font-weight:700}
 #status{padding:6px 16px;background:rgba(18,22,27,.72);backdrop-filter:blur(14px);border-top:1px solid var(--bd);font:12px Consolas,monospace;color:var(--mut);display:flex;gap:10px;flex-wrap:wrap}
 .chip{background:var(--panel2);border:1px solid var(--bd);border-radius:6px;padding:1px 9px}
 .chip b{color:var(--tx);font-weight:600}
@@ -195,6 +202,7 @@ svg{display:block;margin:16px auto}
 <canvas id="pw-iso" style="display:none;touch-action:none" aria-label="基板3Dビュー"></canvas>
 <canvas id="pw-iso3d" style="display:none;touch-action:none" aria-label="基板3Dビュー（自由回転）"></canvas>
 <div id="gl3d-bar" style="display:none"></div>
+<div id="gl3d-tip" aria-hidden="true"></div>
 </div>
 <footer id="status"><span class="chip" id="st-mode"></span><span class="chip" id="st-pos">—</span><span class="chip" id="st-net" style="display:none"></span><span class="chip" id="st-stats"></span><span class="chip" id="st-lasttoast" style="display:inline-block;max-width:26vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle"></span></footer>
 </main>
@@ -360,6 +368,13 @@ var JE={
 '部品ボディを半透明にして、貫通点や下の配線を透かして見せます（もう一度クリックで解除）':'Make part bodies semi-transparent to reveal lead entry points and wires underneath (click again to turn off)',
 'X線表示: 部品ボディを半透明にしました（もう一度クリックで解除）':'X-ray: part bodies are now semi-transparent (click again to turn off)',
 'X線表示を解除しました。':'X-ray mode turned off.',
+'ツールチップ':'Tooltip',
+'カーソルを部品・ピン・配線に重ねると、接続先をポップアップで表示します（もう一度クリックでOFF）':'Hover over a part, pin, or wire to see a popup of what it connects to (click again to turn off)',
+'ツールチップ表示をONにしました。部品・ピン・配線にカーソルを重ねると接続先を表示します。':'Tooltips are now ON. Hover over a part, pin, or wire to see what it connects to.',
+'ツールチップ表示をOFFにしました。':'Tooltips are now OFF.',
+'3Dビュー: ツールチップ 切替':'3D view: toggle tooltip',
+'部品・ピン・配線にカーソルを重ねると、接続先がツールチップでポップアップ表示されます（ツールバーの「ツールチップ」でON/OFF切替可）。':'Hover over a part, pin, or wire to see its connections in a popup tooltip (toggle with the "Tooltip" button in the toolbar).',
+'同ネット: {0}':'Same net: {0}','、ほか{0}件':', +{0} more',
 '写真を読み込み（下絵）':'Load photo (underlay)','写真を消去':'Clear photo','裏面ビュー 切替':'Toggle mirror view','作業ガイドを開始':'Start work guide','作業ガイドの進捗をリセット':'Reset guide progress','導通チェックリスト生成':'Generate continuity checklist',
 '比較':'Diff','比較を終了':'Close diff','編集前':'unedited original','比較: 編集前と比較':'Diff vs unedited original','比較を終了する':'Close the diff overlay',
 'デカップリング':'Decoupling','配線長':'Wire length','全クラス上限内':'all within class limits','本体重なり':'Body overlap','警告':'warn','パッド接合数':'Pad joints','以下':' max','ERC':'ERC','クリーン':'clean','トポロジ':'Topology','総合':'Overall','件':'','PASS ✓ 製作可':'PASS ✓ fab-ready',
@@ -1631,7 +1646,8 @@ row.onclick=function(){if(!GL3D.on)return;GL3D.pinnedNet=(GL3D.pinnedNet===net)?
 box.appendChild(row);});any=true;}
 if(!any)box.innerHTML='<div class="hint">'+tr('部品がありません')+'</div>';
 var g3h=document.createElement('div');g3h.className='hint';g3h.style.marginTop='8px';
-g3h.textContent=tr('3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替・分離表示・X線表示など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。');
+g3h.textContent=tr('3Dビューの操作: 上部の「3D」ボタンでツールバーが出ます（レイヤー表示切替・分離表示・X線表示など）。凡例の「ネット」行はクリックで3Dビューに固定表示できます。')+' '+
+ tr('部品・ピン・配線にカーソルを重ねると、接続先がツールチップでポップアップ表示されます（ツールバーの「ツールチップ」でON/OFF切替可）。');
 box.appendChild(g3h);}
 /* NETPALはネット割当順(netColor参照)に並ぶ12色。先頭8色は正常/protan/deutan(P型/D型)の
    3視覚モード全てでペアワイズΔE76(CIELAB, Viénot 1999法でCVDをシミュレート)>=25を満たすよう
@@ -1986,6 +2002,7 @@ render();auditSoon();}},
 {n:'レイヤー: ブロック穴 切替',k:'layer blocked',f:function(){setLayer('blocked',!LY.blocked);}},
 {n:'3Dビュー: 分離表示 切替',k:'iso 3d isolate focus solo hide unrelated ghost',f:function(){var btn=document.getElementById('g3-isolate-btn');if(btn)btn.click();}},
 {n:'3Dビュー: X線表示 切替',k:'iso 3d xray x-ray transparent see through body',f:function(){var btn=document.getElementById('g3-xray-btn');if(btn)btn.click();}},
+{n:'3Dビュー: ツールチップ 切替',k:'iso 3d tooltip hover tip pin net inspect',f:function(){var btn=document.getElementById('g3-tip-btn');if(btn)btn.click();}},
 {n:'設定を既定値に戻す',k:'default config',f:function(){document.getElementById('pw-defcfg').click();}},
 {n:'写真を読み込み（下絵）',k:'photo image load',f:function(){document.getElementById('ph-load').click();}},
 {n:'写真を消去',k:'photo clear',f:function(){document.getElementById('ph-clear').click();}},
@@ -2796,6 +2813,7 @@ function setIso(v){if(v===ISO.on)return;ISO.on=v;
  GL3D.isolate=false;/* isolate(増分3/8)は3Dビュー専用の一時状態なので、閉じるたびにリセット
    (次に開いた時、前回のisolateがGL3D.on再突入前から効いているように見える混乱を防ぐ)。 */
  GL3D.xray=false;/* X線(増分4/8)も同様に3Dビュー専用の一時状態なので閉じるたびにリセット */
+ var g3tip=document.getElementById('gl3d-tip');if(g3tip)g3tip.style.display='none';/* INC-05: GL3D.tipOn自体(設定)は保持するが、表示中のツールチップ内容は3Dを閉じたら隠す(2Dへ戻った直後に浮いたまま残らないように) */
  updateGl3dPinChip();/* GL3D専用チップなのでGL3D.onがfalseになったら必ず隠す */
  buildLegend();/* 同上: 2Dへ戻った直後にも凡例のネット行案内文を最新化する */
  if(GL3D.rotRaf){cancelAnimationFrame(GL3D.rotRaf);GL3D.rotRaf=null;}/* 90°スナップ回転トゥイーンが3Dクローズ後も回り続けないよう即キャンセル(gl3dSnapRotateのstep2ガードと二重の安全策) */
@@ -2883,6 +2901,12 @@ var GL3D={on:false,ok:null,gl:null,canvas:null,
     決まる頂点フラグで、ON/OFF自体はuXrayという毎フレームのuniformだけで切り替わる
     (isolateのように再構築やaHL再計算は不要=gl3dInvalidate()での再描画のみで足りる)。 */
  xray:false,
+ /* ホバーインスペクト・ツールチップ(増分5/8): カーソル直下の部品/ピン/配線の接続先を
+    #gl3d-tipへポップアップする機能のON/OFF。既定ON(発見可能性優先、ツールバーの
+    トグルで明示的に隠せる)。isolate/xrayと違い3Dビューを閉じても状態は保持する
+    (「今どのネットを見ているか」のような一時フォーカスではなく、ユーザーが選んだ
+    表示設定のため)。 */
+ tipOn:true,
  yaw:45*Math.PI/180,pitch:30*Math.PI/180,dist:400,tx:0,ty:0,drag:null,raf:null,dpr:1};
 function m4ident(){return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);}
 function m4mul(a,b){var o=new Float32Array(16);for(var c=0;c<4;c++)for(var r=0;r<4;r++){var s=0;for(var k=0;k<4;k++)s+=a[k*4+r]*b[c*4+k];o[c*4+r]=s;}return o;}
@@ -3308,7 +3332,9 @@ function gl3dPushWire(pV,pN,pC,pM,pTP,pTN,tagN,w,obst,hoverCache){
     再計算すると、密集盤面ほどアーチが高く引き上げられているのにサンプル点が
     低いままになり、狙いのシーンでこそピックが実際の見た目の下に外れる
     (描画とピックの二重実装によるドリフト)。 */
- if(hoverCache)hoverCache.push({wa:wa,wb:wb,apex:apex,net:w.net});
+ /* INC-05: ワイヤ本体ツールチップが両端(a/bのtap名)を出せるよう元のwire objも保持する。
+    描画ジオメトリ(wa/wb/apex/net)には一切影響しない追加フィールド。 */
+ if(hoverCache)hoverCache.push({wa:wa,wb:wb,apex:apex,net:w.net,w:w});
  var NS=Math.min(20,Math.max(12,Math.round(6+apex)));
  /* C03+C04: リボン押し出しを内部関数emitRibbonへ括り出し、ケーシング(暗色・幅広・
     僅かに下)→本体色リボン(疑似チューブ法線)の順に2回呼ぶ。両方とも深度テストLESSの
@@ -4435,13 +4461,18 @@ function gl3dRayPointDist(ray,px,py,pz){
    「最終apex」(障害物クリアランス込み)をそのまま使って弧をサンプルするので、描画と
    ピックが常に一致する(基本式を再計算しない)。thresholdWorldは画面px閾値を
    ワールドmmへ換算した値(呼び出し側でGL3D.dist*1.2/canvasHeightPxから求める)。 */
-function gl3dWireHoverNet(ray,thresholdWorld){
- var cache=GL3D.wireHoverCache||[],bestNet=null,bestD=Infinity;
+/* ワイヤ本体ホバー判定の共通実体。gl3dWireHoverNet(クリックのネット固定用、netだけで足りる)と
+   gl3dHoverMove(ツールチップ用、両端のtap名も要る=INC-05)の両方から呼べるよう、キャッシュ
+   エントリ自体(net/wa/wb/apex/w)を返す版を切り出す(挙動は旧gl3dWireHoverNetと同一、
+   閾値判定・サンプル刻みとも変更なし)。 */
+function gl3dWireHoverEntry(ray,thresholdWorld){
+ var cache=GL3D.wireHoverCache||[],best=null,bestD=Infinity;
  for(var wi=0;wi<cache.length;wi++){var c=cache[wi],dx=c.wb[0]-c.wa[0],dz=c.wb[1]-c.wa[1];
   for(var i=0;i<=10;i++){var t=i/10;
    var x=c.wa[0]+dx*t,z=c.wa[1]+dz*t,y=4*c.apex*t*(1-t);
-   var d=gl3dRayPointDist(ray,x,y,z);if(d<bestD){bestD=d;bestNet=c.net;}}}
- return (bestD<=thresholdWorld)?bestNet:null;}
+   var d=gl3dRayPointDist(ray,x,y,z);if(d<bestD){bestD=d;best=c;}}}
+ return (bestD<=thresholdWorld)?best:null;}
+function gl3dWireHoverNet(ray,thresholdWorld){var e=gl3dWireHoverEntry(ray,thresholdWorld);return e?e.net:null;}
 /* pick専用の視覚天面高さ。isoPartHeight()はisoBakeExtent/buildIsoList等の2D等角ビューと
    共有しているためそちらの見た目定義は変えず、ここでだけkind別の実ジオメトリ天面
    (gl3dMeshDisc/gl3dMeshRと同期)を返す。disc=楕円体の中心+半軸(0.62倍)、寝かせr=
@@ -4456,12 +4487,18 @@ function gl3dPickTopH(p,PF){
 function gl3dGroundHole(ray){var ground=gl3dRayPlaneY0(ray);if(!ground)return null;
  var gc=Math.round(ground[0]/CFG.pitch+(cols+1)/2),gr=Math.round(ground[1]/CFG.pitch+(rows+1)/2);
  return inb(gc,gr)?[gc,gr]:null;}
-function gl3dPick(px,py,cw,ch){
- var ray=gl3dRayFromScreen(px,py,cw,ch),best=null,bestT=Infinity;
+/* 部品AABBのみのpick(レイ済み)。gl3dPick(px,py起点のフル判定)とgl3dHoverMove(ホバー専用の
+   ツールチップ、既に計算済みのrayを再利用したい)の両方から呼べるよう、ray計算を分離した
+   (INC-05: 「gl3dPickのループを流用」の実体はこの関数)。 */
+function gl3dPickPart(ray){
+ var best=null,bestT=Infinity;
  if(LY.parts)D.parts.forEach(function(p){var PF=physFor(p),box=gl3dPartBox(p,PF),ph=gl3dPickTopH(p,PF);
   var t=gl3dRayAABB(ray,box.cx,box.cz,box.hw,box.hd,0,ph);
   if(t!==null&&t<bestT){bestT=t;best=p;}});
- return {part:best,hole:gl3dGroundHole(ray)};}
+ return best;}
+function gl3dPick(px,py,cw,ch){
+ var ray=gl3dRayFromScreen(px,py,cw,ch);
+ return {part:gl3dPickPart(ray),hole:gl3dGroundHole(ray)};}
 /* クリック(ドラッグでない=移動量が閾値未満のpointerup)で部品を選択する。既存の
    isoPick()(2D等角ビュー)と同じShift+クリック複数選択の意味論をそのまま踏襲し、
    selSet/selPart/syncSelBarという同じ選択状態を共有する(要件4)。 */
@@ -4486,12 +4523,76 @@ function gl3dClick(ev){var pt=gl3dPt(ev),cw=GL3D.canvas.clientWidth,ch=GL3D.canv
     誤対象を編集してしまう実害があった。 */
  if(selPart!==palLast){palLast=selPart;buildPalEdit();}
  syncSelBar();gl3dInvalidate();gl3dStatus();updateGl3dPinChip();}
+/* 穴→リード名/ネットの逆引きマップ(既存leadMap()、D.leads/partLeadsを1回走査)を、GL3D側の
+   ジオメトリ世代キー(GL3D.geomKey、D構造が変わった時だけ進む)でキャッシュする(INC-05)。
+   2D版のleadMap()呼び出し(#st-pos等)は毎pointermove無条件に呼んでいるが、3D版は元々
+   4px量子化+同一穴skip(GL3D_HOVER_LAST)で頻度を絞っているため、その先でさらにキャッシュ
+   することで「量子化を抜けた後もD.leads総走査が走る」を避ける。 */
+var GL3D_LEADHOLE={key:'',map:null};
+function gl3dLeadHoleMap(){
+ if(GL3D_LEADHOLE.map&&GL3D_LEADHOLE.key===GL3D.geomKey)return GL3D_LEADHOLE.map;
+ GL3D_LEADHOLE.key=GL3D.geomKey;GL3D_LEADHOLE.map=leadMap();return GL3D_LEADHOLE.map;}
+/* 「外観寸法は推定」注記の文言を#st-stats(gl3dStatus)とツールチップ(gl3dUpdateTip)の
+   両方で完全に同じ文言にするための共有ヘルパ(INC-05で切り出し。以前はgl3dStatus内に
+   直書きだった)。selPart/partHitのどちらから渡しても同じ判定・同じ文字列を返す。 */
+function gl3dEstimateNote(p){
+ if(!p||!(p.pkg||p.phys3d))return '';
+ var pk=gl3dResolvePkg(p);
+ if(pk.confidence!=='estimate'&&pk.confidence!=='todo')return '';
+ return tr('外観寸法は推定')+(pk.source?trf('（{0}）',esc(pk.source)):'');}
+/* ピン/リードのツールチップ本文。「U1.3 → 5V」形式(ピン名→ネット)＋同じネットの他の
+   named lead(最大3件、超過分は「ほか{0}件」で省略表記)。gl3dLeadHoleMap()を1回だけ引き、
+   同ネット判定はそのmapを再走査するだけ(D.leads自体には触れない=読み取り専用)。 */
+function gl3dTipLeadHTML(o){
+ var html='<b>'+esc(o.name)+'</b>';
+ if(!o.net)return html+'<br><span style="color:var(--mut)">'+esc(tr('未接続'))+'</span>';
+ html+=' → <b>'+esc(o.net)+'</b>';
+ var lm=gl3dLeadHoleMap(),others=[];
+ Object.keys(lm).forEach(function(k){var e=lm[k];if(e.net===o.net&&e.name!==o.name)others.push(e.name);});
+ others.sort();
+ if(others.length){var shown=others.slice(0,3),extra=others.length-shown.length;
+  /* 部品/ピン名はASCII識別子(R2.a等)なので、和文の読点でなくASCIIカンマで結合する
+    (JA/EN両ロケールで読み方が変わらない中立な結合子)。 */
+  html+='<br><span style="color:var(--mut)">'+trf('同ネット: {0}',esc(shown.join(', ')))+
+   (extra>0?trf('、ほか{0}件',extra):'')+'</span>';}
+ return html;}
+/* ツールチップ本体の内容決定＋配置。優先順位(a)部品AABB→(b)穴上のリード→(c)ワイヤ本体、
+   の順に判定する(INC-05の指示どおり。#st-net/hoverNetの判定順(穴→ワイヤ)とは別の優先順で、
+   「カーソル直下に部品があるなら部品を勝たせる」ほうがツールチップとしては自然なため)。 */
+function gl3dUpdateTip(pt,partHit,hole,wireEntry){
+ var tip=document.getElementById('gl3d-tip');if(!tip)return;
+ if(!GL3D.tipOn){tip.style.display='none';return;}
+ var html=null;
+ if(partHit){
+  html='<b>'+esc(partHit.id)+'</b>'+(partHit.label?(' '+esc(partHit.label)):'')+
+   '<br><span style="color:var(--mut)">'+esc(tr(KINDJ[partHit.kind]||partHit.kind))+'</span>';
+  var note=gl3dEstimateNote(partHit);if(note)html+='<br><span class="wr">'+note+'</span>';
+ } else if(hole){
+  var o=gl3dLeadHoleMap()[key(hole)];
+  if(o&&o.name)html=gl3dTipLeadHTML(o);
+ }
+ if(!html&&wireEntry){
+  var w=wireEntry.w,ta=w&&w.a?w.a.tap:null,tb=w&&w.b?w.b.tap:null;
+  html='<b>'+esc(wireEntry.net)+'</b>'+((ta||tb)?('<br><span style="color:var(--mut)">'+
+   esc(ta||'?')+' — '+esc(tb||'?')+'</span>'):'');}
+ if(!html){tip.style.display='none';return;}
+ /* '' でなく明示的に'block'を指定する: #gl3d-tipの非表示はスタイルシート側のdisplay:none
+    ルールなので、インラインstyle.displayを空文字にリセットしても(inline styleが元々
+    無指定な#st-net等とは違い)そのままスタイルシートのdisplay:noneへ戻ってしまい表示
+    されない(実機検証で発見)。 */
+ tip.innerHTML=html;tip.style.display='block';
+ var pad=14,cw2=GL3D.canvas.clientWidth,ch2=GL3D.canvas.clientHeight;
+ var tw=tip.offsetWidth||120,th=tip.offsetHeight||28,x=pt[0]+pad,y=pt[1]+pad;
+ if(x+tw>cw2-4)x=pt[0]-pad-tw;
+ if(y+th>ch2-4)y=pt[1]-pad-th;
+ tip.style.left=Math.max(4,x)+'px';tip.style.top=Math.max(4,y)+'px';}
 /* ホバー(ドラッグ中でないpointermove)で穴座標を#st-posへ、当たった穴がワイヤ端子なら
    そのnetをhoverNetへ反映する(既存2D版isoHover()と同じ状態変数を共有、要件4/5)。
-   ホバーはhit.part(部品AABBループ)を使わないため、フルpick(gl3dPick)ではなく地面
-   交点だけの軽量パス(gl3dGroundHole)を使う。さらに前回と同じ穴なら(D.wiresは
-   マウス静止中に変わらないためnewNetの結果も同じになる)innerHTML書換とワイヤ走査を
-   丸ごとskipする(毎pointermoveでの無条件フルpick+innerHTML書換を解消)。 */
+   #st-pos/hoverNet判定自体は地面交点だけの軽量パス(gl3dGroundHole)のまま変えていない。
+   ツールチップ(INC-05)は同じ量子化ゲートの内側で追加のgl3dPickPart(部品AABBループ)を
+   1回だけ流用する(gl3dPickの実装と共有、複製しない)。さらに前回と同じ穴+量子化格子なら
+   (D.wiresはマウス静止中に変わらないため結果も同じになる)innerHTML書換・ワイヤ走査・
+   pickを丸ごとskipする(毎pointermoveでの無条件フルpick+innerHTML書換を解消)。 */
 var GL3D_HOVER_LAST={key:undefined};
 function gl3dHoverMove(ev){var pt=gl3dPt(ev),cw=GL3D.canvas.clientWidth,ch=GL3D.canvas.clientHeight;
  var ray=gl3dRayFromScreen(pt[0],pt[1],cw,ch),hole=gl3dGroundHole(ray);
@@ -4513,8 +4614,10 @@ function gl3dHoverMove(ev){var pt=gl3dPt(ev),cw=GL3D.canvas.clientWidth,ch=GL3D.
     盤面で「どのネットを見ているか」をアーチの途中でも把握できるようにする)。
     gl3dPushWireが記録した実際の最終apex(障害物クリアランス込み)でサンプルするため、
     描画されているアーチと必ず一致する(基本式の再計算によるドリフトが無い)。 */
- if(!newNet){var thresholdWorld=6*1.2*GL3D.dist/ch;newNet=gl3dWireHoverNet(ray,thresholdWorld);}
- if(newNet!==hoverNet){hoverNet=newNet;gl3dInvalidate();gl3dStatus();}}
+ var wireEntry=null,thresholdWorld=6*1.2*GL3D.dist/ch;
+ if(!newNet){wireEntry=gl3dWireHoverEntry(ray,thresholdWorld);newNet=wireEntry?wireEntry.net:null;}
+ if(newNet!==hoverNet){hoverNet=newNet;gl3dInvalidate();gl3dStatus();}
+ gl3dUpdateTip(pt,gl3dPickPart(ray),hole,wireEntry);}
 /* #st-stats を2D等角ビューのisoStatus()相当に更新する(要件5)。回転はここでは自由/
    90°スナップの両方があり得るのでISO.rot表記の代わりに現在のyaw角度を出す。 */
 function gl3dStatus(){var el=document.getElementById('st-stats');if(!el)return;
@@ -4528,10 +4631,11 @@ function gl3dStatus(){var el=document.getElementById('st-stats');if(!el)return;
  /* 要望1・敵対的レビュー指摘R5: phys3d/pkgの外観寸法がconfidence='estimate'|'todo'の
     場合、選択中はここに常時開示する(会話での開示定型文だけに頼らない、UI側の
     フェイルセーフ)。ERC/配置は物理チャネル(physFor)のみを見るため汚染されないが、
-    「この見た目は検証済みではない」という事実は使う人に常に見えているべき。 */
- if(selPart&&(selPart.pkg||selPart.phys3d)){var pk=gl3dResolvePkg(selPart);
-  if(pk.confidence==='estimate'||pk.confidence==='todo'){
-   el.innerHTML+=' / <span class="wr">'+tr('外観寸法は推定')+(pk.source?trf('（{0}）',esc(pk.source)):'')+'</span>';}}
+    「この見た目は検証済みではない」という事実は使う人に常に見えているべき。
+    文言はgl3dEstimateNote()に切り出し(INC-05でツールチップにも同じ注記を出すため、
+    #st-statsとツールチップで文言がズレないよう単一のソースにした)。 */
+ var estNote=gl3dEstimateNote(selPart);
+ if(estNote)el.innerHTML+=' / <span class="wr">'+estNote+'</span>';
  /* #st-net(2D版と共有するチップ)に注目ネット(ホバー中またはクリック固定中)を表示する
     (要望2: 密集盤面で「今どのネットを見ているか」を明示する)。2D版と同じ要素・同じ
     tr()パターンを再利用するので新規UI言語は最小限(ネット名のみの版+固定中の版を追加)。
@@ -4620,7 +4724,9 @@ function gl3dBindEvents(){var cv=GL3D.canvas;
     gl3dHoverMoveのキー比較でskipされて表示が「—」のまま固まらないようにするため。 */
  cv.addEventListener('pointerleave',function(){if(hoverNet){hoverNet=null;gl3dInvalidate();}
   GL3D_HOVER_LAST.key=undefined;
-  var sp=document.getElementById('st-pos');if(sp)sp.textContent='—';});
+  var sp=document.getElementById('st-pos');if(sp)sp.textContent='—';
+  /* INC-05: ツールチップもカーソルがcanvasを離れたら隠す(直前の内容が浮いたまま残るのを防ぐ)。 */
+  var tip=document.getElementById('gl3d-tip');if(tip)tip.style.display='none';});
  cv.addEventListener('wheel',function(e){e.preventDefault();
   GL3D.dist=Math.max(50,Math.min(2000,GL3D.dist*(e.deltaY<0?0.9:1/0.9)));gl3dInvalidate();},{passive:false});
 }
@@ -4649,7 +4755,12 @@ window.__dbg3d={GL3D:GL3D,gl3dInit:gl3dInit,redraw:gl3dDraw,
     3D側は無関係にpartがD.partsから欠落する場合がある。まずここでpad有無を確認する)。 */
  _debugParts:function(){return D.parts.map(function(p){var PF=physFor(p);var box=gl3dPartBox(p,PF);
   return {id:p.id,kind:p.kind,hasLeads:!!p.leads,hasPins:!!p.pins,pads:gl3dPadPts(p),box:box,h:isoPartHeight(p,PF)};});},
- status:gl3dStatus,hoverNet:function(){return hoverNet;}};
+ status:gl3dStatus,hoverNet:function(){return hoverNet;},
+ /* INC-05検証用: グリッド穴座標(列,行)→ワールド座標(x,z)。ヘッドレススクリプトが
+    「部品ボディに当たらない穴」を狙ってpointermoveのスクリーン座標を逆算する時に使う
+    (既存の__dbg3d.camBasis/_debugPartsと同じ「ヘッドレス実機検証用フック」)。 */
+ worldOfHole:function(c,r){return [gl3dWX(c),gl3dWZ(r)];},
+ tipHTML:function(){var t=document.getElementById('gl3d-tip');return t?{visible:t.style.display!=='none',html:t.innerHTML}:null;}};
 /* LYフラグの唯一の更新口。左パネル#layersのcheckboxと3Dビュー上#gl3d-barのチップは、
    どちらから変更してもここを通ることで双方向同期する(片方だけ変更→もう片方は表示が古いまま、
    を防ぐ)。 */
@@ -4703,7 +4814,20 @@ var xbtn=document.createElement('button');xbtn.type='button';xbtn.id='g3-xray-bt
 xbtn.title=tr('部品ボディを半透明にして、貫通点や下の配線を透かして見せます（もう一度クリックで解除）');
 xbtn.onclick=function(){GL3D.xray=!GL3D.xray;gl3dInvalidate();gl3dStatus();
  showHelp(GL3D.xray?tr('X線表示: 部品ボディを半透明にしました（もう一度クリックで解除）'):tr('X線表示を解除しました。'));};
-xgrp.appendChild(xbtn);bar.appendChild(xgrp);}
+xgrp.appendChild(xbtn);bar.appendChild(xgrp);
+/* ホバーインスペクト・ツールチップ(増分5/8)トグル。既定ON(GL3D.tipOn、機能自体の発見可能性を
+   優先)。isolate/xrayと違いフォーカス集合にもビューモードにも依存しないので常時押せ、かつ
+   3Dビューを閉じても状態を保持する(GL3D.tipOnはsetIso側でリセットしない)ため、on/off表示は
+   ここで初期化した後は自分のonclickだけで完結する(isolate/xrayのような外部再同期関数は不要)。
+   OFFにした瞬間は次のpointermoveを待たず#gl3d-tipを即座に隠す(押した実感を即返す)。 */
+var tgrp=document.createElement('div');tgrp.id='g3-group-tip';tgrp.style.cssText='display:flex;gap:5px';
+var tbtn=document.createElement('button');tbtn.type='button';tbtn.id='g3-tip-btn';tbtn.textContent=tr('ツールチップ');
+tbtn.className=GL3D.tipOn?'on':'';
+tbtn.title=tr('カーソルを部品・ピン・配線に重ねると、接続先をポップアップで表示します（もう一度クリックでOFF）');
+tbtn.onclick=function(){GL3D.tipOn=!GL3D.tipOn;tbtn.className=GL3D.tipOn?'on':'';
+ if(!GL3D.tipOn){var tip=document.getElementById('gl3d-tip');if(tip)tip.style.display='none';}
+ showHelp(GL3D.tipOn?tr('ツールチップ表示をONにしました。部品・ピン・配線にカーソルを重ねると接続先を表示します。'):tr('ツールチップ表示をOFFにしました。'));};
+tgrp.appendChild(tbtn);bar.appendChild(tgrp);}
 buildGl3dBar();
 /* 「固定中ネット」チップ(増分INC-02、GL3D専用チップの挿入スロット規約に従う)。凡例まで視線を
    戻さなくても固定を解除できるよう、#gl3d-barの末尾にGL3D.pinnedNetがある間だけ出す。
