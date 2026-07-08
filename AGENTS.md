@@ -80,8 +80,10 @@ Do not modify without explicit human approval:
 - The `tr()`/`trf()`/`L()` routing mechanism and the `JE` dictionary's structure/format
   (adding a new key + EN value per rule (c) is expected and needs no approval; changing the
   routing or restructuring the dictionary does).
-- `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` version fields
-  (must stay in agreement — `check_manifests.mjs` enforces; bump both together on release).
+- `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` version fields, and the
+  `index.html` header badge `<span class="brand">perfwire<small>vX.Y.Z</small></span>` (all three
+  must stay in agreement — `check_manifests.mjs` enforces; bump all three together on release).
+  Note: `index.html`'s `APPVER` is the localStorage-schema version, a separate thing — do not touch it.
 - `.github/workflows/ci.yml` gate set.
 - `LICENSE`.
 

@@ -46,6 +46,18 @@ const readText = (rel) => {
   try { return readFileSync(new URL(rel, root), 'utf8'); }
   catch (e) { fail.push(`cannot read ${rel}: ${e.message}`); return null; }
 };
+// Header version badge sync gate: index.html has no build step, so the version shown
+// in the app's brand badge (<span class="brand">perfwire<small>vX.Y.Z</small></span>) is a
+// hand-edited literal that silently drifts from the real release version on every bump.
+// Assert it equals plugin.json's version so a forgotten badge fails CI instead of shipping.
+// (This is NOT APPVER on ~line 244 — that is the localStorage-schema version, a different thing.)
+const indexHtml = readText('index.html');
+if (indexHtml && plugin) {
+  const m = indexHtml.match(/class="brand">perfwire<small>v(\d+\.\d+\.\d+)<\/small>/);
+  if (!m) fail.push('index.html: could not find the brand version badge `<span class="brand">perfwire<small>vX.Y.Z</small></span>` (header version-sync check)');
+  else if (m[1] !== plugin.version) fail.push(`version drift: index.html header badge v${m[1]} != plugin.json ${plugin.version} (bump the <small> in the .brand span together with the manifests on release)`);
+}
+
 const readmeEn = readText('README.md');
 const readmeJa = readText('README.ja.md');
 if (readmeEn && !/README\.ja\.md/.test(readmeEn.split('\n').slice(0, 3).join('\n')))
@@ -61,4 +73,4 @@ if (fail.length) {
   console.error('NG: manifest checks failed:\n  - ' + fail.join('\n  - '));
   process.exit(1);
 }
-console.log(`OK: plugin.json + marketplace.json valid and in agreement (v${plugin.version}); skill found at ${plugin.skills || 'skills'}/perfwire/SKILL.md; README.md/README.ja.md cross-linked`);
+console.log(`OK: plugin.json + marketplace.json + index.html header badge all agree (v${plugin.version}); skill found at ${plugin.skills || 'skills'}/perfwire/SKILL.md; README.md/README.ja.md cross-linked`);
