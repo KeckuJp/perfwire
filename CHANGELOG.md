@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.7.0] — 2026-07-08
+
+### Added
+- **3D view: lighting, part, and wire craft overhaul.** The free-orbit WebGL view moved off a
+  single flat directional light with zero specular response onto a physically-motivated stack:
+  soft-shoulder tone rolloff, hemisphere ambient, Blinn-Phong specular, rim light, and depth-cue
+  fog (all render-only; the 2D isometric view and ee/ERC math are untouched). IC leads now render
+  as real gull-wing legs bending out from the body wall into their pads (previously a
+  vertically-degenerate stub hidden inside the body silhouette — the direct cause of wires
+  appearing to disappear into chips). Part bodies gained face-separated shading and a
+  material-gloss channel (solder/leads glint, resin/board stays matte); electrolytic caps got a
+  distinguishable aluminum-top disc. Wires gained crossing casings, a pseudo-tube cross-section,
+  terminal solder domes, and a net-class thickness/desaturation hierarchy so crowded runs read as
+  individually traceable conductors. The board top texture, ground shadows, and label placement
+  (content, halo, staggering, leader lines) were reworked to cut visual noise, and the net color
+  palette was redesigned for color-vision-deficiency accessibility.
+- **3D view: an operations layer, not just prettier rendering.** A floating toolbar surfaces the
+  view's layer toggles (parts/labels/wires/bridges/terminals/cautions/blocked-holes — previously
+  reachable only through the command palette) directly above the canvas. New controls: isolate/solo
+  mode (hide everything but the focused part or net), an X-ray mode (screen-door part-body
+  transparency to see wires passing underneath), a hover tooltip that answers "what does this pin
+  connect to" without leaving the 3D view, and a legend net list you can click to pin a net's
+  highlight. Selecting a part now opens a pin-to-net connection table in the legend, with a
+  one-click jump back to the equivalent 2D selection. A 3D-only "route shaping" toggle (default on)
+  nudges crowded parallel wires apart and steers them around grazing part edges — a deliberate,
+  bounded (±2mm, endpoints mathematically unchanged) departure from exact 2D/3D path parity, kept
+  legible with an in-view disclosure that the 2D view remains authoritative for physical routing.
+- Refreshed `docs/media/demo-3d.gif` and the README 3D-view description to show the new toolbar and
+  lighting instead of the pre-overhaul look.
+
 ## [0.6.14] — 2026-07-07
 
 ### Fixed
