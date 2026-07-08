@@ -142,10 +142,10 @@ The same rule checker is implemented twice — once in the browser, once in Pyth
 - Knows real board types: plain perfboard, stripboard/Veroboard, and cross-wired boards (every hole pre-connected to its neighbors — the audit flags every cut you need to make).
 
 **For you: the editor**
-- **3D view** — drag to orbit, scroll to zoom. Parts render as their real shapes with bent leads and solder fillets. Hover a net to dim everything else.
+- **3D view** — drag to orbit, scroll to zoom. Parts render as their real shapes with bent leads and solder fillets. A toolbar lets you toggle layers, isolate a part's net, X-ray part bodies, hover for a connection tooltip, or nudge crowded wires apart for legibility — and the legend's net list lets you pin a net or pull up a part's full pin-to-net connection table.
   <details><summary>▶ Watch the 3D view (GIF, loops)</summary>
 
-  ![Animated demo: orbiting the 3D view around a populated board, then zooming in on the parts](docs/media/demo-3d.gif)
+  ![Animated demo: orbiting the 3D view around a populated board](docs/media/demo-3d.gif)
 
   </details>
 - **Photo underlay** — put a photo of your real board under the grid and trace it by dragging parts onto it.
